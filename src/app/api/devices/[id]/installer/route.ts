@@ -5,10 +5,12 @@ import { decryptSecret } from "@/lib/crypto-secret";
 import { isResponse, requireAdmin } from "@/lib/http";
 import { requestOrigin } from "@/lib/origin";
 import { buildInstallerEntries, installerFileName, safeApiBase } from "@/lib/device-installer";
+import { ticketKeyForDevice } from "@/lib/evaluate";
+import { deviceSecretKey } from "@/lib/secrets";
 import { zipBuffers } from "@/lib/zip";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("devices.enroll");
   if (isResponse(auth)) return auth;
   const { id } = await ctx.params;
   const db = getDb();
@@ -18,14 +20,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const url = new URL(req.url);
   const origin = requestOrigin(req);
   const apiBase = safeApiBase(url.searchParams.get("apiBase") || undefined, origin);
-  const secret = decryptSecret(device.secretEnc, process.env.DEVICE_SECRET_KEY || "dev-device-secret-key-32bytes!!");
+  const secret = decryptSecret(device.secretEnc, deviceSecretKey());
   const zip = zipBuffers(
     buildInstallerEntries({
       hostname: device.hostname,
       deviceId: device.id,
       deviceSecret: secret,
       apiBase,
-      ticketSigningKey: process.env.TICKET_SIGNING_KEY || "dev-only-ticket-hmac-key-change",
+      ticketSigningKey: ticketKeyForDevice(device.id),
       agentRoot: path.join(process.cwd(), "agent"),
     }),
   );

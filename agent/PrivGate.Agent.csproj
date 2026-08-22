@@ -1,13 +1,40 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <!--
+      net48 = .NET Framework 4.8.
+      Supported OS: Windows 7 SP1 / Server 2008 R2 SP1 and later.
+      Windows Server 2008 (non-R2) is NOT supported by .NET Framework 4.8;
+      it tops out at .NET Framework 4.6 and would require a separate build
+      with Newtonsoft.Json replacing System.Text.Json.
+    -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>PrivGate.Agent</RootNamespace>
     <AssemblyName>PrivGate.Agent</AssemblyName>
+    <!-- Reference assemblies needed when cross-compiling net48 on non-Windows. -->
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="helper/**" />
+    <None Remove="helper/**" />
+    <EmbeddedResource Remove="helper/**" />
+  </ItemGroup>
+  <ItemGroup>
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      System.Text.Json is not inbox on .NET Framework; the NuGet package
+      targets netstandard2.0 which is compatible with net461+.
+    -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- Provides net48 reference assemblies when building on macOS/Linux. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
   </ItemGroup>
 </Project>

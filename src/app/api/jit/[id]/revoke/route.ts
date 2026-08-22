@@ -3,7 +3,7 @@ import { getDb, revokeJit, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin("Approver");
+  const auth = await requireAdmin("jit.revoke");
   if (isResponse(auth)) return auth;
   const { id } = await ctx.params;
   const db = getDb();

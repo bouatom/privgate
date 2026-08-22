@@ -3,6 +3,7 @@ import { hmacDevice, safeEqual } from "./signing";
 import { decryptSecret } from "./crypto-secret";
 import { getDb, getDevice } from "./db";
 import { bodySha256 } from "./evaluate";
+import { deviceSecretKey } from "./secrets";
 
 const skewMs = 5 * 60 * 1000;
 
@@ -24,7 +25,7 @@ export function verifyDeviceRequest(args: {
   const db = getDb();
   const device = getDevice(db, args.deviceId);
   if (!device) return { ok: false, status: 401, error: "unknown device" };
-  const key = process.env.DEVICE_SECRET_KEY || "dev-device-secret-key-32bytes!!";
+  const key = deviceSecretKey();
   let secret: string;
   try {
     secret = decryptSecret(device.secretEnc, key);

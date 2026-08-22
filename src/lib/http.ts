@@ -1,14 +1,28 @@
 import { NextResponse } from "next/server";
-import { getSession, hasRole, type AdminSession } from "./auth";
+import { can, getSession, type AdminSession } from "./auth";
+import type { PermissionId } from "./permissions";
 
 export async function requireAdmin(
-  role?: AdminSession["roles"][number],
+  permission?: PermissionId | PermissionId[],
 ): Promise<{ session: AdminSession } | NextResponse> {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
   }
-  if (role && !hasRole(session, role)) {
+  if (permission && !can(session, permission)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  return { session };
+}
+
+export async function requireAny(
+  permissions: PermissionId[],
+): Promise<{ session: AdminSession } | NextResponse> {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  }
+  if (!permissions.some((p) => can(session, p))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   return { session };

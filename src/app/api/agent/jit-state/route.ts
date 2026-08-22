@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, findUserBySid, activeJit, revokeJit } from "@/lib/db";
+import { getDb, findUserBySid, activeJit, getJit, revokeJit } from "@/lib/db";
 import { verifyDeviceRequest } from "@/lib/device-auth";
 
 export async function GET(req: Request) {
@@ -34,9 +34,20 @@ export async function POST(req: Request) {
     rawBody: raw,
   });
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const body = JSON.parse(raw || "{}") as { grantId?: string; event?: string };
+  let body: { grantId?: string; event?: string };
+  try {
+    body = JSON.parse(raw || "{}");
+  } catch {
+    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
   if (body.event === "expired" && body.grantId) {
-    revokeJit(getDb(), body.grantId, `device:${auth.deviceId}`);
+    const db = getDb();
+    // A device may only close out grants issued to itself.
+    const grant = getJit(db, body.grantId);
+    if (!grant || grant.deviceId !== auth.deviceId) {
+      return NextResponse.json({ error: "unknown grant" }, { status: 404 });
+    }
+    revokeJit(db, body.grantId, `device:${auth.deviceId}`);
   }
   return NextResponse.json({ ok: true });
 }

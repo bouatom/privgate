@@ -26,6 +26,59 @@ Trust boundaries: **user session → SYSTEM broker → HTTPS API → Entra**.
 
 UAC bypasses, credential harvesting, disabling UAC, storing admin passwords, `runas /savecred`, kernel exploits, intercepting the stock UAC dialog.
 
+## Production configuration required
+
+The control plane refuses to start in production (`NODE_ENV=production`) unless all
+three secrets are set to operator-chosen values of at least 32 characters. The
+development placeholders are rejected by name.
+
+```bash
+SESSION_SECRET=$(openssl rand -base64 48)        # admin session JWT
+TICKET_SIGNING_KEY=$(openssl rand -base64 48)    # master key for elevation tickets
+DEVICE_SECRET_KEY=$(openssl rand -base64 48)     # wraps per-device HMAC secrets at rest
+```
+
+Optional hardening:
+
+| Variable | Purpose |
+| --- | --- |
+| `PRIVGATE_PUBLIC_ORIGIN` | Canonical origin used for OAuth redirects and installer `ApiBase`. Set this behind a proxy. |
+| `PRIVGATE_TRUSTED_HOSTS` | Comma-separated `host[:port]` allowlist for the `Host` header. |
+| `PRIVGATE_TRUST_PROXY=1` | Also honour `X-Forwarded-Host` / `X-Forwarded-Proto`, still subject to the allowlist. |
+
+`npm start` binds `127.0.0.1` by default. Standalone deployments set `HOSTNAME`;
+keep it on loopback and terminate TLS in front of the console.
+
+Rotating `TICKET_SIGNING_KEY` or `DEVICE_SECRET_KEY` invalidates every enrolled
+endpoint. Re-download the installer from **Devices** for each host afterwards.
+
 ## Residual risk
 
-A JIT window **is** full local admin for N minutes. That is intentional and must be rare, short, and audited.
+**A JIT window is full local admin for N minutes.** Intentional; must be rare,
+short, and audited.
+
+**Endpoints hold their own ticket verification key.** `appsettings.json` in
+`%ProgramFiles%\PrivGate` contains that device's HMAC secret and ticket key, both
+readable by anyone who is already local admin or SYSTEM on that host. This is
+inherent to symmetric ticket verification in a broker that must work offline.
+Scope is limited three ways:
+
+- The ticket key is `HKDF(TICKET_SIGNING_KEY, "ticket:<deviceId>")`, so a key
+  lifted from one PC cannot sign tickets accepted by any other PC.
+- The broker rejects tickets whose `dev` or `path` claim does not match what it is
+  being asked to launch, and enforces hard bans before consulting the API.
+- Someone who can read that file already has admin on that host, so the key grants
+  no privilege they did not already hold locally.
+
+Moving to asymmetric ticket signing (control plane holds the private key, endpoints
+verify with a public key) would remove the forgery value of the file entirely and is
+the recommended next step. It is a protocol change on both sides, not a config change.
+
+**Admin-configured outbound requests are unrestricted.** The notification webhook
+URL and SMTP host are reachable from the control plane, so a portal user with
+`notifications.manage` can direct requests at internal addresses. This is a
+privileged administrative feature; treat `notifications.manage` accordingly.
+
+**SMTP TLS probing does not validate certificates.** `probeHost` connects with
+`rejectUnauthorized: false` purely to report reachability from the Notifications
+page. Delivery itself uses the configured `secure` setting.

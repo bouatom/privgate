@@ -1,0 +1,20 @@
+[Unit]
+Description=PrivGate management console
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/privgate
+ExecStart=/opt/privgate/bin/node /opt/privgate/host.cjs
+Restart=on-failure
+RestartSec=5
+User=privgate
+Group=privgate
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/privgate /var/log/privgate
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

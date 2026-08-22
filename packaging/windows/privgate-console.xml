@@ -1,0 +1,15 @@
+<service>
+  <id>PrivGateConsole</id>
+  <name>PrivGate Management Console</name>
+  <description>PrivGate control plane. Does not disable UAC or store endpoint admin passwords.</description>
+  <executable>%BASE%\node.exe</executable>
+  <arguments>host.cjs</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <logpath>%PROGRAMDATA%\PrivGate\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepCount>8</keepCount>
+  </log>
+  <onfailure action="restart" delay="10 sec"/>
+  <startmode>Automatic</startmode>
+</service>

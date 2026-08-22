@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { resetDbForTests, decideRequest, listPolicies, getUserByUpn, createJit, revokeJit, getRequest, insertPolicy } from "./db";
-import { evaluateForDevice } from "./evaluate";
+import { evaluateForDevice, ticketKeyForDevice } from "./evaluate";
 import { verifyTicket } from "./signing";
 
 const staffSid = "S-1-5-21-1000-1000-1000-1101";
@@ -22,7 +22,7 @@ describe("evaluate + approval + JIT", () => {
     });
     expect(allow.decision).toBe("allow");
     expect(allow.ticket).toBeTruthy();
-    const ticket = verifyTicket(allow.ticket!, process.env.TICKET_SIGNING_KEY || "dev-only-ticket-hmac-key-change");
+    const ticket = verifyTicket(allow.ticket!, ticketKeyForDevice("dev-lab-01"));
     expect(ticket.child).toBe("deny");
 
     const deny = evaluateForDevice(db, "dev-lab-01", {

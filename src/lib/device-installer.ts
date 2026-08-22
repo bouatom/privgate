@@ -24,7 +24,7 @@ function walkDir(root: string, rel = ""): Array<{ rel: string; abs: string }> {
   if (!fs.existsSync(dir)) return [];
   const out: Array<{ rel: string; abs: string }> = [];
   for (const name of fs.readdirSync(dir)) {
-    if (name === "bin" || name === "obj" || name.startsWith(".")) continue;
+    if (name === "bin" || name === "obj" || name === "dist" || name.startsWith(".")) continue;
     const nextRel = rel ? `${rel}/${name}` : name;
     const abs = path.join(root, nextRel);
     const stat = fs.statSync(abs);
@@ -41,20 +41,29 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $InstallDir = Join-Path $env:ProgramFiles "PrivGate"
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
+# Verify .NET Framework 4.8 is installed.
+# Release key 528040 = .NET Framework 4.8 on Windows 10 May 2019 Update and later;
+# 528049 = Windows 10 November 2019 / Server 2019+. Both are >= 528040.
+$ndpKey = "HKLM:\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full"
+$release = (Get-ItemProperty $ndpKey -Name Release -ErrorAction SilentlyContinue).Release
+if (-not $release -or $release -lt 528040) {
+  throw "PrivGate requires .NET Framework 4.8 or later (supported on Windows 7 SP1+ and Windows Server 2008 R2 SP1+). Download from: https://go.microsoft.com/fwlink/?LinkId=2085155"
+}
+
 Copy-Item (Join-Path $Root "appsettings.json") (Join-Path $InstallDir "appsettings.json") -Force
 
 function Publish-Agent {
   param([string]$Project, [string]$Out)
-  & dotnet publish $Project -c Release -o $Out
+  & dotnet publish $Project -c Release -f net48 -o $Out
   if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed for $Project" }
 }
 
 $prebuiltAgent = Join-Path $Root "PrivGate.Agent.exe"
 $prebuiltHelper = Join-Path $Root "PrivGate.Helper.exe"
 if (Test-Path $prebuiltAgent) {
-  Copy-Item $prebuiltAgent (Join-Path $InstallDir "PrivGate.Agent.exe") -Force
-  if (Test-Path $prebuiltHelper) {
-    Copy-Item $prebuiltHelper (Join-Path $InstallDir "PrivGate.Helper.exe") -Force
+  # Copy the pre-built exe and all sibling DLLs (System.Text.Json etc.) from the zip.
+  Get-ChildItem $Root -File | Where-Object { $_.Name -ne "appsettings.json" -and $_.Name -notlike "*.ps1" -and $_.Name -ne "README.txt" } | ForEach-Object {
+    Copy-Item $_.FullName (Join-Path $InstallDir $_.Name) -Force
   }
 } elseif (Get-Command dotnet -ErrorAction SilentlyContinue) {
   $agentProj = Join-Path $Root "agent\\PrivGate.Agent.csproj"
@@ -64,7 +73,7 @@ if (Test-Path $prebuiltAgent) {
   if (Test-Path $helperProj) { Publish-Agent $helperProj $InstallDir }
   Copy-Item (Join-Path $Root "appsettings.json") (Join-Path $InstallDir "appsettings.json") -Force
 } else {
-  throw "Install the .NET 8 SDK, or use a package that already contains PrivGate.Agent.exe."
+  throw "No PrivGate.Agent.exe found in zip and the .NET SDK is not installed. Use a pre-built zip package."
 }
 
 $bin = Join-Path $InstallDir "PrivGate.Agent.exe"
@@ -113,17 +122,34 @@ export function installerReadme(hostname: string, apiBase: string): string {
 Host: ${hostname}
 Control plane: ${apiBase}
 
-On the Windows 11 PC (elevated PowerShell):
+Supported OS
+------------
+Windows 7 SP1 / 8.1 / 10 / 11
+Windows Server 2008 R2 SP1 / 2012 / 2012 R2 / 2016 / 2019 / 2022 / 2025
 
-  1. Unzip this folder.
-  2. Right-click Install-PrivGate.ps1 → Run with PowerShell
-     or: powershell -ExecutionPolicy Bypass -File .\\Install-PrivGate.ps1
+Prerequisite: .NET Framework 4.8
+  Pre-installed on Windows 10 (1903+) and Windows Server 2019+.
+  For older systems, download from:
+  https://go.microsoft.com/fwlink/?LinkId=2085155
+  The installer will stop with a clear error if .NET Framework 4.8 is absent.
+
+Windows Server 2008 (non-R2) is NOT supported by this package.
+That OS version tops out at .NET Framework 4.6 and would require a
+custom build; contact your administrator for details.
+
+Install
+-------
+  1. Unzip this folder on the target PC.
+  2. Open an elevated PowerShell and run:
+       powershell -ExecutionPolicy Bypass -File .\\Install-PrivGate.ps1
 
 The script installs a SYSTEM service named PrivGateBroker. It does not
 disable UAC, store admin passwords, or use runas /savecred.
 
-If the zip has no .exe files, install the .NET 8 SDK first so the script
-can publish the included agent source.
+If the zip contains no .exe files (source-only package), the .NET SDK
+must also be installed so the script can compile and publish the agent.
+Pre-built zips (downloaded from Devices → Download installer) include
+the compiled binaries and do not require the SDK on the target machine.
 
 Standard users elevate with:
 
@@ -158,6 +184,14 @@ export function buildInstallerEntries(args: {
     { name: "appsettings.json", data: appsettings },
     { name: "README.txt", data: installerReadme(args.hostname, args.apiBase) },
   ];
+  const dist = path.join(args.agentRoot, "dist");
+  if (fs.existsSync(dist)) {
+    for (const name of fs.readdirSync(dist)) {
+      const abs = path.join(dist, name);
+      if (!fs.statSync(abs).isFile()) continue;
+      entries.push({ name, data: fs.readFileSync(abs) });
+    }
+  }
   for (const file of walkDir(args.agentRoot)) {
     if (file.rel === "appsettings.json") continue;
     entries.push({

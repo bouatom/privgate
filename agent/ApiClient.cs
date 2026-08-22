@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
@@ -32,7 +33,9 @@ public sealed class ApiClient
     {
         var raw = body is null ? "" : JsonSerializer.Serialize(body);
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
-        var sha = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw))).ToLowerInvariant();
+        byte[] rawHash;
+        using (var sha256 = SHA256.Create()) { rawHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(raw)); }
+        var sha = Authenticode.BytesToHex(rawHash);
         var sig = TicketVerifier.DeviceHmac(secret, ts, method.Method, path.Split('?')[0], sha);
         using var req = new HttpRequestMessage(method, path.TrimStart('/'));
         if (raw.Length > 0)
@@ -44,7 +47,9 @@ public sealed class ApiClient
         req.Headers.TryAddWithoutValidation("X-Signature", sig);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         var res = await http.SendAsync(req, ct);
-        var text = await res.Content.ReadAsStringAsync(ct);
+        // ReadAsStringAsync(CancellationToken) is net5+; the no-CT overload is fine
+        // for .NET Framework 4.8 since the outer SendAsync already used the token.
+        var text = await res.Content.ReadAsStringAsync();
         res.EnsureSuccessStatusCode();
         return JsonSerializer.Deserialize<JsonElement>(text);
     }

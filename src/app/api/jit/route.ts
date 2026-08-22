@@ -2,17 +2,17 @@ import { NextResponse } from "next/server";
 import { getDb, listJit, createJit, appendAudit, getUser, getDevice } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
 import { signTicket } from "@/lib/signing";
-import { ticketKey } from "@/lib/evaluate";
+import { ticketKeyForDevice } from "@/lib/evaluate";
 import { queueNotification } from "@/lib/notify";
 
 export async function GET() {
-  const auth = await requireAdmin("Approver");
+  const auth = await requireAdmin("jit.view");
   if (isResponse(auth)) return auth;
   return NextResponse.json(listJit(getDb()));
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin("Approver");
+  const auth = await requireAdmin("jit.grant");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as {
     userId?: string;
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
       exp: Math.floor(new Date(grant.expiresAt).getTime() / 1000),
       nonce: grant.id,
     },
-    ticketKey(),
+    ticketKeyForDevice(grant.deviceId),
   );
   appendAudit(db, auth.session.email, "jit.grant", grant.id, {
     user: user?.userPrincipalName,

@@ -122,9 +122,6 @@ export function evaluateElevation(
   }
   const allow = matching.find((p) => p.effect === "allow");
   if (allow) {
-    if (isHardBanned(file.filePath)) {
-      return { decision: "deny", reason: "hard-banned binary cannot be always-allow" };
-    }
     return {
       decision: "allow",
       policyId: allow.id,

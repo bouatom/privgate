@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { sessionSecret } from "./lib/secrets";
 
-const sessionSecret = new TextEncoder().encode(
-  process.env.SESSION_SECRET || "dev-only-session-secret-change-me",
-);
-
+/**
+ * Cheap edge pre-filter only: it proves the cookie carries a signature we issued.
+ * It cannot reach SQLite, so it cannot tell whether the portal user has since been
+ * disabled or stripped of every permission. The console layout re-resolves the
+ * session against the database and redirects, which is the real authorization
+ * boundary — do not treat a middleware pass as authorization.
+ */
 export async function middleware(req: NextRequest) {
   const token = req.cookies.get("privgate_session")?.value;
   if (!token) {
@@ -13,7 +17,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(login);
   }
   try {
-    await jwtVerify(token, sessionSecret);
+    await jwtVerify(token, new TextEncoder().encode(sessionSecret()));
     return NextResponse.next();
   } catch {
     const login = new URL("/login", req.url);

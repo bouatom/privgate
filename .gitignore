@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.tools/
 build/
 .venv/
 venv/
@@ -19,3 +20,4 @@ data/
 bin/
 obj/
 agent/TestResults/
+tsconfig.tsbuildinfo

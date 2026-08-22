@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { resetDbForTests, deviceDetail, listDeviceSummaries, enrollDevice } from "./db";
 import { buildInstallerEntries, installScript, safeApiBase } from "./device-installer";
@@ -32,6 +33,9 @@ describe("device events and installer", () => {
     expect(settings).toContain("192.168.1.10");
     expect(entries.some((e) => e.name === "agent/Program.cs")).toBe(true);
     expect(installScript()).toContain("PrivGateBroker");
+    if (existsSync(`${process.cwd()}/agent/dist/PrivGate.Agent.exe`)) {
+      expect(entries.some((e) => e.name === "PrivGate.Agent.exe")).toBe(true);
+    }
 
     const zip = zipBuffers(entries);
     expect(zip.subarray(0, 2).toString("utf8")).toBe("PK");

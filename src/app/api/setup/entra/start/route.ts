@@ -14,7 +14,7 @@ import {
 } from "@/lib/entra";
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("integrations.manage");
   if (isResponse(auth)) return auth;
   const db = getDb();
   const already = publicDirectoryStatus(db);

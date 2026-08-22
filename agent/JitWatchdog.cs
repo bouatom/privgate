@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace PrivGate.Agent;
@@ -20,7 +21,7 @@ public sealed class JitWatchdog
     {
         var payload = new JitState(grantId, userSid, expiresAt.ToUnixTimeSeconds());
         File.WriteAllText(statePath, JsonSerializer.Serialize(payload));
-        if (OperatingSystem.IsWindows())
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var stamp = expiresAt.ToLocalTime().ToString("HH:mm");
             var date = expiresAt.ToLocalTime().ToString("MM/dd/yyyy");
@@ -46,7 +47,7 @@ public sealed class JitWatchdog
 
     public static void RevokeLocalAdmin(string userSid)
     {
-        if (!OperatingSystem.IsWindows())
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             Console.WriteLine($"[dry-run] revoke local Administrators {userSid}");
             return;
@@ -59,7 +60,7 @@ public sealed class JitWatchdog
 
     public static void GrantLocalAdmin(string userSid)
     {
-        if (!OperatingSystem.IsWindows())
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             Console.WriteLine($"[dry-run] grant local Administrators {userSid}");
             return;

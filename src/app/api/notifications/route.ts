@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { getDb, getNotificationSettings, saveNotificationSettings } from "@/lib/db";
-import { isResponse, requireAdmin } from "@/lib/http";
+import { isResponse, requireAdmin, requireAny } from "@/lib/http";
 import { dispatchNotification } from "@/lib/notify";
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAny(["notifications.view", "notifications.manage"]);
   if (isResponse(auth)) return auth;
   return NextResponse.json(getNotificationSettings(getDb()));
 }
 
 export async function PUT(req: Request) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("notifications.manage");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Record<string, unknown>;
   saveNotificationSettings(getDb(), {
@@ -34,7 +34,7 @@ export async function PUT(req: Request) {
 }
 
 export async function POST() {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("notifications.manage");
   if (isResponse(auth)) return auth;
   try {
     const result = await dispatchNotification(getDb(), {

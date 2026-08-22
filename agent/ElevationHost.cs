@@ -10,13 +10,17 @@ public static class Authenticode
     public static string Sha256File(string path)
     {
         using var stream = File.OpenRead(path);
-        var hash = SHA256.HashData(stream);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(stream);
+        return BytesToHex(hash);
     }
+
+    internal static string BytesToHex(byte[] bytes) =>
+        BitConverter.ToString(bytes).Replace("-", string.Empty).ToLowerInvariant();
 
     public static string Publisher(string path)
     {
-        if (!OperatingSystem.IsWindows()) return "dry-run";
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return "dry-run";
         try
         {
             using var cert = X509Certificate.CreateFromSignedFile(path);
@@ -40,7 +44,7 @@ public static class ElevationHost
             throw new InvalidOperationException("hard-banned binary");
         }
 
-        if (!OperatingSystem.IsWindows())
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             Console.WriteLine($"[dry-run] would elevate {filePath} children={(!denyChildren ? "allow" : "deny")}");
             return 0;

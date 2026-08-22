@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { displayPath } from "@/lib/format";
 
 type DeviceSummary = {
   id: string;
@@ -67,17 +68,19 @@ export function DevicesClient({
   selected,
   detail,
   canInstall,
+  initialApiBase,
 }: {
   devices: DeviceSummary[];
   selected: string;
   detail: Detail | null;
   canInstall: boolean;
+  initialApiBase: string;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [host, setHost] = useState("");
   const [joinType, setJoinType] = useState("hybrid");
-  const [apiBase, setApiBase] = useState("");
+  const [apiBase, setApiBase] = useState(initialApiBase);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -267,7 +270,7 @@ export function DevicesClient({
                             </ul>
                           </td>
                           <td>
-                            <div>{row.filePath}</div>
+                            <div>{displayPath(row.filePath)}</div>
                             <div className="mono">{row.userName}</div>
                             <div className="mono">{row.publisher}</div>
                           </td>

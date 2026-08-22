@@ -17,6 +17,24 @@ function encode(value: string) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
+/**
+ * Notification subjects and addresses are built from device-supplied data such as
+ * the requested file path. A CR or LF in any of them would let that data start a
+ * new SMTP command or header, so strip them at the boundary.
+ */
+function oneLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
+}
+
+/** Escape a leading "." so no body line can terminate the DATA payload early. */
+function dotStuff(text: string): string {
+  return text
+    .replaceAll("\r\n", "\n")
+    .split("\n")
+    .map((line) => (line.startsWith(".") ? `.${line}` : line))
+    .join("\r\n");
+}
+
 async function connect(host: string, port: number, secure: boolean): Promise<net.Socket> {
   return await new Promise((resolve, reject) => {
     const socket = secure
@@ -62,25 +80,30 @@ export async function sendSmtp(message: SmtpMessage) {
   if (!message.host || !message.from || !message.to.length) {
     throw new Error("SMTP host, from, and recipients are required");
   }
-  const socket = await connect(message.host, message.port, message.secure);
+  const from = oneLine(message.from);
+  const to = message.to.map(oneLine).filter(Boolean);
+  const subject = oneLine(message.subject);
+  if (!from || !to.length) throw new Error("SMTP from and recipients are required");
+
+  const socket = await connect(oneLine(message.host), message.port, message.secure);
   await readReply(socket);
   await cmd(socket, `EHLO privgate`);
   if (message.user) {
     await cmd(socket, "AUTH LOGIN");
-    await cmd(socket, encode(message.user));
+    await cmd(socket, encode(oneLine(message.user)));
     await cmd(socket, encode(message.pass || ""));
   }
-  await cmd(socket, `MAIL FROM:<${message.from}>`);
-  for (const rcpt of message.to) await cmd(socket, `RCPT TO:<${rcpt}>`);
+  await cmd(socket, `MAIL FROM:<${from}>`);
+  for (const rcpt of to) await cmd(socket, `RCPT TO:<${rcpt}>`);
   await cmd(socket, "DATA");
   const body = [
-    `From: ${message.from}`,
-    `To: ${message.to.join(", ")}`,
-    `Subject: ${message.subject}`,
+    `From: ${from}`,
+    `To: ${to.join(", ")}`,
+    `Subject: ${subject}`,
     "MIME-Version: 1.0",
     "Content-Type: text/plain; charset=utf-8",
     "",
-    message.text,
+    dotStuff(message.text),
     ".",
   ].join("\r\n");
   socket.write(`${body}\r\n`);

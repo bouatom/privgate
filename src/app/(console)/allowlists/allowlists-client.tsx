@@ -6,7 +6,7 @@ import type { Policy } from "@/lib/policy";
 
 type Group = { id: string; name: string; memberCount: number };
 
-export function AllowlistsClient({ rows, groups }: { rows: Policy[]; groups: Group[] }) {
+export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; groups: Group[]; canManage: boolean }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [form, setForm] = useState({
@@ -45,8 +45,14 @@ export function AllowlistsClient({ rows, groups }: { rows: Policy[]; groups: Gro
     startTransition(() => router.refresh());
   }
 
-  async function remove(id: string) {
-    await fetch(`/api/policies/${id}`, { method: "DELETE" });
+  async function remove(id: string, name: string) {
+    if (!confirm(`Remove always-allow rule “${name}”? That program will need approval before it can elevate.`)) return;
+    const res = await fetch(`/api/policies/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error || "Could not remove policy");
+      return;
+    }
     startTransition(() => router.refresh());
   }
 
@@ -68,6 +74,7 @@ export function AllowlistsClient({ rows, groups }: { rows: Policy[]; groups: Gro
           <p className="lede">These run elevated without an admin password. SHA-256 and publisher are required. Shells cannot be added. Scope a rule to an Entra / AD group after directory sync.</p>
         </div>
       </div>
+      {canManage ? (
       <form className="panel stack" onSubmit={onSubmit} style={{ padding: 18, marginBottom: 16 }}>
         <div className="grid cards">
           <div>
@@ -117,6 +124,7 @@ export function AllowlistsClient({ rows, groups }: { rows: Policy[]; groups: Gro
         {error ? <p className="err">{error}</p> : null}
         <button className="primary" type="submit">Add allow rule</button>
       </form>
+      ) : null}
       <div className="panel">
         <table>
           <thead>
@@ -129,24 +137,30 @@ export function AllowlistsClient({ rows, groups }: { rows: Policy[]; groups: Gro
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td>
-                  {row.name}
-                  <div className="mono">{row.effect}</div>
-                </td>
-                <td>
-                  <div>{row.fileName || "any name"}</div>
-                  <div className="mono">{row.publisher}</div>
-                  <div className="mono">{row.fileHash.slice(0, 20)}…</div>
-                </td>
-                <td>{bindLabel(row)}</td>
-                <td>{row.childProcesses}</td>
-                <td>
-                  <button className="danger" onClick={() => remove(row.id)}>Remove</button>
-                </td>
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    {row.name}
+                    <div className="mono">{row.effect}</div>
+                  </td>
+                  <td>
+                    <div>{row.fileName || "any name"}</div>
+                    <div className="mono">{row.publisher}</div>
+                    <div className="mono">{row.fileHash.slice(0, 20)}…</div>
+                  </td>
+                  <td>{bindLabel(row)}</td>
+                  <td>{row.childProcesses}</td>
+                  <td>
+                    {canManage ? <button className="danger" onClick={() => remove(row.id, row.name)}>Remove</button> : null}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="lede" style={{ padding: 18 }}>No always-allow rules yet.</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

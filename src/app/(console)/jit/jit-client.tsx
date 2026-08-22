@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { formatWhen } from "@/lib/format";
 import type { PresentedUser } from "@/lib/present";
 
 type Device = { id: string; hostname: string };
@@ -19,19 +20,29 @@ export function JitClient({
   users,
   devices,
   grants,
+  canGrant,
+  canRevoke,
 }: {
   users: PresentedUser[];
   devices: Device[];
   grants: Grant[];
+  canGrant: boolean;
+  canRevoke: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [form, setForm] = useState({ userId: "", deviceId: "", durationMinutes: 15, reason: "" });
   const [error, setError] = useState("");
+  const eligible = users.filter(
+    (u) => u.jitEligible && !u.disabled && !u.roles.some((role) => role === "Approver" || role === "PolicyAdmin"),
+  );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (!confirm(`Open a ${form.durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`)) {
+      return;
+    }
     const res = await fetch("/api/jit", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -47,7 +58,13 @@ export function JitClient({
   }
 
   async function revoke(id: string) {
-    await fetch(`/api/jit/${id}/revoke`, { method: "POST" });
+    if (!confirm("Revoke this JIT window now? The user loses local Administrators on the next broker tick.")) return;
+    const res = await fetch(`/api/jit/${id}/revoke`, { method: "POST" });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error || "Could not revoke JIT");
+      return;
+    }
     startTransition(() => router.refresh());
   }
 
@@ -59,13 +76,14 @@ export function JitClient({
           <p className="lede">Temporary local Administrators membership, 15–60 minutes, one active window per user and device. The broker schedules revoke on the PC at grant time.</p>
         </div>
       </div>
+      {canGrant ? (
       <form className="panel stack" onSubmit={onSubmit} style={{ padding: 18, marginBottom: 16 }}>
         <div className="grid cards">
           <div>
             <label>User</label>
             <select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} required>
               <option value="">Select…</option>
-              {users.map((u) => (
+              {eligible.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.displayName}
                 </option>
@@ -97,8 +115,12 @@ export function JitClient({
         <label>Reason</label>
         <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
         {error ? <p className="err">{error}</p> : null}
-        <button className="primary" type="submit">Open window</button>
+        {eligible.length === 0 ? (
+          <p className="lede" style={{ fontSize: 13 }}>No JIT-eligible users. Allow JIT on Directory users first.</p>
+        ) : null}
+        <button className="primary" type="submit" disabled={!eligible.length}>Open window</button>
       </form>
+      ) : null}
       <div className="panel">
         <table>
           <thead>
@@ -110,25 +132,31 @@ export function JitClient({
             </tr>
           </thead>
           <tbody>
-            {grants.map((g) => (
-              <tr key={g.id}>
-                <td><span className={`pill ${g.status}`}>{g.status}</span></td>
-                <td>
-                  {g.userName}
-                  <div className="mono">{g.hostname}</div>
-                </td>
-                <td>
-                  {g.durationMinutes} min
-                  <div className="mono">{g.reason}</div>
-                  <div className="mono">until {g.expiresAt}</div>
-                </td>
-                <td>
-                  {g.status === "active" ? (
-                    <button className="danger" onClick={() => revoke(g.id)}>Force revoke</button>
-                  ) : null}
-                </td>
+            {grants.length ? (
+              grants.map((g) => (
+                <tr key={g.id}>
+                  <td><span className={`pill ${g.status}`}>{g.status}</span></td>
+                  <td>
+                    {g.userName}
+                    <div className="mono">{g.hostname}</div>
+                  </td>
+                  <td>
+                    {g.durationMinutes} min
+                    <div className="mono">{g.reason}</div>
+                    <div className="mono">until {formatWhen(g.expiresAt)}</div>
+                  </td>
+                  <td>
+                    {g.status === "active" && canRevoke ? (
+                      <button className="danger" onClick={() => revoke(g.id)}>Force revoke</button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={4} className="lede" style={{ padding: 18 }}>No JIT windows yet.</td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

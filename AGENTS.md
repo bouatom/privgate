@@ -7,6 +7,8 @@
 - First login opens the dashboard (`/dashboard`)
 - Devices: enroll a PC, download `Install-PrivGate.ps1`, and inspect events per host
 - Windows broker: see `docs/windows-vm.md` and `agent/README.md`
+- Console installers (MSI/EXE, macOS pkg, Linux deb): `packaging/README.md`
+- Win10 broker smoke: `scripts/smoke-windows-client.ps1` after `bash scripts/smoke-agent-build.sh`
 
 ## Test
 - `npm test && npm run typecheck && npm run lint`

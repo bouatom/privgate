@@ -4,7 +4,7 @@ import { isResponse, requireAdmin } from "@/lib/http";
 import { queueNotification, requestNotifyEvent } from "@/lib/notify";
 
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin("Approver");
+  const auth = await requireAdmin("requests.deny");
   if (isResponse(auth)) return auth;
   const { id } = await ctx.params;
   const db = getDb();

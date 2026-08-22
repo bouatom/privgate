@@ -6,7 +6,7 @@ import { pollAzDeviceLogin } from "@/lib/az-bootstrap";
 import { pollNativeDeviceSetup, provisionFromAdminToken, publicDirectoryStatus } from "@/lib/entra";
 
 export async function GET(req: Request) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("integrations.manage");
   if (isResponse(auth)) return auth;
   const url = new URL(req.url);
   const state = url.searchParams.get("state");

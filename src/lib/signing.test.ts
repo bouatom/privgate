@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { signTicket, verifyTicket, hmacDevice, type ElevationTicket } from "./signing";
+import { deviceTicketKey, signTicket, verifyTicket, hmacDevice, type ElevationTicket } from "./signing";
 
 const ticket: ElevationTicket = {
   typ: "elevate",
@@ -31,5 +31,28 @@ describe("tickets", () => {
     const a = hmacDevice("secret", "1", "POST", "/api/agent/evaluate", "deadbeef");
     const b = hmacDevice("secret", "1", "post", "/api/agent/evaluate", "deadbeef");
     expect(a).toBe(b);
+  });
+});
+
+describe("per-device ticket keys", () => {
+  it("is deterministic for the same master key and device", () => {
+    expect(deviceTicketKey("master", "d1")).toBe(deviceTicketKey("master", "d1"));
+  });
+
+  it("never exposes the master key", () => {
+    expect(deviceTicketKey("master", "d1")).not.toContain("master");
+  });
+
+  it("gives each device a different key", () => {
+    expect(deviceTicketKey("master", "d1")).not.toBe(deviceTicketKey("master", "d2"));
+  });
+
+  it("changes when the master key rotates", () => {
+    expect(deviceTicketKey("master", "d1")).not.toBe(deviceTicketKey("rotated", "d1"));
+  });
+
+  it("keeps a ticket signed for one device from verifying on another", () => {
+    const packed = signTicket(ticket, deviceTicketKey("master", "d1"));
+    expect(() => verifyTicket(packed, deviceTicketKey("master", "d2"), 1_500)).toThrow(/signature/);
   });
 });

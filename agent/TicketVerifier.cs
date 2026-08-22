@@ -49,9 +49,7 @@ public static class TicketVerifier
         var parts = packed.Split('.');
         if (parts.Length != 2) throw new InvalidOperationException("malformed ticket");
         var expected = Hmac(key, parts[0]);
-        if (!CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(expected),
-                Encoding.UTF8.GetBytes(parts[1])))
+        if (!FixedTimeEquals(Encoding.UTF8.GetBytes(expected), Encoding.UTF8.GetBytes(parts[1])))
         {
             throw new InvalidOperationException("bad ticket signature");
         }
@@ -73,6 +71,17 @@ public static class TicketVerifier
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
         return ToBase64Url(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload)));
+    }
+
+    // CryptographicOperations.FixedTimeEquals is net5+; this is the standard
+    // constant-time byte comparison that avoids early-exit on mismatch.
+    static bool FixedTimeEquals(byte[] left, byte[] right)
+    {
+        if (left.Length != right.Length) return false;
+        int diff = 0;
+        for (int i = 0; i < left.Length; i++)
+            diff |= left[i] ^ right[i];
+        return diff == 0;
     }
 
     static string ToBase64Url(byte[] data) =>

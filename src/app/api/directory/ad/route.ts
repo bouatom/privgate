@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import { getAdSettings, getDb, saveAdSettings, appendAudit } from "@/lib/db";
-import { isResponse, requireAdmin } from "@/lib/http";
+import { isResponse, requireAdmin, requireAny } from "@/lib/http";
 import { probeHost } from "@/lib/smtp";
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAny(["integrations.view", "integrations.manage"]);
   if (isResponse(auth)) return auth;
   return NextResponse.json(getAdSettings(getDb()));
 }
 
 export async function PUT(req: Request) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("integrations.manage");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Record<string, unknown>;
   const db = getDb();
@@ -32,7 +32,7 @@ export async function PUT(req: Request) {
 }
 
 export async function POST() {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("integrations.manage");
   if (isResponse(auth)) return auth;
   const db = getDb();
   const settings = getAdSettings(db);

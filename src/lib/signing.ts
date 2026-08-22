@@ -1,6 +1,25 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 
 export type TicketType = "elevate" | "jit";
+
+const TICKET_HKDF_SALT = "privgate.ticket-key.v1";
+
+/**
+ * Every enrolled endpoint holds its ticket verification key on disk, so a single
+ * compromised PC must not be able to forge tickets for the rest of the fleet.
+ * Bind the key to the device id: the control plane signs with the derived key and
+ * the installer writes that same derived value into the endpoint's appsettings.json.
+ */
+export function deviceTicketKey(masterKey: string, deviceId: string): string {
+  const derived = hkdfSync(
+    "sha256",
+    Buffer.from(masterKey, "utf8"),
+    TICKET_HKDF_SALT,
+    `ticket:${deviceId}`,
+    32,
+  );
+  return Buffer.from(derived).toString("base64url");
+}
 
 export type ElevationTicket = {
   typ: TicketType;

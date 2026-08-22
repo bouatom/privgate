@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.privgate.console</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/privgate/bin/node</string>
+    <string>/opt/privgate/host.cjs</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/opt/privgate</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/PrivGate/console.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/PrivGate/console.err</string>
+</dict>
+</plist>

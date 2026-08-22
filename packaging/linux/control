@@ -1,0 +1,10 @@
+Package: privgate-console
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: PrivGate <security@localhost>
+Depends: adduser
+Installed-Size: PLACEHOLDER
+Description: PrivGate management console
+ Self-hosted privilege elevation control plane.

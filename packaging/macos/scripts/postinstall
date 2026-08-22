@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+mkdir -p "/Library/Application Support/PrivGate" /Library/Logs/PrivGate
+chmod 700 "/Library/Application Support/PrivGate"
+cp /opt/privgate/com.privgate.console.plist /Library/LaunchDaemons/com.privgate.console.plist
+launchctl bootout system/com.privgate.console 2>/dev/null || true
+launchctl bootstrap system /Library/LaunchDaemons/com.privgate.console.plist
+echo "PrivGate Console is installed. Open http://127.0.0.1:3000/ (ada@contoso.test in development)."

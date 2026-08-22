@@ -30,6 +30,43 @@ npm run lint
 - `docs/license-audit.md` — why this is custom vs Intune EPM
 - `docs/windows-vm.md` — broker lab
 
-Demo seed: allowlisted Contoso Widget MSI, pending Vendor Update.exe, lab device `dev-lab-01`.
+## Install the management console
 
-Production: set `AUTH_MODE=entra` and Azure AD app roles `PrivGate.Approver` / `PrivGate.PolicyAdmin` (token claim `Approver` / `PolicyAdmin`). Turn on Conditional Access MFA. Do not run this broker on a device that already has Microsoft EPM.
+Native installers (Windows EXE + MSI, macOS PKG, Linux DEB) are built with:
+
+```bash
+bash packaging/build.sh
+```
+
+See [packaging/README.md](packaging/README.md). Lab/dev can still use `npm run dev`.
+
+## Windows client (Elevation Broker)
+
+On this Mac:
+
+```bash
+bash scripts/smoke-agent-build.sh
+```
+
+On a Windows 10 PC after installing the device zip from **Devices**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\smoke-windows-client.ps1
+```
+
+
+## Production
+
+Set `AUTH_MODE=entra` and Azure AD app roles `PrivGate.Approver` / `PrivGate.PolicyAdmin` (token claim `Approver` / `PolicyAdmin`). Turn on Conditional Access MFA. Do not run this broker on a device that already has Microsoft EPM.
+
+The server refuses to start with the development secrets in place:
+
+```bash
+SESSION_SECRET=$(openssl rand -base64 48)
+TICKET_SIGNING_KEY=$(openssl rand -base64 48)
+DEVICE_SECRET_KEY=$(openssl rand -base64 48)
+```
+
+`npm start` binds loopback. See [docs/threat-model.md](docs/threat-model.md) for
+`PRIVGATE_PUBLIC_ORIGIN`, `PRIVGATE_TRUSTED_HOSTS`, `PRIVGATE_TRUST_PROXY`, and the
+documented residual risks.

@@ -3,7 +3,7 @@ import { deviceDetail, getDb } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin("devices.view");
   if (isResponse(auth)) return auth;
   const { id } = await ctx.params;
   const detail = deviceDetail(getDb(), id);

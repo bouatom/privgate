@@ -14,14 +14,12 @@ export async function POST(req: Request) {
     rawBody: raw,
   });
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
-  const body = JSON.parse(raw || "{}") as {
-    userSid?: string;
-    entraOid?: string;
-    filePath?: string;
-    fileHash?: string;
-    publisher?: string;
-    arguments?: string;
-  };
+  let body: { userSid?: string; entraOid?: string; filePath?: string; fileHash?: string; publisher?: string; arguments?: string };
+  try {
+    body = JSON.parse(raw || "{}");
+  } catch {
+    return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
+  }
   if (!body.userSid || !body.filePath || !body.fileHash || !body.publisher) {
     return NextResponse.json({ error: "userSid, filePath, fileHash, publisher required" }, { status: 400 });
   }

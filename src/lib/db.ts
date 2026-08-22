@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { decryptSecret, encryptSecret } from "./crypto-secret";
 import type { Policy, PolicyEffect } from "./policy";
+import { migratePortal } from "./portal";
+import { deviceSecretKey } from "./secrets";
 
 export type DirectoryUser = {
   id: string;
@@ -72,7 +74,17 @@ export function dbPath(): string {
 export function getDb(): DatabaseSync {
   const target = dbPath();
   if (globalDb.__privgateDb && globalDb.__privgateDbPath === target) {
-    return globalDb.__privgateDb;
+    // Verify the cached connection is still healthy (portal tables may not exist
+    // if the server was started before the migration was wired in).
+    try {
+      globalDb.__privgateDb.prepare("SELECT 1 FROM portal_users LIMIT 0").all();
+      return globalDb.__privgateDb;
+    } catch {
+      // Stale or missing tables — drop the cache and reconnect.
+      try { globalDb.__privgateDb.close(); } catch { /* ignore */ }
+      globalDb.__privgateDb = undefined;
+      globalDb.__privgateDbPath = undefined;
+    }
   }
   if (target !== ":memory:") {
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -230,6 +242,7 @@ function migrate(db: DatabaseSync) {
   ensureColumn(db, "requests", "risk_reasons", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "oauth_state", "kind", "TEXT NOT NULL DEFAULT 'pkce'");
   ensureColumn(db, "oauth_state", "meta", "TEXT NOT NULL DEFAULT '{}'");
+  migratePortal(db);
 }
 
 function ensureColumn(db: DatabaseSync, table: string, column: string, spec: string) {
@@ -247,8 +260,13 @@ function seed(db: DatabaseSync) {
   const staffId = "user-staff";
   const deviceId = "dev-lab-01";
   const now = new Date().toISOString();
-  const secretKey = process.env.DEVICE_SECRET_KEY || "dev-device-secret-key-32bytes!!";
-  const deviceSecret = "lab-device-secret-do-not-use-in-prod";
+  const secretKey = deviceSecretKey();
+  // The lab secret is published in agent/appsettings.json so the sample broker can
+  // talk to `npm run dev`. A production database must never be seeded with it.
+  const deviceSecret =
+    process.env.NODE_ENV === "production"
+      ? randomBytes(32).toString("base64url")
+      : "lab-device-secret-do-not-use-in-prod";
 
   db.prepare(
     `INSERT INTO users (id, display_name, upn, ad_sid, entra_oid, jit_eligible, disabled, roles_json)
@@ -705,6 +723,11 @@ export function createJit(
   return jitFromRow(row);
 }
 
+export function getJit(db: DatabaseSync, id: string): JitGrant | undefined {
+  const row = db.prepare("SELECT * FROM jit_grants WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+  return row ? jitFromRow(row) : undefined;
+}
+
 export function revokeJit(db: DatabaseSync, id: string, actor: string): JitGrant | undefined {
   const row = db.prepare("SELECT * FROM jit_grants WHERE id = ?").get(id) as Record<string, unknown> | undefined;
   if (!row) return undefined;
@@ -773,9 +796,11 @@ export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
         (SELECT COUNT(*) FROM jit_grants j WHERE j.device_id = d.id AND j.status = 'active') AS active_jit,
         (SELECT a.at FROM audit_events a
           WHERE a.actor = 'device:' || d.id OR a.target = d.id
+            OR a.target IN (SELECT r.id FROM requests r WHERE r.device_id = d.id)
           ORDER BY a.at DESC, a.rowid DESC LIMIT 1) AS last_event_at,
         (SELECT a.action FROM audit_events a
           WHERE a.actor = 'device:' || d.id OR a.target = d.id
+            OR a.target IN (SELECT r.id FROM requests r WHERE r.device_id = d.id)
           ORDER BY a.at DESC, a.rowid DESC LIMIT 1) AS last_action
        FROM devices d
        ORDER BY d.hostname`,
@@ -799,9 +824,10 @@ export function listAuditForDevice(db: DatabaseSync, deviceId: string): AuditEve
     .prepare(
       `SELECT * FROM audit_events
        WHERE actor = ? OR target = ? OR details LIKE ?
+         OR target IN (SELECT id FROM requests WHERE device_id = ?)
        ORDER BY at DESC LIMIT 200`,
     )
-    .all(actor, deviceId, `%${deviceId}%`) as Record<string, unknown>[];
+    .all(actor, deviceId, `%${deviceId}%`, deviceId) as Record<string, unknown>[];
   return rows.map((row) => ({
     id: String(row.id),
     at: String(row.at),
@@ -1052,7 +1078,7 @@ const notificationDefaults: NotificationSettings = {
 };
 
 function secretKey() {
-  return process.env.DEVICE_SECRET_KEY || "dev-device-secret-key-32bytes!!";
+  return deviceSecretKey();
 }
 
 export function getNotificationSettings(db: DatabaseSync): NotificationSettings {

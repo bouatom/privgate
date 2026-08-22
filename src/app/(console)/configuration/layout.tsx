@@ -2,21 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const items = [
-  ["Integrations", "/configuration/integrations"],
-  ["Notifications", "/configuration/notifications"],
-  ["Audit", "/configuration/audit"],
-] as const;
+import { useSession } from "../session-context";
+import { CONFIG_TABS, hasAnyPermission } from "@/lib/permissions";
 
 export default function ConfigurationLayout({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const session = useSession();
+  const tabs = CONFIG_TABS.filter((item) => hasAnyPermission(session?.permissions, item.anyOf));
+
   return (
     <>
       <div className="config-tabs">
-        {items.map(([label, href]) => (
-          <Link key={href} href={href} prefetch className={path.startsWith(href) ? "active" : ""}>
-            {label}
+        {tabs.map((item) => (
+          <Link key={item.href} href={item.href} prefetch className={path.startsWith(item.href) ? "active" : ""}>
+            {item.label}
           </Link>
         ))}
       </div>

@@ -15,9 +15,13 @@ public sealed class NamedPipeHost(Func<JsonElement, Task<string>> handler)
         {
             using var server = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
             await server.WaitForConnectionAsync(ct);
-            using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
-            using var writer = new StreamWriter(server, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
-            var line = await reader.ReadLineAsync(ct);
+            // bufferSize + leaveOpen overload exists on .NET Framework 4.5+.
+            // ReadLineAsync(CancellationToken) is .NET 7+ only; the no-CT overload
+            // is used here because each pipe connection is short-lived and the
+            // outer WaitForConnectionAsync already observes the CancellationToken.
+            using var reader = new StreamReader(server, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true);
+            using var writer = new StreamWriter(server, Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true };
+            var line = await reader.ReadLineAsync();
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
             {

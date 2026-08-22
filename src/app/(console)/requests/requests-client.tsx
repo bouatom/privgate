@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { displayPath, formatWhenShort } from "@/lib/format";
 
 export type RequestRow = {
   id: string;
@@ -13,6 +14,8 @@ export type RequestRow = {
   userName: string;
   hostname: string;
   requestedAt: string;
+  decidedAt: string | null;
+  decidedBy: string | null;
   riskLevel: string;
   riskReasons: string;
 };
@@ -26,9 +29,19 @@ function reasonsOf(row: RequestRow): string[] {
   }
 }
 
-export function RequestsClient({ rows }: { rows: RequestRow[] }) {
+export function RequestsClient({
+  rows,
+  canApprove,
+  canDeny,
+}: {
+  rows: RequestRow[];
+  canApprove: boolean;
+  canDeny: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [filter, setFilter] = useState<"pending" | "all">("pending");
   const [, startTransition] = useTransition();
 
   async function act(id: string, action: "approve" | "deny", row: RequestRow) {
@@ -37,13 +50,21 @@ export function RequestsClient({ rows }: { rows: RequestRow[] }) {
       if (!confirm(`${row.riskLevel.toUpperCase()} risk: ${why}\n\nApprove elevation anyway?`)) return;
     }
     setBusy(id);
-    await fetch(`/api/requests/${id}/${action}`, { method: "POST" });
+    setError("");
+    const res = await fetch(`/api/requests/${id}/${action}`, { method: "POST" });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error || `Could not ${action} this request.`);
+      setBusy(null);
+      return;
+    }
     startTransition(() => router.refresh());
     setBusy(null);
   }
 
   const pending = rows.filter((r) => r.status === "pending").length;
   const hot = rows.filter((r) => r.status === "pending" && (r.riskLevel === "high" || r.riskLevel === "critical")).length;
+  const shown = filter === "pending" ? rows.filter((r) => r.status === "pending") : rows;
 
   return (
     <>
@@ -70,11 +91,21 @@ export function RequestsClient({ rows }: { rows: RequestRow[] }) {
           <div className="v" style={{ fontSize: 16, marginTop: 12 }}>Hash + publisher, never filename alone</div>
         </div>
       </div>
+      <div className="filters">
+        <button className={`ghost ${filter === "pending" ? "active" : ""}`} type="button" onClick={() => setFilter("pending")}>
+          Pending queue
+        </button>
+        <button className={`ghost ${filter === "all" ? "active" : ""}`} type="button" onClick={() => setFilter("all")}>
+          All requests
+        </button>
+      </div>
+      {error ? <p className="err" style={{ marginBottom: 12 }}>{error}</p> : null}
       <div className="panel">
         <table>
           <thead>
             <tr>
               <th>Status</th>
+              <th>When</th>
               <th>Risk</th>
               <th>User / host</th>
               <th>Program</th>
@@ -82,41 +113,59 @@ export function RequestsClient({ rows }: { rows: RequestRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id}>
-                <td><span className={`pill ${row.status}`}>{row.status}</span></td>
-                <td>
-                  <span className={`pill risk-${row.riskLevel || "medium"}`}>{row.riskLevel || "medium"}</span>
-                  <ul className="risk-reasons">
-                    {reasonsOf(row).map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                </td>
-                <td>
-                  {row.userName}
-                  <div className="mono">{row.hostname}</div>
-                </td>
-                <td>
-                  <div>{row.filePath}</div>
-                  <div className="mono">{row.publisher}</div>
-                  <div className="mono">{row.fileHash.slice(0, 16)}…</div>
-                  {row.arguments ? <div className="mono">{row.arguments}</div> : null}
-                </td>
-                <td>
-                  {row.status === "pending" ? (
-                    <div className="row-actions">
-                      <button className="primary" disabled={busy === row.id} onClick={() => act(row.id, "approve", row)}>
-                        Approve
-                      </button>
-                      <button className="danger" disabled={busy === row.id} onClick={() => act(row.id, "deny", row)}>
-                        Deny
-                      </button>
-                    </div>
-                  ) : null}
+            {shown.length ? (
+              shown.map((row) => (
+                <tr key={row.id}>
+                  <td><span className={`pill ${row.status}`}>{row.status}</span></td>
+                  <td>
+                    <div>{formatWhenShort(row.requestedAt)}</div>
+                    {row.decidedBy ? <div className="mono">{row.status} by {row.decidedBy}</div> : null}
+                  </td>
+                  <td>
+                    <span className={`pill risk-${row.riskLevel || "medium"}`}>{row.riskLevel || "medium"}</span>
+                    <ul className="risk-reasons">
+                      {reasonsOf(row).map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td>
+                    {row.userName}
+                    <div className="mono">{row.hostname}</div>
+                  </td>
+                  <td>
+                    <div>{displayPath(row.filePath)}</div>
+                    <div className="mono">{row.publisher}</div>
+                    <div className="mono">{row.fileHash.slice(0, 16)}…</div>
+                    {row.arguments ? <div className="mono">{row.arguments}</div> : null}
+                  </td>
+                  <td>
+                    {row.status === "pending" && (canApprove || canDeny) ? (
+                      <div className="row-actions">
+                        {canApprove ? (
+                          <button className="primary" disabled={busy === row.id} onClick={() => act(row.id, "approve", row)}>
+                            Approve
+                          </button>
+                        ) : null}
+                        {canDeny ? (
+                          <button className="danger" disabled={busy === row.id} onClick={() => act(row.id, "deny", row)}>
+                            Deny
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={6} className="lede" style={{ padding: 18 }}>
+                  {filter === "pending"
+                    ? "No pending elevations. Switch to all requests to review history."
+                    : "No elevation requests yet."}
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>

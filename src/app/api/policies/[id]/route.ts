@@ -3,7 +3,7 @@ import { getDb, deletePolicy, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("policies.manage");
   if (isResponse(auth)) return auth;
   const { id } = await ctx.params;
   const db = getDb();

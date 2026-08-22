@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { can, getSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { displayPath } from "@/lib/format";
 import { dashboardPayload } from "@/lib/metrics";
+import { Forbidden } from "../forbidden";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getSession();
+  if (!can(session, "dashboard.view")) return <Forbidden />;
   const stats = dashboardPayload(getDb());
   const entra = stats.directory.entra.connected
     ? stats.directory.entra.tenantName || "Connected"
@@ -19,9 +24,11 @@ export default function DashboardPage() {
             before you grant local admin.
           </p>
         </div>
-        <Link className="primary" href="/requests" prefetch style={{ padding: "8px 12px", background: "var(--amber)", color: "#1a1208", display: "inline-block" }}>
-          Review requests
-        </Link>
+        {can(session, "requests.view") ? (
+          <Link className="primary" href="/requests" prefetch style={{ padding: "8px 12px", background: "var(--amber)", color: "var(--primary-ink)", display: "inline-block" }}>
+            Review requests
+          </Link>
+        ) : null}
       </div>
 
       <div className="grid cards four" style={{ marginBottom: 16 }}>
@@ -109,7 +116,7 @@ export default function DashboardPage() {
                   stats.topPrograms.map((row) => (
                     <tr key={row.filePath}>
                       <td>
-                        <div className="mono">{row.filePath}</div>
+                        <div className="mono">{displayPath(row.filePath)}</div>
                       </td>
                       <td>{row.count}</td>
                     </tr>
@@ -135,16 +142,22 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {stats.recent.map((row) => (
-                  <tr key={row.id}>
-                    <td><span className={`pill ${row.status}`}>{row.status}</span></td>
-                    <td><span className={`pill risk-${row.riskLevel}`}>{row.riskLevel}</span></td>
-                    <td>
-                      <div>{row.filePath}</div>
-                      <div className="mono">{row.userName} · {row.hostname}</div>
-                    </td>
+                {stats.recent.length ? (
+                  stats.recent.map((row) => (
+                    <tr key={row.id}>
+                      <td><span className={`pill ${row.status}`}>{row.status}</span></td>
+                      <td><span className={`pill risk-${row.riskLevel}`}>{row.riskLevel}</span></td>
+                      <td>
+                        <div>{displayPath(row.filePath)}</div>
+                        <div className="mono">{row.userName} · {row.hostname}</div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} className="lede" style={{ padding: 18 }}>No elevation activity yet.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

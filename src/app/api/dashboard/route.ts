@@ -4,7 +4,7 @@ import { isResponse, requireAdmin } from "@/lib/http";
 import { dashboardPayload } from "@/lib/metrics";
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin("dashboard.view");
   if (isResponse(auth)) return auth;
   return NextResponse.json(dashboardPayload(getDb()));
 }

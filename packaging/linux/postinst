@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+if ! getent group privgate >/dev/null; then
+  addgroup --system privgate
+fi
+if ! getent passwd privgate >/dev/null; then
+  adduser --system --ingroup privgate --home /var/lib/privgate --no-create-home --shell /usr/sbin/nologin privgate
+fi
+mkdir -p /var/lib/privgate /var/log/privgate
+chown -R privgate:privgate /var/lib/privgate /var/log/privgate
+chmod 700 /var/lib/privgate
+systemctl daemon-reload
+systemctl enable privgate.service
+systemctl restart privgate.service
+echo "PrivGate Console is running at http://127.0.0.1:3000/"

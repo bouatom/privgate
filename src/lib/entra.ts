@@ -13,6 +13,7 @@ import {
   upsertUsers,
   type DirectorySettings,
 } from "./db";
+import { deviceSecretKey } from "./secrets";
 import type { DatabaseSync } from "node:sqlite";
 import { setupRedirectUris } from "./origin";
 
@@ -264,7 +265,7 @@ async function clientCredentialToken(tenantId: string, clientId: string, secret:
 }
 
 function secretKey() {
-  return process.env.DEVICE_SECRET_KEY || "dev-device-secret-key-32bytes!!";
+  return deviceSecretKey();
 }
 
 async function assertGlobalAdmin(token: string) {

@@ -5,13 +5,13 @@ import { assertAllowPolicyInput, type Policy } from "@/lib/policy";
 import { isResponse, requireAdmin } from "@/lib/http";
 
 export async function GET() {
-  const auth = await requireAdmin();
+  const auth = await requireAdmin("policies.view");
   if (isResponse(auth)) return auth;
   return NextResponse.json(listPolicies(getDb()));
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin("PolicyAdmin");
+  const auth = await requireAdmin("policies.manage");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Partial<Policy>;
   const error = assertAllowPolicyInput({

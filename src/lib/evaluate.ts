@@ -13,7 +13,8 @@ import {
 import { evaluateElevation, type Decision } from "./policy";
 import { assessRisk, type RiskLevel } from "./risk";
 import { queueNotification, requestNotifyEvent } from "./notify";
-import { signTicket, type ElevationTicket } from "./signing";
+import { deviceTicketKey, signTicket, type ElevationTicket } from "./signing";
+import { ticketSigningKey } from "./secrets";
 import type { DatabaseSync } from "node:sqlite";
 
 export type EvaluateBody = {
@@ -25,8 +26,12 @@ export type EvaluateBody = {
   arguments?: string;
 };
 
-export function ticketKey(): string {
-  return process.env.TICKET_SIGNING_KEY || "dev-only-ticket-hmac-key-change";
+/**
+ * Ticket signing key scoped to one enrolled device. The endpoint stores this
+ * derived value, so a key lifted off one PC cannot sign tickets for another.
+ */
+export function ticketKeyForDevice(deviceId: string): string {
+  return deviceTicketKey(ticketSigningKey(), deviceId);
 }
 
 export function evaluateForDevice(
@@ -102,7 +107,7 @@ export function evaluateForDevice(
     return {
       decision: "allow",
       reason: decision.reason,
-      ticket: signTicket(ticket, ticketKey()),
+      ticket: signTicket(ticket, ticketKeyForDevice(deviceId)),
       user,
       riskLevel: risk.level,
       riskReasons: risk.reasons,
@@ -174,7 +179,7 @@ export function approvedTicket(db: DatabaseSync, requestId: string) {
     exp: Math.floor(new Date(req.approvalExpiresAt ?? Date.now()).getTime() / 1000),
     nonce: randomUUID(),
   };
-  return signTicket(ticket, ticketKey());
+  return signTicket(ticket, ticketKeyForDevice(req.deviceId));
 }
 
 export function bodySha256(body: string): string {

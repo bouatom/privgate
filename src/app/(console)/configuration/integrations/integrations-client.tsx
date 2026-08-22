@@ -191,12 +191,27 @@ export function IntegrationsClient({
 
   async function importUsers(e: FormEvent) {
     e.preventDefault();
-    const usersPayload = JSON.parse(importJson) as unknown[];
-    await fetch("/api/users", {
+    setError("");
+    setMessage("");
+    let usersPayload: unknown[];
+    try {
+      const parsed = JSON.parse(importJson) as unknown;
+      if (!Array.isArray(parsed)) throw new Error("JSON must be an array of users.");
+      usersPayload = parsed;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid JSON.");
+      return;
+    }
+    const res = await fetch("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ users: usersPayload }),
     });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(body.error || "Could not import users.");
+      return;
+    }
     setMessage("Directory users upserted.");
     startTransition(() => router.refresh());
   }
