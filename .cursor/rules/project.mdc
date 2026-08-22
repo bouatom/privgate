@@ -1,0 +1,10 @@
+---
+description: Project conventions for this repo. Keep short.
+alwaysApply: true
+---
+
+# Project
+
+- Follow `AGENTS.md` in the repo root.
+- Run the listed test/lint command before claiming done.
+- Do not commit secrets. Commit only when the user asks.

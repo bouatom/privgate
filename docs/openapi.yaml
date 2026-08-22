@@ -1,0 +1,417 @@
+openapi: 3.0.3
+info:
+  title: PrivGate Control Plane
+  version: 0.1.0
+  description: Admin-controlled privilege elevation for hybrid AD / Entra users.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/auth/dev-login:
+    post:
+      summary: Development login (disabled when AUTH_MODE=entra)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "204": { description: Session cookie set }
+        "401": { description: Unknown user }
+  /api/auth/entra:
+    get:
+      summary: Start Entra ID authorization-code login
+      responses:
+        "302": { description: Redirect to Microsoft }
+  /api/auth/me:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200":
+          description: Current admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Admin"
+  /api/auth/logout:
+    post:
+      responses:
+        "204": { description: Cookie cleared }
+  /api/dashboard:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Approval and directory metrics }
+  /api/notifications:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Notification settings (no SMTP password) }
+    put:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Saved }
+    post:
+      summary: Send a test notification
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Sent }
+  /api/directory/ad:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: AD LDAP settings (no bind password) }
+    put:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Saved }
+    post:
+      summary: TCP/TLS probe of the domain controller
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Reachable }
+  /api/policies:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Policy" }
+    post:
+      security: [{ session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PolicyInput" }
+      responses:
+        "201": { description: Created }
+  /api/policies/{id}:
+    delete:
+      security: [{ session: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Deleted }
+  /api/requests:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ElevationRequest" }
+  /api/requests/{id}/approve:
+    post:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: One-shot ticket issued }
+  /api/requests/{id}/deny:
+    post:
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Denied }
+  /api/jit:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/JitGrant" }
+    post:
+      security: [{ session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, deviceId, durationMinutes, reason]
+              properties:
+                userId: { type: string }
+                deviceId: { type: string }
+                durationMinutes: { type: integer, minimum: 15, maximum: 60 }
+                reason: { type: string }
+      responses:
+        "201": { description: Grant + device revoke payload }
+  /api/jit/{id}/revoke:
+    post:
+      security: [{ session: [] }]
+      responses:
+        "204": { description: Revoked }
+  /api/users:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DirectoryUser" }
+    post:
+      summary: Import or upsert directory users (AD/Entra sync payload)
+      security: [{ session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                users:
+                  type: array
+                  items: { $ref: "#/components/schemas/DirectoryUserInput" }
+      responses:
+        "200": { description: Upserted }
+  /api/directory:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Entra connection status (no secrets) }
+    post:
+      summary: Sync users and groups from Entra ID
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Sync counts }
+  /api/groups:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Synced security groups }
+  /api/setup/entra/start:
+    post:
+      summary: Start Global Admin Entra setup (device code or redirect)
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Device-code prompt, redirect URL, or already connected }
+  /api/setup/entra/callback:
+    get:
+      summary: OAuth callback that creates the PrivGate Graph application
+      responses:
+        "302": { description: Redirect to Users }
+  /api/setup/entra/device:
+    get:
+      summary: Poll device-code setup until the directory app is created
+      security: [{ session: [] }]
+      parameters:
+        - in: query
+          name: state
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: pending, connected, or error }
+  /api/users/{id}:
+    patch:
+      security: [{ session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jitEligible: { type: boolean }
+                disabled: { type: boolean }
+      responses:
+        "200": { description: Updated }
+  /api/audit:
+    get:
+      security: [{ session: [] }]
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditEvent" }
+  /api/devices:
+    get:
+      security: [{ session: [] }]
+      responses:
+        "200": { description: Device list }
+    post:
+      summary: Enroll a device; secret returned once
+      security: [{ session: [] }]
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  secret: { type: string }
+  /api/devices/{id}:
+    get:
+      security: [{ session: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Device events, requests, and JIT grants }
+  /api/devices/{id}/installer:
+    get:
+      summary: ZIP of Install-PrivGate.ps1, appsettings, and agent source
+      security: [{ session: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: apiBase
+          schema: { type: string }
+      responses:
+        "200":
+          description: application/zip installer
+  /api/agent/evaluate:
+    post:
+      security: [{ deviceHmac: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateInput" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvaluateResult" }
+  /api/agent/jit-state:
+    get:
+      security: [{ deviceHmac: [] }]
+      parameters:
+        - in: query
+          name: userSid
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Active JIT grant for this device+user, if any }
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: privgate_session
+    deviceHmac:
+      type: apiKey
+      in: header
+      name: X-Signature
+  schemas:
+    Admin:
+      type: object
+      properties:
+        email: { type: string }
+        name: { type: string }
+        roles:
+          type: array
+          items: { type: string, enum: [Approver, PolicyAdmin] }
+    Policy:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        effect: { type: string, enum: [allow, deny, require_approval] }
+        fileHash: { type: string }
+        publisher: { type: string }
+        fileName: { type: string }
+        argumentPattern: { type: string }
+        bindType: { type: string, enum: [all, user, group, device] }
+        bindId: { type: string }
+        childProcesses: { type: string, enum: [deny, allow] }
+        highRiskException: { type: boolean }
+    PolicyInput:
+      allOf:
+        - $ref: "#/components/schemas/Policy"
+        - type: object
+          required: [name, effect, fileHash, publisher]
+    ElevationRequest:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [pending, approved, denied, expired, executed] }
+        filePath: { type: string }
+        fileHash: { type: string }
+        publisher: { type: string }
+        arguments: { type: string }
+        riskLevel: { type: string, enum: [low, medium, high, critical] }
+        riskReasons: { type: string, description: JSON array of reason strings }
+    JitGrant:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [active, expired, revoked] }
+        durationMinutes: { type: integer }
+        reason: { type: string }
+        expiresAt: { type: string, format: date-time }
+    DirectoryUser:
+      type: object
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        userPrincipalName: { type: string }
+        adSid: { type: string }
+        entraOid: { type: string }
+        jitEligible: { type: boolean }
+        disabled: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+    DirectoryUserInput:
+      type: object
+      required: [displayName, userPrincipalName]
+      properties:
+        displayName: { type: string }
+        userPrincipalName: { type: string }
+        adSid: { type: string }
+        entraOid: { type: string }
+        jitEligible: { type: boolean }
+        roles:
+          type: array
+          items: { type: string }
+    AuditEvent:
+      type: object
+      properties:
+        id: { type: string }
+        at: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string }
+        target: { type: string }
+        details: { type: object }
+    EvaluateInput:
+      type: object
+      required: [userSid, filePath, fileHash, publisher]
+      properties:
+        userSid: { type: string }
+        entraOid: { type: string }
+        filePath: { type: string }
+        fileHash: { type: string }
+        publisher: { type: string }
+        arguments: { type: string }
+    EvaluateResult:
+      type: object
+      properties:
+        decision: { type: string, enum: [allow, deny, pending] }
+        reason: { type: string }
+        requestId: { type: string }
+        ticket: { type: string }
+        riskLevel: { type: string, enum: [low, medium, high, critical] }
+        riskReasons:
+          type: array
+          items: { type: string }
