@@ -4,7 +4,7 @@ Published binaries land on **GitHub Releases** after the Console installers work
 
 - Push to `main` (or **Run workflow**) updates the **nightly** pre-release. `v0.1.0` stays the latest stable until you tag.
 - Push a tag `vX.Y.Z` to publish that version as the latest release.
-- CI builds `PrivGate-Client.msi` once (Ubuntu `msitools` / `wixl`) and copies it into every console installer (`agent/dist`). After install, **Devices** brands that file with this console’s URL and enrollment token. The running console does not need `wixl`.
+- CI builds `PrivGate-Client.msi` once (Ubuntu packages `msitools` and `wixl` — they split on 24.04) and copies it into every console installer (`agent/dist`). After install, **Devices** brands that file with this console’s URL and enrollment token. The running console does not need `wixl`.
 
 This folder is how maintainers rebuild the same files locally.
 
@@ -16,6 +16,7 @@ On macOS, install WiX tooling only if you are packaging locally and do not alrea
 
 ```bash
 brew install msitools   # provides wixl
+# Ubuntu 24.04: sudo apt-get install -y msitools wixl
 bash packaging/build.sh
 ```
 

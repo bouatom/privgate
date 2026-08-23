@@ -106,10 +106,11 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install msitools (wixl)
+      - name: Install msitools and wixl
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends msitools
+          # Ubuntu splits the source: msitools is inspect/extract; wixl builds MSIs.
+          sudo apt-get install -y --no-install-recommends msitools wixl
           command -v wixl
           wixl --version
 
@@ -167,7 +168,7 @@ jobs:
         if: matrix.target == 'windows'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends nsis msitools
+          sudo apt-get install -y --no-install-recommends nsis msitools wixl
 
       - name: Install npm dependencies
         run: npm ci
