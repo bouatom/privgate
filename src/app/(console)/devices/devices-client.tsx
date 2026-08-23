@@ -149,7 +149,10 @@ export function DevicesClient({
           >
             <span className="k">PowerShell</span>
             <h2>Deployment script</h2>
-            <p>Imaging, psexec, or a scheduled task. One <span className="mono">.ps1</span> file — not a zip.</p>
+            <p>
+              Imaging, psexec, or a scheduled task. One <span className="mono">.ps1</span> file — not a zip.
+              After install, <strong>PrivGate Client</strong> appears in Apps &amp; Features.
+            </p>
           </button>
         </div>
         <p className="lede deploy-url">
@@ -160,6 +163,16 @@ export function DevicesClient({
           <p className="lede" style={{ fontSize: 13 }}>
             Silent install for Intune / SCCM / NinjaOne:{" "}
             <span className="mono">msiexec /i PrivGate-Client.msi /qn /norestart</span>
+            . Uninstall from Apps &amp; Features or{" "}
+            <span className="mono">msiexec /x {"{ProductCode}"} /qn</span>.
+          </p>
+        ) : null}
+        {method === "script" ? (
+          <p className="lede" style={{ fontSize: 13 }}>
+            After install, uninstall from Apps &amp; Features (<span className="mono">PrivGate Client</span>
+            ) or elevated{" "}
+            <span className="mono">C:\Program Files\PrivGate\Uninstall-PrivGate.ps1</span>. Scripts
+            downloaded before this change have no Apps entry — use the commands in the Windows VM lab doc.
           </p>
         ) : null}
         {error ? <p className="err">{error}</p> : null}

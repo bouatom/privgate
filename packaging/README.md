@@ -72,7 +72,7 @@ msiexec /i PrivGate-Client.msi /qn /norestart
 
 The WiX source also accepts PUBLIC properties `APABASE` and `ENROLLMENTTOKEN`. Devices slot-patch is enough for the common case.
 
-PowerShell (`Install-PrivGate.ps1`) stays as the imaging-script fallback.
+PowerShell (`Install-PrivGate.ps1`) is the imaging-script fallback. After install it writes **PrivGate Client** into Apps & Features and `C:\Program Files\PrivGate\Uninstall-PrivGate.ps1`. Quiet: that script with `-Quiet`. Older script-only installs have no Apps entry; stop/delete `PrivGateBroker` and remove `C:\Program Files\PrivGate` plus `HKLM\SOFTWARE\PrivGate`.
 
 ## Windows 10 — endpoint broker smoke
 

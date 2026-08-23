@@ -2,6 +2,7 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 import type { ZipEntry } from "./zip";
+import { registerArpSnippet, uninstallScript } from "./client-uninstall";
 
 export function safeApiBase(raw: string | undefined, origin: string): string {
   const fallback = origin.replace(/\/$/, "");
@@ -103,29 +104,18 @@ try {
 }
 
 $helper = Join-Path $InstallDir "PrivGate.Helper.exe"
+Copy-Item (Join-Path $Root "Uninstall-PrivGate.ps1") (Join-Path $InstallDir "Uninstall-PrivGate.ps1") -Force
+${registerArpSnippet()}
 Write-Host "PrivGate is installed."
 Write-Host "Broker service: PrivGateBroker"
+Write-Host "Uninstall from Apps & Features (PrivGate Client) or Uninstall-PrivGate.ps1."
 if (Test-Path $helper) {
   Write-Host "Standard user elevate: & '$helper' --elevate <path-to-file>"
 }
 `;
 }
 
-export function uninstallScript(): string {
-  return `#Requires -RunAsAdministrator
-$ErrorActionPreference = "Stop"
-$svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
-if ($svc) {
-  Stop-Service PrivGateBroker -Force -ErrorAction SilentlyContinue
-  sc.exe delete PrivGateBroker | Out-Null
-}
-$InstallDir = Join-Path $env:ProgramFiles "PrivGate"
-if (Test-Path $InstallDir) {
-  Remove-Item $InstallDir -Recurse -Force
-}
-Write-Host "PrivGate broker removed."
-`;
-}
+export { uninstallScript };
 
 export function installerReadme(hostname: string, apiBase: string): string {
   return `PrivGate device installer
@@ -167,7 +157,7 @@ Standard users elevate with:
 
   & "C:\\Program Files\\PrivGate\\PrivGate.Helper.exe" --elevate "C:\\path\\app.exe"
 
-Uninstall: Uninstall-PrivGate.ps1 (elevated).
+Uninstall: Apps & Features (PrivGate Client), or Uninstall-PrivGate.ps1 (elevated).
 `;
 }
 

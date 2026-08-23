@@ -36,7 +36,14 @@ The Elevation Broker is a Windows SYSTEM service. This Mac cannot run it.
    ```
 
    Intune: line-of-business MSI, required, 64-bit. Detection = UpgradeCode `b4d9f2c1-8e3a-4d02-af5b-2c3d4e5f6071` or ARP name **PrivGate Client**. Uninstall: `msiexec /x {ProductCode} /qn` or Apps & Features. Optional PUBLIC properties `APABASE` and `ENROLLMENTTOKEN` exist in the WiX; Devices slot-patch is enough for the common case.
-4. On the VM, run `Install-PrivGate.ps1` from an **elevated** PowerShell if you used the script instead of the MSI.
+4. On the VM, run `Install-PrivGate.ps1` from an **elevated** PowerShell if you used the script instead of the MSI. After that, **PrivGate Client** appears in Apps & Features. Uninstall there, or run `C:\Program Files\PrivGate\Uninstall-PrivGate.ps1` elevated. If this PC was enrolled with an older script (no Apps entry):
+
+   ```powershell
+   Stop-Service PrivGateBroker -Force -ErrorAction SilentlyContinue
+   sc.exe delete PrivGateBroker
+   Remove-Item "$env:ProgramFiles\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
+   Remove-Item "HKLM:\SOFTWARE\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
+   ```
 5. As the standard user, run `PrivGate.Helper.exe --elevate "C:\path\app.exe"`.
 6. Double-click `PrivGate.Agent.exe` for a tray status window (connection, last error, recent elevation requests). If the **PrivGateBroker** service is already running, that window attaches to it instead of starting a second broker. `--console` still runs in a terminal.
 

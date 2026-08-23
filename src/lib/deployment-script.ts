@@ -8,6 +8,7 @@ import {
   clientBinaryPath,
   listClientBinaries,
 } from "./client-binaries";
+import { embedUninstallFileSnippet, registerArpSnippet } from "./client-uninstall";
 
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -61,6 +62,8 @@ ${map}
 foreach ($name in $Files.Keys) {
   [IO.File]::WriteAllBytes((Join-Path $InstallDir $name), [Convert]::FromBase64String($Files[$name]))
 }
+${embedUninstallFileSnippet()}
+${registerArpSnippet()}
 
 $settings = @{
   ApiBase = $ApiBase
@@ -100,6 +103,7 @@ try {
 }
 
 Write-Host "PrivGate client installed. This PC will appear on the console as $env:COMPUTERNAME."
+Write-Host "Uninstall from Apps & Features (PrivGate Client) or C:\\Program Files\\PrivGate\\Uninstall-PrivGate.ps1."
 $helper = Join-Path $InstallDir ${psQuote(HELPER_EXE)}
 if (Test-Path $helper) {
   Write-Host "Standard user elevate: & '$helper' --elevate <path-to-file>"

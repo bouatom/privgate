@@ -7,6 +7,7 @@ import { buildClientMsi, clientMsiAvailable } from "./client-msi";
 import { API_BASE_SLOT, TOKEN_SLOT, fitSlot, patchMsiSlots } from "./client-msi-slots";
 import { deploymentScript } from "./deployment-script";
 import { buildInstallerEntries, installScript } from "./device-installer";
+import { uninstallScript } from "./client-uninstall";
 import { enrollmentToken } from "./enrollment";
 
 const AGENT = "PrivGate.Agent.exe";
@@ -92,6 +93,28 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(script).toContain(AGENT_CONFIG);
     expect(script).toContain("System.Runtime.CompilerServices.Unsafe");
     expect(script).toMatch(/Get-ChildItem \$Root -File/);
+  });
+
+  it("script and zip installs register Apps & Features and ship Uninstall-PrivGate.ps1", () => {
+    stageClient();
+    const deploy = deploymentScript("http://192.168.1.10:3001", "tok");
+    expect(deploy).toContain("Uninstall\\PrivGateClient");
+    expect(deploy).toContain("PrivGate Client");
+    expect(deploy).toContain("Uninstall-PrivGate.ps1");
+    expect(deploy).toContain("QuietUninstallString");
+    expect(deploy).toContain("sc.exe delete PrivGateBroker");
+
+    const zipInstall = installScript();
+    expect(zipInstall).toContain("Uninstall\\PrivGateClient");
+    expect(zipInstall).toContain("Uninstall-PrivGate.ps1");
+
+    const uninstall = uninstallScript();
+    expect(uninstall).toContain("PrivGateBroker");
+    expect(uninstall).toContain("SOFTWARE\\PrivGate");
+    expect(uninstall).toContain("Uninstall\\PrivGateClient");
+    expect(uninstall).toContain("ProgramFiles");
+    expect(uninstall).toContain("ProgramData");
+    expect(uninstall).not.toContain("/api/");
   });
 
   it("refuses a device zip whose published exe.config lacks the Unsafe redirect", () => {
