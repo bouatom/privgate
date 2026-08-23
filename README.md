@@ -6,6 +6,8 @@ PrivGate is self-hosted privilege elevation for organizations that live in **hyb
 
 UAC stays on. Admin passwords never live on the PC. There is no kernel hook and no `runas /savecred`.
 
+**[Documentation](docs/index.md)** — install the console, enroll Windows PCs, production settings.
+
 ## Why teams use it
 
 - **One console** for hybrid-joined and Entra-joined Windows PCs — not a tenant-wide local-admin blast.
@@ -44,4 +46,4 @@ Supported endpoints: Windows 7 SP1 through 11, and Server 2008 R2 through 2025. 
 
 Turn on Entra sign-in (`AUTH_MODE=entra`), Conditional Access MFA, and secrets of at least 32 characters. After rotating ticket or device keys, re-download the installer for every enrolled host.
 
-Operator notes: [docs/threat-model.md](docs/threat-model.md).
+Operator notes: [Documentation](docs/index.md) · [Threat model](docs/threat-model.md).

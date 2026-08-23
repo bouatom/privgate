@@ -1,0 +1,8 @@
+title: PrivGate
+description: Keep every user standard. Self-hosted privilege elevation for hybrid Active Directory and Entra ID.
+theme: jekyll-theme-cayman
+exclude:
+  - nexus
+  - SPEC.md
+  - license-audit.md
+  - openapi.yaml
