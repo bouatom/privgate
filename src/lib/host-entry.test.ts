@@ -34,6 +34,13 @@ describe("packaged host.cjs", () => {
     expect(source).toContain('require("./startup-validation.cjs")');
   });
 
+  it("starts Next from standalone files instead of require('next')", () => {
+    const source = readFileSync(path.join(PACKAGING, "listen.cjs"), "utf8");
+    expect(source).not.toMatch(/require\.resolve\(["']next["']/);
+    expect(source).toContain("__NEXT_PRIVATE_STANDALONE_CONFIG");
+    expect(source).toContain("getRequestHandlers");
+  });
+
   it("starts past secret validation in an installer-shaped directory", () => {
     const app = stageHost();
     const data = tempDir();

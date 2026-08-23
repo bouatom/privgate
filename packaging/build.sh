@@ -6,7 +6,7 @@ if [[ -f "$ROOT/scripts/dotnet-env.sh" ]]; then
   source "$ROOT/scripts/dotnet-env.sh"
 fi
 
-VERSION="${PRIVGATE_VERSION:-0.2.0}"
+VERSION="${PRIVGATE_VERSION:-0.2.1}"
 NODE_VERSION="${PRIVGATE_NODE_VERSION:-22.15.1}"
 CACHE="$ROOT/.tools/cache"
 STAGE="$ROOT/dist/stage"
@@ -67,6 +67,49 @@ assemble_app() {
   copy_if "$ROOT/packaging/startup-validation.cjs" "$dest/startup-validation.cjs"
 }
 
+smoke_packaged_host() {
+  local dest="$1"
+  log "Smoke packaged host.cjs"
+  local data="$STAGE/smoke-data"
+  local logf="$STAGE/smoke-host.log"
+  local web=18223
+  local agent=18224
+  rm -rf "$data"
+  mkdir -p "$data"
+  (
+    cd "$dest"
+    PRIVGATE_DATA_DIR="$data" PRIVGATE_BIND=127.0.0.1 PRIVGATE_WEB_PORT="$web" PRIVGATE_AGENT_PORT="$agent" \
+      node "$dest/host.cjs"
+  ) >"$logf" 2>&1 &
+  local pid=$!
+  local i
+  for i in $(seq 1 25); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "packaged host.cjs exited before it was ready:" >&2
+      cat "$logf" >&2
+      exit 1
+    fi
+    if grep -q "PrivGate console" "$logf"; then
+      local code
+      code="$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:${web}/setup" || true)"
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      if [[ "$code" != "200" ]]; then
+        echo "packaged /setup returned HTTP ${code}" >&2
+        cat "$logf" >&2
+        exit 1
+      fi
+      return 0
+    fi
+    sleep 1
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  echo "packaged host.cjs did not log ready:" >&2
+  cat "$logf" >&2
+  exit 1
+}
+
 if [[ "${PRIVGATE_SKIP_APP_BUILD:-}" != "1" ]]; then
   log "Next.js production build"
   need node
@@ -93,6 +136,7 @@ if want windows; then
   rm -rf "$STAGE/win"
   unzip -q -o "$WIN_NODE_ZIP" -d "$STAGE/win-node"
   assemble_app "$STAGE/win"
+  smoke_packaged_host "$STAGE/win"
   cp "$STAGE/win-node/node-v${NODE_VERSION}-win-x64/node.exe" "$STAGE/win/node.exe"
   rm -rf "$STAGE/win-node"
   cp "$CACHE/WinSW-x64.exe" "$STAGE/win/PrivGateConsole.exe"
