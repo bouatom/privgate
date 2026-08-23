@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdSettings, getDb, saveAdSettings, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin, requireAny } from "@/lib/http";
 import { probeHost } from "@/lib/smtp";
+import { auditConfigChange, auditConfigAccess } from "@/lib/audit-helpers";
 
 export async function GET() {
   const auth = await requireAny(["integrations.view", "integrations.manage"]);
@@ -14,20 +15,21 @@ export async function PUT(req: Request) {
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Record<string, unknown>;
   const db = getDb();
-  saveAdSettings(
-    db,
-    {
-      host: String(body.host || "").trim(),
-      port: Number(body.port || 636),
-      useTls: body.useTls !== false,
-      bindDn: String(body.bindDn || "").trim(),
-      baseDn: String(body.baseDn || "").trim(),
-      userFilter: String(body.userFilter || ""),
-      password: body.password ? String(body.password) : undefined,
-    },
-    auth.session.email,
-  );
-  appendAudit(db, auth.session.email, "ad.save", "directory", { host: String(body.host || "") });
+  const oldSettings = getAdSettings(db);
+  const newSettings = {
+    host: String(body.host || "").trim(),
+    port: Number(body.port || 636),
+    useTls: body.useTls !== false,
+    bindDn: String(body.bindDn || "").trim(),
+    baseDn: String(body.baseDn || "").trim(),
+    userFilter: String(body.userFilter || ""),
+    password: body.password ? String(body.password) : undefined,
+  };
+  saveAdSettings(db, newSettings, auth.session.email);
+  
+  // Audit configuration change with diff
+  auditConfigChange(db, auth.session.email, "ad", "directory", oldSettings, newSettings);
+  
   return NextResponse.json(getAdSettings(getDb()));
 }
 
@@ -42,11 +44,18 @@ export async function POST() {
   try {
     await probeHost(settings.host, settings.port, settings.useTls);
     saveAdSettings(db, { lastTestedAt: new Date().toISOString(), lastError: "" }, auth.session.email);
-    appendAudit(db, auth.session.email, "ad.test", settings.host, { ok: true });
+    
+    // Audit successful connection test
+    auditConfigAccess(db, auth.session.email, "ad.test", settings.host, { ok: true });
+    
     return NextResponse.json({ ok: true, ...getAdSettings(db) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Connection failed";
     saveAdSettings(db, { lastTestedAt: new Date().toISOString(), lastError: message }, auth.session.email);
+    
+    // Audit failed connection test
+    auditConfigAccess(db, auth.session.email, "ad.test", settings.host, { ok: false, error: message });
+    
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

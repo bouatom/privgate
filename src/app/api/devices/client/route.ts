@@ -8,9 +8,9 @@ import {
   buildClientMsi,
   clientBinariesReady,
   clientMsiAvailable,
-  deploymentScript,
   safeApiBase,
 } from "@/lib/client-package";
+import { signDeploymentArtifact } from "@/lib/deployment-signing";
 
 export async function GET(req: Request) {
   const auth = await requireAdmin("devices.enroll");
@@ -30,24 +30,61 @@ export async function GET(req: Request) {
   }
 
   if (format === "script") {
+    const { deploymentScript } = await import("@/lib/client-package");
+    const script = deploymentScript(apiBase, enrollmentToken());
+    const signature = signDeploymentArtifact(script, process.env);
+
     appendAudit(db, auth.session.email, "device.client-script", "fleet", { apiBase });
-    return new NextResponse(deploymentScript(apiBase, enrollmentToken()), {
-      headers: {
-        "content-type": "text/plain; charset=utf-8",
-        "content-disposition": 'attachment; filename="Install-PrivGate.ps1"',
-        "cache-control": "no-store",
+    return new NextResponse(
+      script +
+        `
+# PrivGate Script Signature (Ed25519 base64):
+# ${signature}
+`,
+      {
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "content-disposition": 'attachment; filename="Install-PrivGate.ps1"',
+          "cache-control": "no-store",
+        },
       },
-    });
+    );
   }
 
   if (format === "msi") {
     try {
       const msi = buildClientMsi(apiBase);
+      const signature = signDeploymentArtifact(msi, process.env);
+
       appendAudit(db, auth.session.email, "device.client-msi", "fleet", { apiBase });
+
+      // Return MSI with signature in response header
       return new NextResponse(new Uint8Array(msi), {
         headers: {
           "content-type": "application/x-msi",
           "content-disposition": 'attachment; filename="PrivGate-Client.msi"',
+          "cache-control": "no-store",
+          "x-privgate-signature": signature,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not build the MSI";
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+  }
+
+  if (format === "msi-signature") {
+    try {
+      const msi = buildClientMsi(apiBase);
+      const signature = signDeploymentArtifact(msi, process.env);
+
+      appendAudit(db, auth.session.email, "device.client-msi-signature", "fleet", { apiBase });
+
+      // Return signature as separate file
+      return new NextResponse(signature, {
+        headers: {
+          "content-type": "text/plain",
+          "content-disposition": 'attachment; filename="PrivGate-Client.msi.sig"',
           "cache-control": "no-store",
         },
       });
@@ -57,5 +94,5 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ error: "format must be script or msi" }, { status: 400 });
+  return NextResponse.json({ error: "format must be script, msi, or msi-signature" }, { status: 400 });
 }

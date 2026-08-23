@@ -19,6 +19,11 @@ function defaultDataDir() {
 const dataDir = defaultDataDir();
 applyInstallerConfig(dataDir, {});
 loadEnvIntoProcess(dataDir);
+
+// Validate startup secrets BEFORE binding to any port
+const { validateStartupSecretsOrExit } = require("../src/lib/startup-validation.ts");
+validateStartupSecretsOrExit(process.env, console);
+
 const cfg = parseListen(process.env);
 if (!process.env.PRIVGATE_PUBLIC_ORIGIN && !isWildcardBind(cfg.bind) && !isLoopbackBind(cfg.bind)) {
   process.env.PRIVGATE_PUBLIC_ORIGIN = `http://${cfg.bind}:${cfg.webPort}`;

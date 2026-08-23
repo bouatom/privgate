@@ -1,8 +1,11 @@
+using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace PrivGate.Agent;
 
@@ -12,6 +15,7 @@ public sealed class ApiClient
     readonly string deviceId;
     readonly string secret;
     readonly RealtimeChannel? realtime;
+    readonly Random random = new Random();
 
     public ApiClient(string apiBase, string deviceId, string secret, RealtimeChannel? realtime = null)
     {
@@ -59,9 +63,53 @@ public sealed class ApiClient
         req.Headers.TryAddWithoutValidation("X-Timestamp", ts);
         req.Headers.TryAddWithoutValidation("X-Signature", sig);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        var res = await http.SendAsync(req, ct);
-        var text = await res.Content.ReadAsStringAsync();
-        res.EnsureSuccessStatusCode();
-        return JsonSerializer.Deserialize<JsonElement>(text);
+
+        // Retry loop with exponential backoff and jitter
+        const int maxRetries = 3;
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                var res = await http.SendAsync(req, ct);
+
+                // Check for 429 (rate limit)
+                if ((int)res.StatusCode == 429)
+                {
+                    if (attempt < maxRetries)
+                    {
+                        // Parse Retry-After header (in seconds)
+                        int retryAfterSec = 1;
+                        if (res.Headers.RetryAfter?.Delta.HasValue == true)
+                        {
+                            retryAfterSec = (int)res.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                        }
+                        else if (int.TryParse(res.Headers.RetryAfter?.Comment, out var sec))
+                        {
+                            retryAfterSec = sec;
+                        }
+
+                        // Calculate backoff with jitter: (1.0 to 1.25) * retryAfterSec
+                        var jitterFactor = 1.0 + (random.NextDouble() * 0.25);
+                        var delayMs = (int)(retryAfterSec * 1000 * jitterFactor);
+                        await Task.Delay(delayMs, ct).ConfigureAwait(false);
+                        continue; // Retry
+                    }
+                    // All retries exhausted
+                    res.EnsureSuccessStatusCode();
+                }
+
+                var text = await res.Content.ReadAsStringAsync();
+                res.EnsureSuccessStatusCode();
+                return JsonSerializer.Deserialize<JsonElement>(text);
+            }
+            catch (HttpRequestException) when (attempt < maxRetries)
+            {
+                // Transient error, retry with exponential backoff
+                var delayMs = 100 * (int)Math.Pow(2, attempt); // 100ms, 200ms, 400ms
+                await Task.Delay(delayMs, ct).ConfigureAwait(false);
+            }
+        }
+
+        throw new HttpRequestException($"Request to {path} failed after {maxRetries} retries");
     }
 }
