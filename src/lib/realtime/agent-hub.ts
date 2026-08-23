@@ -6,6 +6,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import { verifyDeviceRequest } from "../device-auth";
 import { registerDeviceSocket, publishConsole } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
+import { validateAgentOrigin } from "../agent-origin";
+import { getDb, appendAudit } from "../db";
 
 const WS_PATH = "/api/agent/ws";
 const patched = globalThis as unknown as { __privgateWsPatched?: boolean };
@@ -56,6 +58,19 @@ function accept(req: IncomingMessage, ws: WebSocket) {
     ws.close(4401, auth.error);
     return;
   }
+
+  // Validate origin BEFORE accepting connection
+  const requestOrigin = header(req, "origin");
+  if (!validateAgentOrigin(requestOrigin || "", process.env)) {
+    const db = getDb();
+    console.error(`PrivGate WebSocket rejected: origin mismatch (got ${requestOrigin})`);
+    appendAudit(db, `device:${auth.deviceId}`, "agent.ws.origin-rejected", auth.deviceId, {
+      origin: requestOrigin,
+    });
+    ws.close(1008, "origin mismatch");
+    return;
+  }
+
   const unregister = registerDeviceSocket(auth.deviceId, {
     send: (data) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
