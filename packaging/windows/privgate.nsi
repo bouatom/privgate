@@ -5,7 +5,7 @@
 !include "x64.nsh"
 
 !ifndef PRIVGATE_VERSION
-  !define PRIVGATE_VERSION "0.1.0"
+  !define PRIVGATE_VERSION "0.2.0"
 !endif
 
 Name "PrivGate Console"

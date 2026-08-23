@@ -12,7 +12,7 @@ if (!stage || !out) {
 }
 
 function productVersion(raw) {
-  const cleaned = String(raw || process.env.PRIVGATE_VERSION || "0.1.0")
+  const cleaned = String(raw || process.env.PRIVGATE_VERSION || "0.2.0")
     .replace(/^v/i, "")
     .split(/[-+]/)[0];
   const parts = cleaned.split(".").map((part) => {

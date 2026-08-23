@@ -57,11 +57,11 @@ describe("rate-limit", () => {
       checkDeviceRateLimit(device1, 60000, 30);
     }
     // Device 1 should have 5 remaining
-    let result1 = checkDeviceRateLimit(device1, 60000, 30);
+    const result1 = checkDeviceRateLimit(device1, 60000, 30);
     expect((result1 as { ok: true; remaining: number }).remaining).toBe(4);
 
     // Device 2 should still have 29 remaining (fresh device)
-    let result2 = checkDeviceRateLimit(device2, 60000, 30);
+    const result2 = checkDeviceRateLimit(device2, 60000, 30);
     expect((result2 as { ok: true; remaining: number }).remaining).toBe(29);
   });
 

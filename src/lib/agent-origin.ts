@@ -1,4 +1,7 @@
-import type { Logger } from "node:console";
+type Log = {
+  warn: (message?: unknown, ...optional: unknown[]) => void;
+  error: (message?: unknown, ...optional: unknown[]) => void;
+};
 
 type Env = Record<string, string | undefined>;
 
@@ -14,7 +17,7 @@ type Env = Record<string, string | undefined>;
 export function validateAgentOrigin(
   requestOrigin: string,
   env: Env = process.env,
-  logger?: Logger,
+  logger?: Log,
 ): boolean {
   if (!requestOrigin) {
     // Browsers always send Origin header; absence suggests automated tool

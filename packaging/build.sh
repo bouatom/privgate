@@ -6,7 +6,7 @@ if [[ -f "$ROOT/scripts/dotnet-env.sh" ]]; then
   source "$ROOT/scripts/dotnet-env.sh"
 fi
 
-VERSION="${PRIVGATE_VERSION:-0.1.0}"
+VERSION="${PRIVGATE_VERSION:-0.2.0}"
 NODE_VERSION="${PRIVGATE_NODE_VERSION:-22.15.1}"
 CACHE="$ROOT/.tools/cache"
 STAGE="$ROOT/dist/stage"

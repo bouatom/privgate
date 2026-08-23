@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { consumeBootstrap } from "../bootstrap";
 import { migrate } from "./schema";
-import { seedDemo } from "./seed";
+import { purgeDemoFixtures, seedDemo } from "./seed";
 
 const globalDb = globalThis as unknown as { __privgateDb?: DatabaseSync; __privgateDbPath?: string };
 
@@ -36,17 +36,18 @@ export function getDb(): DatabaseSync {
   db.exec("PRAGMA foreign_keys = ON;");
   migrate(db);
   consumeBootstrap(db);
+  purgeDemoFixtures(db);
   globalDb.__privgateDb = db;
   globalDb.__privgateDbPath = target;
   return db;
 }
 
-export function resetDbForTests(target = ":memory:"): DatabaseSync {
+export function resetDbForTests(target = ":memory:", options: { seedDemo?: boolean } = {}): DatabaseSync {
   globalDb.__privgateDb?.close?.();
   globalDb.__privgateDb = undefined;
   globalDb.__privgateDbPath = undefined;
   process.env.PRIVGATE_DB = target;
   const db = getDb();
-  seedDemo(db);
+  if (options.seedDemo !== false) seedDemo(db);
   return db;
 }

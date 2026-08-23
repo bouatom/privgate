@@ -50,4 +50,4 @@ export {
 } from "./directory";
 export { getNotificationSecrets, getNotificationSettings, saveNotificationSettings } from "./notifications";
 export { getAdSettings, saveAdSettings } from "./ad";
-export { seedDemo } from "./seed";
+export { fixturesAllowed, purgeDemoFixtures, seedDemo } from "./seed";

@@ -132,7 +132,7 @@ function clientWxs(stage: string, files: string[]): string {
   const refs = files.map((_, i) => `        <ComponentRef Id="cmp${i + 1}" />`).join("\n");
   return `<?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="PrivGate Client" Language="1033" Version="0.1.0" Manufacturer="PrivGate" UpgradeCode="b4d9f2c1-8e3a-4d02-af5b-2c3d4e5f6071">
+  <Product Id="*" Name="PrivGate Client" Language="1033" Version="0.2.0" Manufacturer="PrivGate" UpgradeCode="b4d9f2c1-8e3a-4d02-af5b-2c3d4e5f6071">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
     <MediaTemplate EmbedCab="yes" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of PrivGate Client is already installed." />

@@ -1,4 +1,4 @@
-import type { Logger } from "node:console";
+type Log = Pick<Console, "error">;
 
 export interface ValidationResult {
   ok: boolean;
@@ -10,12 +10,10 @@ export interface ValidationResult {
  * Ensures all secrets meet minimum entropy and length requirements.
  *
  * @param env Environment variables to validate
- * @param logger Optional logger for diagnostics (defaults to console)
  * @returns { ok: true } if all secrets are valid, { ok: false; error: string } otherwise
  */
 export function validateStartupSecrets(
   env: Record<string, string | undefined> = process.env,
-  logger: Logger = console,
 ): ValidationResult {
   const MIN_SECRET_LENGTH = 32; // 32 bytes base64 ≈ 24 bytes raw = 192 bits entropy
 
@@ -26,7 +24,6 @@ export function validateStartupSecrets(
   ];
 
   for (const { name, value } of secrets) {
-    // Check if secret exists
     if (!value) {
       return {
         ok: false,
@@ -34,27 +31,25 @@ export function validateStartupSecrets(
       };
     }
 
-    // Check minimum length
-    if (value.length < MIN_SECRET_LENGTH) {
-      return {
-        ok: false,
-        error: `Secret '${name}' is too short (${value.length} bytes, minimum ${MIN_SECRET_LENGTH} required)`,
-      };
-    }
-
-    // Reject known placeholder values
     const lowerValue = value.toLowerCase();
     if (
       lowerValue === "development" ||
       lowerValue === "placeholder" ||
       lowerValue.includes("placeholder") ||
-      lowerValue.includes("TODO".toLowerCase()) ||
-      lowerValue === "change-me" ||
-      lowerValue === "changeme"
+      lowerValue.includes("todo") ||
+      lowerValue.includes("change-me") ||
+      lowerValue.includes("changeme")
     ) {
       return {
         ok: false,
         error: `Secret '${name}' contains a placeholder value. Replace with a randomly generated secret (at least ${MIN_SECRET_LENGTH} bytes, base64-encoded).`,
+      };
+    }
+
+    if (value.length < MIN_SECRET_LENGTH) {
+      return {
+        ok: false,
+        error: `Secret '${name}' is too short (${value.length} bytes, minimum ${MIN_SECRET_LENGTH} required)`,
       };
     }
 
@@ -81,9 +76,9 @@ export function validateStartupSecrets(
  */
 export function validateStartupSecretsOrExit(
   env: Record<string, string | undefined> = process.env,
-  logger: Logger = console,
+  logger: Log = console,
 ): boolean {
-  const result = validateStartupSecrets(env, logger);
+  const result = validateStartupSecrets(env);
   if (!result.ok) {
     logger.error(`PrivGate startup validation failed: ${result.error}`);
     process.exit(1);

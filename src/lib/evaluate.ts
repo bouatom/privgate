@@ -36,6 +36,13 @@ export function ticketKeyForDevice(deviceId: string): string {
   return deviceTicketKey(ticketSigningKey(), deviceId);
 }
 
+export function getJitStateForDevice(db: DatabaseSync, deviceId: string, userSid: string) {
+  const user = findUserBySid(db, userSid);
+  if (!user) return { active: false as const, grant: null, userSid };
+  const grant = activeJit(db, user.id, deviceId);
+  return { active: Boolean(grant), grant: grant ?? null, userSid: user.adSid || userSid };
+}
+
 export function evaluateForDevice(
   db: DatabaseSync,
   deviceId: string,

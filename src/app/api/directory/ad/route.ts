@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdSettings, getDb, saveAdSettings, appendAudit } from "@/lib/db";
+import { getAdSettings, getDb, saveAdSettings } from "@/lib/db";
 import { isResponse, requireAdmin, requireAny } from "@/lib/http";
 import { probeHost } from "@/lib/smtp";
 import { auditConfigChange, auditConfigAccess } from "@/lib/audit-helpers";

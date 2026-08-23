@@ -84,10 +84,8 @@ export function ensureSigningKeys(env: Record<string, string | undefined> = proc
  * @returns Base64-encoded signature
  */
 export function signData(data: Buffer | string, privateKey: string): string {
-  const sign = crypto.createSign("SHA256");
-  sign.update(data);
-  const signature = sign.sign({ key: privateKey, format: "pem", type: "pkcs8" });
-  return signature.toString("base64");
+  const payload = typeof data === "string" ? Buffer.from(data) : data;
+  return crypto.sign(null, payload, privateKey).toString("base64");
 }
 
 /**
@@ -99,10 +97,8 @@ export function signData(data: Buffer | string, privateKey: string): string {
  */
 export function verifySignature(data: Buffer | string, signature: string, publicKey: string): boolean {
   try {
-    const verify = crypto.createVerify("SHA256");
-    verify.update(data);
-    const sig = Buffer.from(signature, "base64");
-    return verify.verify({ key: publicKey, format: "pem", type: "spki" }, sig);
+    const payload = typeof data === "string" ? Buffer.from(data) : data;
+    return crypto.verify(null, payload, publicKey, Buffer.from(signature, "base64"));
   } catch {
     return false;
   }

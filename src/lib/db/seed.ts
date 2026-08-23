@@ -4,14 +4,31 @@ import { encryptSecret } from "../crypto-secret";
 import { deviceSecretKey } from "../secrets";
 import { appendAudit } from "./audit";
 
+const DEMO_UPNS = ["ada@contoso.test", "riley@contoso.test"] as const;
+const DEMO_USER_IDS = ["user-admin", "user-staff"] as const;
+const DEMO_DEVICE_ID = "dev-lab-01";
+const DEMO_DEVICE_HOST = "LAB-W11-01";
+const DEMO_POLICY_ID = "pol-widget";
+const DEMO_GROUP_ID = "g-helpdesk";
+const DEMO_REQUEST_IDS = ["req-pending-1", "req-approved-1", "req-denied-1"] as const;
+
+export function fixturesAllowed(env: NodeJS.Dict<string | undefined> = process.env): boolean {
+  if (env.PRIVGATE_ALLOW_FIXTURES === "0") return false;
+  if (env.PRIVGATE_ALLOW_FIXTURES === "1") return true;
+  return env.VITEST === "true" || env.NODE_ENV === "test";
+}
+
 /** Fixture data for unit tests only. Production databases start empty. */
-export function seedDemo(db: DatabaseSync) {
+export function seedDemo(db: DatabaseSync, env: NodeJS.Dict<string | undefined> = process.env) {
+  if (!fixturesAllowed(env)) {
+    throw new Error("Demo fixtures cannot be loaded in production");
+  }
   const count = db.prepare("SELECT COUNT(*) AS c FROM users").get() as { c: number };
   if (count.c > 0) return;
 
-  const adminId = "user-admin";
-  const staffId = "user-staff";
-  const deviceId = "dev-lab-01";
+  const adminId = DEMO_USER_IDS[0];
+  const staffId = DEMO_USER_IDS[1];
+  const deviceId = DEMO_DEVICE_ID;
   const now = new Date().toISOString();
   const secretKey = deviceSecretKey();
   const deviceSecret = "lab-device-secret-do-not-use-in-prod";
@@ -44,7 +61,7 @@ export function seedDemo(db: DatabaseSync) {
   );
   db.prepare(
     `INSERT INTO devices (id, hostname, join_type, secret_enc, enrolled_at) VALUES (?, ?, ?, ?, ?)`,
-  ).run(deviceId, "LAB-W11-01", "hybrid", encryptSecret(deviceSecret, secretKey), now);
+  ).run(deviceId, DEMO_DEVICE_HOST, "hybrid", encryptSecret(deviceSecret, secretKey), now);
 
   const allowHash = createHash("sha256").update("contoso-widget-msi").digest("hex");
   db.prepare(
@@ -139,4 +156,49 @@ export function seedDemo(db: DatabaseSync) {
 
   appendAudit(db, "system", "seed", "database", { note: "test fixture identities and one pending request" });
   appendAudit(db, `device:${deviceId}`, "device.enroll", deviceId, { hostname: "LAB-W11-01", seed: true });
+}
+
+/**
+ * Strip lab identities left behind by older builds that called seedDemo on
+ * first boot. Safe to run on every production open.
+ */
+export function purgeDemoFixtures(db: DatabaseSync, env: NodeJS.Dict<string | undefined> = process.env) {
+  if (fixturesAllowed(env)) return;
+
+  const userIn = DEMO_USER_IDS.map(() => "?").join(",");
+  const upnIn = DEMO_UPNS.map(() => "?").join(",");
+  const reqIn = DEMO_REQUEST_IDS.map(() => "?").join(",");
+  const before = db.prepare(`SELECT COUNT(*) AS c FROM users WHERE id IN (${userIn}) OR upn IN (${upnIn})`).get(
+    ...DEMO_USER_IDS,
+    ...DEMO_UPNS,
+  ) as { c: number };
+
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM group_members WHERE user_id IN (${userIn}) OR group_id = ?`).run(
+      ...DEMO_USER_IDS,
+      DEMO_GROUP_ID,
+    );
+    db.prepare(`DELETE FROM jit_grants WHERE user_id IN (${userIn}) OR device_id = ?`).run(
+      ...DEMO_USER_IDS,
+      DEMO_DEVICE_ID,
+    );
+    db.prepare(
+      `DELETE FROM requests WHERE id IN (${reqIn}) OR user_id IN (${userIn}) OR device_id = ?`,
+    ).run(...DEMO_REQUEST_IDS, ...DEMO_USER_IDS, DEMO_DEVICE_ID);
+    db.prepare("DELETE FROM devices WHERE id = ? OR hostname = ?").run(DEMO_DEVICE_ID, DEMO_DEVICE_HOST);
+    db.prepare("DELETE FROM policies WHERE id = ?").run(DEMO_POLICY_ID);
+    db.prepare(`DELETE FROM users WHERE id IN (${userIn}) OR upn IN (${upnIn})`).run(...DEMO_USER_IDS, ...DEMO_UPNS);
+    db.prepare("DELETE FROM groups WHERE id = ?").run(DEMO_GROUP_ID);
+    db.prepare("UPDATE notification_settings SET recipients = '' WHERE recipients = ?").run("ada@contoso.test");
+    db.prepare("DELETE FROM audit_events WHERE action = ? OR details LIKE ?").run("seed", "%test fixture%");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+
+  if (Number(before.c) > 0) {
+    appendAudit(db, "system", "seed.purge", "database", { note: "removed leftover demo identities" });
+  }
 }
