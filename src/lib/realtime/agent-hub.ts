@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { verifyDeviceRequest } from "../device-auth";
 import { registerDeviceSocket, publishConsole } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
-import { validateAgentOrigin } from "../agent-origin";
+import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
 
 const WS_PATH = "/api/agent/ws";
@@ -66,6 +66,7 @@ function accept(req: IncomingMessage, ws: WebSocket) {
     console.error(`PrivGate WebSocket rejected: origin mismatch (got ${requestOrigin})`);
     appendAudit(db, `device:${auth.deviceId}`, "agent.ws.origin-rejected", auth.deviceId, {
       origin: requestOrigin,
+      expected: expectedAgentOrigin(process.env),
     });
     ws.close(1008, "origin mismatch");
     return;

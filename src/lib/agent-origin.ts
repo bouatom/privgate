@@ -6,60 +6,55 @@ type Log = {
 type Env = Record<string, string | undefined>;
 
 /**
- * Validates that the WebSocket Origin header matches the configured agent origin.
- * Prevents origin-hijacking attacks (DNS rebinding, MITM origin spoofing).
+ * Origin the control plane expects on browser WebSockets.
+ * Native .NET ClientWebSocket does not send Origin at all.
+ */
+export function expectedAgentOrigin(env: Env = process.env, logger?: Log): string | null {
+  const explicit = (env.PRIVGATE_AGENT_ORIGIN || "").trim();
+  if (explicit) {
+    try {
+      return new URL(explicit).origin;
+    } catch {
+      logger?.error(`Invalid PRIVGATE_AGENT_ORIGIN: ${explicit}`);
+      return null;
+    }
+  }
+
+  const publicOrigin = (env.PRIVGATE_PUBLIC_ORIGIN || "").trim();
+  if (!publicOrigin) return null;
+  try {
+    const url = new URL(publicOrigin);
+    url.port = env.PRIVGATE_AGENT_PORT || "3001";
+    return url.origin;
+  } catch {
+    logger?.error(`Invalid PRIVGATE_PUBLIC_ORIGIN: ${publicOrigin}`);
+    return null;
+  }
+}
+
+/**
+ * HMAC already authenticated this upgrade. Origin is extra CSRF for browsers.
  *
- * @param requestOrigin Value from the `Origin` header (or empty string if absent)
- * @param env Environment variables (used to resolve PRIVGATE_AGENT_ORIGIN)
- * @param logger Optional logger for diagnostics
- * @returns true if origin is valid, false if rejected
+ * - Missing Origin: native agent — allow.
+ * - Origin present: must match expected when we can compute it.
+ * - Origin present but expected unknown (typical LAN): allow; HMAC is the gate.
  */
 export function validateAgentOrigin(
   requestOrigin: string,
   env: Env = process.env,
   logger?: Log,
 ): boolean {
-  if (!requestOrigin) {
-    // Browsers always send Origin header; absence suggests automated tool
-    // (not necessarily malicious, but log it)
-    logger?.warn("WebSocket upgrade missing Origin header");
-    return false;
+  if (!requestOrigin) return true;
+
+  const expected = expectedAgentOrigin(env, logger);
+  if (!expected) {
+    logger?.warn("WebSocket Origin present but PRIVGATE_AGENT_ORIGIN is unset; allowing HMAC agent");
+    return true;
   }
 
-  const explicit = (env.PRIVGATE_AGENT_ORIGIN || "").trim();
-  let expectedOrigin = "";
-
-  if (explicit) {
-    try {
-      expectedOrigin = new URL(explicit).origin;
-    } catch {
-      logger?.error(`Invalid PRIVGATE_AGENT_ORIGIN: ${explicit}`);
-      return false;
-    }
-  } else {
-    // Fallback: derive from PRIVGATE_PUBLIC_ORIGIN or compute from bind/port
-    const publicOrigin = (env.PRIVGATE_PUBLIC_ORIGIN || "").trim();
-    if (publicOrigin) {
-      try {
-        const url = new URL(publicOrigin);
-        const agentPort = env.PRIVGATE_AGENT_PORT || "3001";
-        url.port = agentPort;
-        expectedOrigin = url.origin;
-      } catch {
-        logger?.error(`Invalid PRIVGATE_PUBLIC_ORIGIN: ${publicOrigin}`);
-        return false;
-      }
-    } else {
-      // Cannot validate without explicit origin configuration
-      logger?.warn("WebSocket origin validation: PRIVGATE_AGENT_ORIGIN not configured, rejecting connection");
-      return false;
-    }
-  }
-
-  // Case-insensitive origin comparison (origins are scheme://host:port)
-  const matches = requestOrigin.toLowerCase() === expectedOrigin.toLowerCase();
+  const matches = requestOrigin.toLowerCase() === expected.toLowerCase();
   if (!matches) {
-    logger?.warn(`WebSocket origin mismatch: got ${requestOrigin}, expected ${expectedOrigin}`);
+    logger?.warn(`WebSocket origin mismatch: got ${requestOrigin}, expected ${expected}`);
   }
   return matches;
 }
