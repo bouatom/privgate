@@ -1,10 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { clientBinariesReady, clientBinaryDir } from "./client-binaries";
+import { PACKAGED_CLIENT_MSI, clientBinariesReady, clientBinaryDir, packagedClientMsiPath } from "./client-binaries";
+import { buildClientMsi, clientMsiAvailable } from "./client-msi";
 import { API_BASE_SLOT, TOKEN_SLOT, fitSlot, patchMsiSlots } from "./client-msi-slots";
 import { deploymentScript } from "./deployment-script";
+import { buildInstallerEntries, installScript } from "./device-installer";
+import { enrollmentToken } from "./enrollment";
 
 const AGENT = "PrivGate.Agent.exe";
 
@@ -18,11 +21,31 @@ describe("client payload discovery and deploy artifacts", () => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
+  const AGENT_CONFIG = "PrivGate.Agent.exe.config";
+  const MINIMAL_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" /></startup>
+  <runtime>
+    <assemblyBinding xmlns="urn:schemas-microsoft-com:asm.v1">
+      <dependentAssembly>
+        <assemblyIdentity name="System.Runtime.CompilerServices.Unsafe" publicKeyToken="b03f5f7f11d50a3a" culture="neutral" />
+        <bindingRedirect oldVersion="0.0.0.0-6.0.0.0" newVersion="6.0.0.0" />
+      </dependentAssembly>
+    </assemblyBinding>
+  </runtime>
+</configuration>`;
+
   function stageClient(): string {
     const dir = mkdtempSync(path.join(tmpdir(), "privgate-client-"));
     dirs.push(dir);
     writeFileSync(path.join(dir, AGENT), Buffer.from("fake-agent"));
     writeFileSync(path.join(dir, "PrivGate.Helper.exe"), Buffer.from("fake-helper"));
+    // The .exe.config must ship alongside the exe so the CLR can apply the
+    // System.Runtime.CompilerServices.Unsafe binding redirect at runtime.
+    // Without it, System.Text.Json 8.x throws TypeInitializationException on
+    // net48 because System.Memory 4.5.5 references Unsafe 4.0.4.1 while the
+    // NuGet DLL is 6.0.0.0.
+    writeFileSync(path.join(dir, AGENT_CONFIG), MINIMAL_CONFIG);
     process.env.PRIVGATE_CLIENT_DIR = dir;
     return dir;
   }
@@ -44,6 +67,70 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(script).toContain(AGENT);
     expect(script).not.toContain("/api/agent/bootstrap");
     expect(script).not.toMatch(/application\/zip|\.zip/);
+  });
+
+  it("embeds PrivGate.Agent.exe.config so binding redirects reach Windows", () => {
+    stageClient();
+    const script = deploymentScript("http://192.168.1.10:3001", "tok");
+    // The .exe.config must be in the payload; without it the CLR cannot find
+    // System.Runtime.CompilerServices.Unsafe 6.0.0.0 on net48 and the service
+    // throws TypeInitializationException before BrokerHost.RunAsync is reached.
+    expect(script).toContain(AGENT_CONFIG);
+  });
+
+  it("keeps the net48 Unsafe binding redirect in agent App.config", () => {
+    const agentCfg = readFileSync(path.resolve(__dirname, "../../agent/App.config"), "utf8");
+    const helperCfg = readFileSync(path.resolve(__dirname, "../../agent/helper/App.config"), "utf8");
+    for (const cfg of [agentCfg, helperCfg]) {
+      expect(cfg).toContain("System.Runtime.CompilerServices.Unsafe");
+      expect(cfg).toContain('newVersion="6.0.0.0"');
+    }
+  });
+
+  it("Install-PrivGate.ps1 copies and requires PrivGate.Agent.exe.config", () => {
+    const script = installScript();
+    expect(script).toContain(AGENT_CONFIG);
+    expect(script).toContain("System.Runtime.CompilerServices.Unsafe");
+    expect(script).toMatch(/Get-ChildItem \$Root -File/);
+  });
+
+  it("refuses a device zip whose published exe.config lacks the Unsafe redirect", () => {
+    const root = mkdtempSync(path.join(tmpdir(), "privgate-zip-cfg-"));
+    dirs.push(root);
+    mkdirSync(path.join(root, "dist"));
+    writeFileSync(path.join(root, "dist", AGENT), Buffer.from("fake-agent"));
+    writeFileSync(
+      path.join(root, "dist", AGENT_CONFIG),
+      `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" /></startup>
+</configuration>`,
+    );
+    expect(() =>
+      buildInstallerEntries({
+        hostname: "PC1",
+        deviceId: "d1",
+        deviceSecret: "secret",
+        apiBase: "http://console:3001",
+        ticketSigningKey: "key",
+        agentRoot: root,
+      }),
+    ).toThrow(/binding redirects/);
+  });
+
+  it("treats a stub exe.config as not ready", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "privgate-stub-cfg-"));
+    dirs.push(dir);
+    writeFileSync(path.join(dir, AGENT), Buffer.from("fake-agent"));
+    writeFileSync(
+      path.join(dir, AGENT_CONFIG),
+      `<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" /></startup>
+</configuration>`,
+    );
+    process.env.PRIVGATE_CLIENT_DIR = dir;
+    expect(clientBinariesReady()).toBe(false);
   });
 
   it("refuses to build a script when the Windows client is missing", () => {
@@ -71,5 +158,40 @@ describe("client payload discovery and deploy artifacts", () => {
     const cjs = readFileSync(path.resolve(__dirname, "../../packaging/windows/build-client-msi.cjs"), "utf8");
     expect(cjs).toContain("http://privgate-api-base.invalid/");
     expect(cjs).toContain("privgate-enrollment-token.");
+  });
+
+  it("treats MSI as available only when the packaged file exists", () => {
+    stageClient();
+    expect(packagedClientMsiPath()).toBeNull();
+    expect(clientMsiAvailable()).toBe(false);
+
+    const dir = process.env.PRIVGATE_CLIENT_DIR!;
+    writeFileSync(
+      path.join(dir, PACKAGED_CLIENT_MSI),
+      Buffer.concat([
+        Buffer.from("MSI"),
+        Buffer.from(API_BASE_SLOT, "utf16le"),
+        Buffer.from("::"),
+        Buffer.from(TOKEN_SLOT, "utf16le"),
+      ]),
+    );
+    expect(clientMsiAvailable()).toBe(true);
+    expect(packagedClientMsiPath()).toBe(path.join(path.resolve(dir), PACKAGED_CLIENT_MSI));
+  });
+
+  it("brands the packaged MSI without compiling WiX at runtime", () => {
+    const dir = stageClient();
+    writeFileSync(
+      path.join(dir, PACKAGED_CLIENT_MSI),
+      Buffer.concat([
+        Buffer.from("MSI"),
+        Buffer.from(API_BASE_SLOT, "utf16le"),
+        Buffer.from("::"),
+        Buffer.from(TOKEN_SLOT, "utf16le"),
+      ]),
+    );
+    const branded = buildClientMsi("http://10.0.2.25:3001");
+    expect(branded.includes(Buffer.from(fitSlot(API_BASE_SLOT, "http://10.0.2.25:3001"), "utf16le"))).toBe(true);
+    expect(branded.includes(Buffer.from(fitSlot(TOKEN_SLOT, enrollmentToken()), "utf16le"))).toBe(true);
   });
 });

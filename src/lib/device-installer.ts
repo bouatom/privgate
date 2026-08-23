@@ -79,6 +79,11 @@ if (Test-Path $prebuiltAgent) {
 
 $bin = Join-Path $InstallDir "PrivGate.Agent.exe"
 if (-not (Test-Path $bin)) { throw "PrivGate.Agent.exe was not produced." }
+$cfg = Join-Path $InstallDir "PrivGate.Agent.exe.config"
+if (-not (Test-Path $cfg)) { throw "PrivGate.Agent.exe.config was not installed. Binding redirects are required on .NET Framework 4.8." }
+if (-not (Select-String -Path $cfg -Pattern "System.Runtime.CompilerServices.Unsafe" -Quiet)) {
+  throw "PrivGate.Agent.exe.config is missing the System.Runtime.CompilerServices.Unsafe binding redirect."
+}
 
 $svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
 if ($svc) {
@@ -166,6 +171,18 @@ Uninstall: Uninstall-PrivGate.ps1 (elevated).
 `;
 }
 
+function requirePublishedBindingRedirects(entries: ZipEntry[], agentRoot: string) {
+  const publishedExe = path.join(agentRoot, "dist", "PrivGate.Agent.exe");
+  if (!fs.existsSync(publishedExe)) return;
+  const cfg = entries.find((e) => e.name === "PrivGate.Agent.exe.config");
+  const text = !cfg ? "" : Buffer.isBuffer(cfg.data) ? cfg.data.toString("utf8") : String(cfg.data);
+  if (!text.includes("System.Runtime.CompilerServices.Unsafe")) {
+    throw new Error(
+      "Published agent is missing binding redirects in PrivGate.Agent.exe.config. Rebuild the Windows client.",
+    );
+  }
+}
+
 export function buildInstallerEntries(args: {
   hostname: string;
   deviceId: string;
@@ -199,6 +216,7 @@ export function buildInstallerEntries(args: {
       entries.push({ name, data: fs.readFileSync(abs) });
     }
   }
+  requirePublishedBindingRedirects(entries, args.agentRoot);
   for (const file of walkDir(args.agentRoot)) {
     if (file.rel === "appsettings.json") continue;
     entries.push({

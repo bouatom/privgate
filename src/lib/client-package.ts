@@ -2,6 +2,7 @@ import "server-only";
 
 export {
   AGENT_EXE,
+  AGENT_CONFIG,
   HELPER_EXE,
   PACKAGED_CLIENT_MSI,
   clientBinaryDir,

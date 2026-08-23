@@ -29,6 +29,12 @@ $helper = Join-Path $installDir "PrivGate.Helper.exe"
 Check "Broker binaries exist" {
   if (-not (Test-Path $agent)) { throw "missing $agent" }
   if (-not (Test-Path $helper)) { throw "missing $helper" }
+  $agentCfg = Join-Path $installDir "PrivGate.Agent.exe.config"
+  if (-not (Test-Path $agentCfg)) { throw "missing $agentCfg — binding redirects will not be applied and PrivGateBroker will fail to start" }
+  $cfgContent = Get-Content $agentCfg -Raw
+  if ($cfgContent -notmatch "System\.Runtime\.CompilerServices\.Unsafe") {
+    throw "$agentCfg is present but lacks the Unsafe binding redirect (CLR will throw TypeInitializationException at startup)"
+  }
 }
 
 Check ".NET Framework 4.8 present" {

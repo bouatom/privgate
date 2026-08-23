@@ -7,8 +7,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>PrivGate.Helper</AssemblyName>
+    <!-- See agent/PrivGate.Agent.csproj — explicit App.config, not Fusion redirects. -->
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <AppConfig>App.config</AppConfig>
   </PropertyGroup>
+  <Target Name="CopyExplicitBindingRedirects" AfterTargets="CopyFilesToOutputDirectory">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)App.config"
+          DestinationFiles="$(TargetPath).config"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
+  <Target Name="CopyExplicitBindingRedirectsOnPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)App.config"
+          DestinationFiles="$(PublishDir)$(TargetFileName).config"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />

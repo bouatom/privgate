@@ -14,9 +14,25 @@
     <Nullable>enable</Nullable>
     <RootNamespace>PrivGate.Agent</RootNamespace>
     <AssemblyName>PrivGate.Agent</AssemblyName>
-    <!-- Reference assemblies needed when cross-compiling net48 on non-Windows. -->
+    <!--
+      Cross-compiling net48 on macOS/Linux cannot run Fusion, so automatic
+      redirects are off. App.config carries the explicit Unsafe redirect
+      System.Text.Json 8.x needs (System.Memory asks for 4.0.4.1; the DLL is 6.0.0.0).
+    -->
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <AppConfig>App.config</AppConfig>
   </PropertyGroup>
+  <Target Name="CopyExplicitBindingRedirects" AfterTargets="CopyFilesToOutputDirectory">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)App.config"
+          DestinationFiles="$(TargetPath).config"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
+  <Target Name="CopyExplicitBindingRedirectsOnPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)App.config"
+          DestinationFiles="$(PublishDir)$(TargetFileName).config"
+          OverwriteReadOnlyFiles="true" />
+  </Target>
   <ItemGroup>
     <Compile Remove="helper/**" />
     <None Remove="helper/**" />

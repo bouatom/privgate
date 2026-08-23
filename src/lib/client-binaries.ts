@@ -1,10 +1,13 @@
 import "server-only";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 
 export const AGENT_EXE = "PrivGate.Agent.exe";
+export const AGENT_CONFIG = "PrivGate.Agent.exe.config";
 export const HELPER_EXE = "PrivGate.Helper.exe";
 export const PACKAGED_CLIENT_MSI = "PrivGate-Client.msi";
+
+const UNSAFE_REDIRECT = "System.Runtime.CompilerServices.Unsafe";
 
 const SKIP_PAYLOAD = /\.(msi|wxs|pdb|xml|nupkg)$/i;
 
@@ -45,8 +48,14 @@ export function clientBinaryPath(name: string, env: NodeJS.ProcessEnv = process.
   return abs;
 }
 
+export function agentConfigHasBindingRedirects(env: NodeJS.ProcessEnv = process.env): boolean {
+  const abs = clientBinaryPath(AGENT_CONFIG, env);
+  if (!abs) return false;
+  return readFileSync(abs, "utf8").includes(UNSAFE_REDIRECT);
+}
+
 export function clientBinariesReady(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(clientBinaryPath(AGENT_EXE, env));
+  return Boolean(clientBinaryPath(AGENT_EXE, env) && agentConfigHasBindingRedirects(env));
 }
 
 export function packagedClientMsiPath(env: NodeJS.ProcessEnv = process.env): string | null {

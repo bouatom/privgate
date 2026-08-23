@@ -17,5 +17,15 @@ dotnet publish "$ROOT/agent/helper/PrivGate.Helper.csproj" -c Release -f net48 -
 
 test -f "$ROOT/agent/dist/PrivGate.Agent.exe"
 test -f "$ROOT/agent/dist/PrivGate.Helper.exe"
+
+# The .exe.config must be present and contain the Unsafe binding redirect.
+# Without it the CLR throws TypeInitializationException at startup on net48
+# because System.Memory 4.5.5 references Unsafe 4.0.4.1 while the NuGet DLL
+# is 6.0.0.0 and there is no redirect to reconcile the two.
+test -f "$ROOT/agent/dist/PrivGate.Agent.exe.config" || { echo "FAIL: PrivGate.Agent.exe.config missing from dist"; exit 1; }
+test -f "$ROOT/agent/dist/PrivGate.Helper.exe.config" || { echo "FAIL: PrivGate.Helper.exe.config missing from dist"; exit 1; }
+grep -q "System.Runtime.CompilerServices.Unsafe" "$ROOT/agent/dist/PrivGate.Agent.exe.config" || { echo "FAIL: binding redirect missing from PrivGate.Agent.exe.config"; exit 1; }
+grep -q "System.Runtime.CompilerServices.Unsafe" "$ROOT/agent/dist/PrivGate.Helper.exe.config" || { echo "FAIL: binding redirect missing from PrivGate.Helper.exe.config"; exit 1; }
+
 echo "OK: $ROOT/agent/dist"
-ls -lh "$ROOT/agent/dist"/*.exe
+ls -lh "$ROOT/agent/dist"/*.exe "$ROOT/agent/dist"/*.config

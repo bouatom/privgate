@@ -1,6 +1,7 @@
 import "server-only";
 import { readFileSync } from "node:fs";
 import {
+  AGENT_CONFIG,
   AGENT_EXE,
   HELPER_EXE,
   clientBinariesReady,
@@ -32,7 +33,7 @@ export function deploymentScript(apiBase: string, token: string): string {
     throw new Error("Windows client binaries are not on this console.");
   }
   const files = embeddedFiles();
-  if (!files.some((f) => f.name === AGENT_EXE)) {
+  if (!files.some((f) => f.name === AGENT_EXE) || !files.some((f) => f.name === AGENT_CONFIG)) {
     throw new Error("Windows client binaries are not on this console.");
   }
   const base = psQuote(apiBase.replace(/\/$/, ""));
@@ -78,6 +79,8 @@ Set-ItemProperty -Path $reg -Name EnrollmentToken -Value $EnrollmentToken
 
 $bin = Join-Path $InstallDir ${psQuote(AGENT_EXE)}
 if (-not (Test-Path $bin)) { throw "${AGENT_EXE} was not written." }
+$cfg = Join-Path $InstallDir ${psQuote(AGENT_CONFIG)}
+if (-not (Test-Path $cfg)) { throw "${AGENT_CONFIG} was not written. Binding redirects are required on .NET Framework 4.8." }
 
 $svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
 if ($svc) {
