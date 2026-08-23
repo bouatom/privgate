@@ -68,6 +68,15 @@ assemble_app() {
     echo "A console that cannot enroll PCs must not ship. Run: bash scripts/smoke-agent-build.sh" >&2
     exit 1
   fi
+  if [[ ! -f "$dest/agent/dist/PrivGate-Client.msi" ]]; then
+    if [[ "${PRIVGATE_ALLOW_NO_CLIENT_MSI:-}" == "1" ]]; then
+      echo "PRIVGATE_ALLOW_NO_CLIENT_MSI=1; payload has no Windows client MSI." >&2
+    else
+      echo "Console payload is missing the Windows client MSI ($dest/agent/dist/PrivGate-Client.msi)." >&2
+      echo "Copy a CI-built MSI or install msitools (wixl). For experiments only: PRIVGATE_ALLOW_NO_CLIENT_MSI=1" >&2
+      exit 1
+    fi
+  fi
   copy_if "$ROOT/packaging/listen.cjs" "$dest/listen.cjs"
   copy_if "$ROOT/packaging/listen-config.cjs" "$dest/listen-config.cjs"
   copy_if "$ROOT/packaging/write-env.cjs" "$dest/write-env.cjs"
@@ -138,14 +147,32 @@ if [[ ! -f "$ROOT/agent/dist/PrivGate.Agent.exe" ]]; then
   echo "Cannot ship a console that cannot enroll PCs. Run: bash scripts/smoke-agent-build.sh" >&2
   exit 1
 fi
-if command -v wixl >/dev/null; then
-  log "Packaged Windows client MSI"
+
+CLIENT_MSI="$ROOT/agent/dist/PrivGate-Client.msi"
+PREBUILT_CLIENT_MSI="${PRIVGATE_CLIENT_MSI:-$ROOT/dist/client-msi/PrivGate-Client.msi}"
+if [[ -f "$PREBUILT_CLIENT_MSI" && "$PREBUILT_CLIENT_MSI" != "$CLIENT_MSI" ]]; then
+  log "Using prebuilt Windows client MSI"
+  cp "$PREBUILT_CLIENT_MSI" "$CLIENT_MSI"
+fi
+if [[ -f "$CLIENT_MSI" ]]; then
+  log "Windows client MSI is ready"
+elif command -v wixl >/dev/null; then
+  log "Building Windows client MSI"
   node "$ROOT/packaging/windows/build-client-msi.cjs" \
     "$ROOT/agent/dist" \
-    "$ROOT/agent/dist/PrivGate-Client.msi" \
+    "$CLIENT_MSI" \
     "$VERSION"
+elif [[ "${PRIVGATE_ALLOW_NO_CLIENT_MSI:-}" == "1" ]]; then
+  echo "PRIVGATE_ALLOW_NO_CLIENT_MSI=1; shipping without client MSI" >&2
 else
-  echo "wixl not found; this console will still enroll PCs with the PowerShell script." >&2
+  echo "Windows client MSI is missing at agent/dist/PrivGate-Client.msi" >&2
+  echo "Install msitools (wixl) or copy a CI-built MSI to dist/client-msi/PrivGate-Client.msi." >&2
+  echo "For local experiments only: PRIVGATE_ALLOW_NO_CLIENT_MSI=1" >&2
+  exit 1
+fi
+if [[ ! -f "$CLIENT_MSI" && "${PRIVGATE_ALLOW_NO_CLIENT_MSI:-}" != "1" ]]; then
+  echo "Windows client MSI was not produced at $CLIENT_MSI" >&2
+  exit 1
 fi
 
 if want windows; then

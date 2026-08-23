@@ -39,8 +39,8 @@ Directory **Users** in the console are identities (JIT eligibility, disable). **
 
 ## 3. Enroll a Windows PC
 
-1. **Devices** → pick **MSI** or **deployment script** → download that one file.
-2. On the PC, run the MSI or elevated PowerShell: `Install-PrivGate.ps1`. Needs .NET Framework 4.8 (inbox on current Windows 10/11). The client registers the hostname.
+1. **Devices** → pick **MSI** or **deployment script** → download that one file from the same console you will enroll against.
+2. On the PC, run the MSI (`msiexec /i PrivGate-Client.msi /qn /norestart` for Intune / SCCM / NinjaOne) or elevated PowerShell: `Install-PrivGate.ps1`. Needs .NET Framework 4.8 (inbox on current Windows 10/11). The client registers the hostname. RMM notes: [packaging/README.md](../packaging/README.md#windows-client-msi-intune--sccm--ninjaone).
 3. Standard users elevate with:
 
    `PrivGate.Helper.exe --elevate <path>`

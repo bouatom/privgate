@@ -4,13 +4,22 @@ Published binaries land on **GitHub Releases** after the Console installers work
 
 - Push to `main` (or **Run workflow**) updates the **nightly** pre-release. `v0.1.0` stays the latest stable until you tag.
 - Push a tag `vX.Y.Z` to publish that version as the latest release.
-- CI publishes the Windows client into every console installer (`agent/dist`, plus a client MSI when `wixl` is available). After install, **Devices** can download the script or MSI without a local broker publish.
+- CI builds `PrivGate-Client.msi` once (Ubuntu `msitools` / `wixl`) and copies it into every console installer (`agent/dist`). After install, **Devices** brands that file with this console’s URL and enrollment token. The running console does not need `wixl`.
 
 This folder is how maintainers rebuild the same files locally.
 
 ```bash
 bash packaging/build.sh
 ```
+
+On macOS, install WiX tooling only if you are packaging locally and do not already have a CI-built client MSI:
+
+```bash
+brew install msitools   # provides wixl
+bash packaging/build.sh
+```
+
+If `agent/dist/PrivGate-Client.msi` (or `dist/client-msi/PrivGate-Client.msi`) is already present, `build.sh` ships it without calling `wixl`. Day-to-day `npm run dev` does not need `wixl` after you copy that file. If both the MSI and `wixl` are missing, packaging exits 1. Local experiments only: `PRIVGATE_ALLOW_NO_CLIENT_MSI=1`.
 
 Set `PRIVGATE_TARGETS=windows`, `macos`, or `linux` to build one OS. Artifacts land in `dist/installers/`.
 
@@ -44,9 +53,29 @@ Uninstall removes the application and service only. Data directories are left in
 
 The MSI copies files and stops/starts `PrivGateConsole` when that service already exists. If you installed from MSI and the service was never registered, run `install-service.cmd` in `C:\Program Files\PrivGate` once.
 
+## Windows client MSI (Intune / SCCM / NinjaOne)
+
+Download the MSI from the **same** console you will enroll against. Devices writes this console’s URL and the shared enrollment token into the file. Do not reuse an MSI from another console.
+
+Silent install (per-machine, service `PrivGateBroker`, registry `HKLM\SOFTWARE\PrivGate\Client`):
+
+```text
+msiexec /i PrivGate-Client.msi /qn /norestart
+```
+
+| Tool | Notes |
+| --- | --- |
+| Intune | Line-of-business MSI, required, 64-bit, silent. Detection = UpgradeCode `b4d9f2c1-8e3a-4d02-af5b-2c3d4e5f6071` or ARP name **PrivGate Client**. |
+| SCCM / NinjaOne / GPO | Same `msiexec /i … /qn`. |
+| Uninstall | `msiexec /x {ProductCode} /qn` or Apps & Features. |
+
+The WiX source also accepts PUBLIC properties `APABASE` and `ENROLLMENTTOKEN`. Devices slot-patch is enough for the common case.
+
+PowerShell (`Install-PrivGate.ps1`) stays as the imaging-script fallback.
+
 ## Windows 10 — endpoint broker smoke
 
 1. Start the console from a GitHub Release installer.
 2. Sign in with the Master Admin created at `/setup`. On **Devices**, download the MSI or the deployment script (one file, console address included).
-3. On the PC, install that file elevated. The client registers the hostname.
+3. On the PC, install that file elevated (`msiexec /i PrivGate-Client.msi /qn` for RMM). The client registers the hostname.
 4. Copy `scripts/smoke-windows-client.ps1` to the PC and run it elevated.

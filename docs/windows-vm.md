@@ -27,8 +27,16 @@ The Elevation Broker is a Windows SYSTEM service. This Mac cannot run it.
 2. If not pre-installed, install [.NET Framework 4.8](https://go.microsoft.com/fwlink/?LinkId=2085155).
    The .NET **SDK** is only needed if you want to compile from source on the VM; it is **not**
    required when using the pre-built client MSI or deployment script.
-3. On **Devices**, download the **MSI** or the **deployment script**. The console address is already in the file. Install it elevated on the VM; the client registers the hostname.
-4. On the VM, run `Install-PrivGate.ps1` from an **elevated** PowerShell.
+3. On **Devices**, download the **MSI** or the **deployment script** from the **same** console you will enroll against. The console address and enrollment token are already in the file. Install it elevated on the VM; the client registers the hostname.
+
+   Silent MSI (Intune / SCCM / NinjaOne / GPO):
+
+   ```text
+   msiexec /i PrivGate-Client.msi /qn /norestart
+   ```
+
+   Intune: line-of-business MSI, required, 64-bit. Detection = UpgradeCode `b4d9f2c1-8e3a-4d02-af5b-2c3d4e5f6071` or ARP name **PrivGate Client**. Uninstall: `msiexec /x {ProductCode} /qn` or Apps & Features. Optional PUBLIC properties `APABASE` and `ENROLLMENTTOKEN` exist in the WiX; Devices slot-patch is enough for the common case.
+4. On the VM, run `Install-PrivGate.ps1` from an **elevated** PowerShell if you used the script instead of the MSI.
 5. As the standard user, run `PrivGate.Helper.exe --elevate "C:\path\app.exe"`.
 
 To install from a repo checkout instead of the zip (requires .NET SDK on the VM):

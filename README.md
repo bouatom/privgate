@@ -35,8 +35,8 @@ Windows MSI: if the service does not start, run `install-service.cmd` from `C:\P
 
 ## Enroll a Windows PC
 
-1. In the console: **Devices** → pick **MSI** or **deployment script** → download that one file.
-2. On the PC, run the MSI or the script from an elevated PowerShell. Requires .NET Framework 4.8 (inbox on current Windows 10/11). The client registers the computer’s hostname.
+1. In the console: **Devices** → pick **MSI** or **deployment script** → download that one file from the same console you will enroll against.
+2. On the PC, run the MSI (`msiexec /i PrivGate-Client.msi /qn /norestart` for Intune / SCCM / NinjaOne) or the script from an elevated PowerShell. Requires .NET Framework 4.8 (inbox on current Windows 10/11). The client registers the computer’s hostname.
 3. Standard users elevate with `PrivGate.Helper.exe --elevate <path>`.
 4. Approvers handle pending requests; policy admins maintain always-allow rules; JIT operators open time-boxed local-admin windows.
 

@@ -1,6 +1,7 @@
 # Build management-console installers (Windows EXE/MSI, Linux deb, macOS pkg)
-# and attach each file to a GitHub Release. Also publishes the Windows client
-# into the console payload so Devices can serve the deployment script.
+# and attach each file to a GitHub Release. Builds PrivGate-Client.msi once
+# (Ubuntu + msitools/wixl) and ships it inside every console payload so
+# Devices can brand it without runtime wixl.
 
 name: Console installers
 
@@ -89,9 +90,52 @@ jobs:
       - name: Test, typecheck, lint
         run: npm test && npm run typecheck && npm run lint
 
+  client-msi:
+    name: Client MSI
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install msitools (wixl)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends msitools
+          command -v wixl
+          wixl --version
+
+      - name: Publish Windows client
+        run: bash scripts/smoke-agent-build.sh
+
+      - name: Build PrivGate-Client.msi
+        run: |
+          set -euo pipefail
+          node packaging/windows/build-client-msi.cjs \
+            agent/dist \
+            agent/dist/PrivGate-Client.msi \
+            "${PRIVGATE_VERSION}"
+          test -f agent/dist/PrivGate-Client.msi
+
+      - name: Upload client MSI
+        uses: actions/upload-artifact@v7
+        with:
+          name: client-msi
+          archive: false
+          path: agent/dist/PrivGate-Client.msi
+          if-no-files-found: error
+
   installers:
     name: ${{ matrix.name }} installer
-    needs: [version, verify]
+    needs: [version, verify, client-msi]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -125,19 +169,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nsis msitools
 
-      - name: Install msitools for the Windows client MSI
-        if: matrix.target == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends msitools
-
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Download client MSI
+        uses: actions/download-artifact@v8
+        with:
+          name: client-msi
+          path: dist/client-msi
 
       - name: Build ${{ matrix.name }} installer
         env:
           PRIVGATE_TARGETS: ${{ matrix.target }}
-        run: bash packaging/build.sh
+        run: |
+          test -f dist/client-msi/PrivGate-Client.msi
+          bash packaging/build.sh
 
       - name: Upload Windows EXE
         if: matrix.target == 'windows'
@@ -212,6 +258,9 @@ jobs:
                 ;;
               PrivGate-Console-*.msi)
                 files+=("$f")
+                ;;
+              PrivGate-Client.msi)
+                echo "Skipping standalone client MSI (shipped inside consoles): $base" >&2
                 ;;
               PrivGate-Console-*.pkg)
                 files+=("$f")

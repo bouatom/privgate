@@ -136,8 +136,8 @@ export function DevicesClient({
             <h2>MSI</h2>
             <p>
               {msiReady
-                ? "Intune, Group Policy, or a double-click on the PC. One .msi file — not a zip."
-                : "Not available on this console. Use the deployment script. GitHub Releases console builds include the client MSI."}
+                ? "Intune, SCCM, NinjaOne, Group Policy, or a double-click on the PC. One branded .msi — not a zip."
+                : "Not on this console. Reinstall the management console from GitHub Releases so the client MSI is included, or use the deployment script."}
             </p>
           </button>
           <button
@@ -154,8 +154,14 @@ export function DevicesClient({
         </div>
         <p className="lede deploy-url">
           This installer will call <span className="mono">{consoleUrl}</span>
-          {" "}(Configuration → Network).
+          {" "}(Configuration → Network). Download it from the same console you will enroll against.
         </p>
+        {method === "msi" && msiReady ? (
+          <p className="lede" style={{ fontSize: 13 }}>
+            Silent install for Intune / SCCM / NinjaOne:{" "}
+            <span className="mono">msiexec /i PrivGate-Client.msi /qn /norestart</span>
+          </p>
+        ) : null}
         {error ? <p className="err">{error}</p> : null}
         <div className="row-actions">
           {canInstall ? (

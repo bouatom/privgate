@@ -20,7 +20,7 @@ export function msiTool(): "wixl" | null {
 }
 
 export function clientMsiAvailable(): boolean {
-  return clientBinariesReady() && (Boolean(msiTool()) || Boolean(packagedClientMsiPath()));
+  return clientBinariesReady() && Boolean(packagedClientMsiPath());
 }
 
 function xmlEscape(value: string): string {
@@ -115,12 +115,14 @@ function buildLiveClientMsi(apiBase: string, token: string): Buffer {
 export function buildClientMsi(apiBase: string): Buffer {
   const token = enrollmentToken();
   const base = apiBase.replace(/\/$/, "");
-  if (msiTool() && clientBinariesReady()) {
-    return buildLiveClientMsi(base, token);
-  }
   const packaged = packagedClientMsiPath();
   if (packaged) {
     return patchMsiSlots(readFileSync(packaged), base, token);
   }
-  throw new Error("MSI is not available on this console. Download the deployment script instead.");
+  if (msiTool() && clientBinariesReady()) {
+    return buildLiveClientMsi(base, token);
+  }
+  throw new Error(
+    "MSI is not available on this console. Reinstall from a GitHub Release that includes PrivGate-Client.msi, or download the deployment script.",
+  );
 }
