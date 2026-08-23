@@ -1,5 +1,5 @@
-# Build management-console installers (Windows EXE/MSI, Linux deb/tar, macOS pkg)
-# and publish them to a GitHub Release after both jobs succeed.
+# Build management-console installers (Windows EXE/MSI, Linux deb, macOS pkg)
+# and attach each file to a GitHub Release. Does not build the Windows client.
 
 name: Console installers
 
@@ -8,12 +8,9 @@ on:
     branches: [main]
     tags: ["v*"]
     paths:
-      - "agent/**"
       - "src/**"
       - "packaging/**"
       - "public/**"
-      - "scripts/smoke-agent-build.sh"
-      - "scripts/dotnet-env.sh"
       - "package.json"
       - "package-lock.json"
       - "next.config.ts"
@@ -21,12 +18,9 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "agent/**"
       - "src/**"
       - "packaging/**"
       - "public/**"
-      - "scripts/smoke-agent-build.sh"
-      - "scripts/dotnet-env.sh"
       - "package.json"
       - "package-lock.json"
       - "next.config.ts"
@@ -42,6 +36,8 @@ permissions:
 
 env:
   PRIVGATE_NODE_VERSION: "22.15.1"
+  PRIVGATE_SKIP_AGENT: "1"
+  PRIVGATE_SKIP_TARBALL: "1"
 
 jobs:
   version:
@@ -69,11 +65,24 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
-  windows-linux:
-    name: Windows + Linux installers
+  installers:
+    name: ${{ matrix.name }} installer
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            runner: ubuntu-latest
+            target: windows
+          - name: Linux
+            runner: ubuntu-latest
+            target: linux
+          - name: macOS
+            runner: macos-latest
+            target: macos
     env:
       PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -86,12 +95,8 @@ jobs:
           node-version: "22"
           cache: npm
 
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install packaging tools
+      - name: Install Windows packaging tools
+        if: matrix.target == 'windows'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nsis msitools
@@ -99,67 +104,46 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build console installers
+      - name: Build ${{ matrix.name }} installer
         env:
-          PRIVGATE_TARGETS: windows,linux
+          PRIVGATE_TARGETS: ${{ matrix.target }}
         run: bash packaging/build.sh
 
-      - name: Upload installers
+      - name: Upload Windows EXE
+        if: matrix.target == 'windows'
         uses: actions/upload-artifact@v7
         with:
-          name: privgate-console-windows-linux
-          path: dist/installers/*
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-win-x64.exe
           if-no-files-found: error
 
-      - name: Upload broker binaries
+      - name: Upload Windows MSI
+        if: matrix.target == 'windows'
         uses: actions/upload-artifact@v7
         with:
-          name: privgate-agent
-          path: |
-            agent/dist/PrivGate.Agent.exe
-            agent/dist/PrivGate.Helper.exe
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-win-x64.msi
+          if-no-files-found: warn
+
+      - name: Upload Linux deb
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/installers/privgate-console_${{ env.PRIVGATE_VERSION }}_amd64.deb
           if-no-files-found: error
 
-  macos:
-    name: macOS installer
-    needs: version
-    runs-on: macos-latest
-    timeout-minutes: 30
-    env:
-      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: 8.0.x
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Build macOS pkg
-        env:
-          PRIVGATE_TARGETS: macos
-        run: bash packaging/build.sh
-
-      - name: Upload installer
+      - name: Upload macOS pkg
+        if: matrix.target == 'macos'
         uses: actions/upload-artifact@v7
         with:
-          name: privgate-console-macos
-          path: dist/installers/*.pkg
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-macos-*.pkg
           if-no-files-found: error
 
   release:
     name: Publish GitHub Release
-    needs: [version, windows-linux, macos]
+    needs: [version, installers]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -173,7 +157,6 @@ jobs:
       - name: Download installers
         uses: actions/download-artifact@v8
         with:
-          pattern: privgate-*
           path: release-files
           merge-multiple: true
 
@@ -181,20 +164,49 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          files=(release-files/*)
-          if [[ ${#files[@]} -eq 0 ]]; then
-            echo "No installer files to publish" >&2
+          files=()
+          has_win=0
+          has_mac=0
+          has_lin=0
+          for f in release-files/*; do
+            [[ -f "$f" ]] || continue
+            base="$(basename "$f")"
+            case "$base" in
+              PrivGate-Console-*.exe)
+                files+=("$f")
+                has_win=1
+                ;;
+              PrivGate-Console-*.msi)
+                files+=("$f")
+                ;;
+              PrivGate-Console-*.pkg)
+                files+=("$f")
+                has_mac=1
+                ;;
+              privgate-console_*.deb)
+                files+=("$f")
+                has_lin=1
+                ;;
+              *)
+                echo "Refusing to publish archive or client binary: $base" >&2
+                exit 1
+                ;;
+            esac
+          done
+          if [[ ${#files[@]} -eq 0 || "$has_win" -ne 1 || "$has_mac" -ne 1 || "$has_lin" -ne 1 ]]; then
+            echo "Need one Windows, macOS, and Linux installer; found:" >&2
+            ls -la release-files >&2 || true
             exit 1
           fi
           ls -lh "${files[@]}"
 
-          notes="Console installers from ${GITHUB_SHA}.
+          notes="Management console installers from ${GITHUB_SHA}.
 
-          | OS | File |
+          | OS | Installer |
           | --- | --- |
           | Windows | \`PrivGate-Console-${VERSION}-win-x64.exe\` (recommended) or \`.msi\` |
           | macOS | \`PrivGate-Console-${VERSION}-macos-*.pkg\` |
-          | Linux amd64 | \`privgate-console_${VERSION}_amd64.deb\` or \`.tar.gz\` |
+          | Linux amd64 | \`privgate-console_${VERSION}_amd64.deb\` |
 
           Open http://127.0.0.1:3000/ after install. There is no demo login.
           Enroll each PC from **Devices** after the console is up."
@@ -202,20 +214,23 @@ jobs:
           if [[ "$PRERELEASE" == "true" ]]; then
             title="PrivGate Console ${VERSION} (nightly)"
             extra=(--prerelease --latest=false --notes "$notes")
-          else
-            title="PrivGate Console ${VERSION}"
-            extra=(--latest --notes "$notes")
-          fi
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
-            gh release edit "$RELEASE_TAG" --title "$title" --target "$GITHUB_SHA" --notes "$notes"
-            if [[ "$PRERELEASE" == "true" ]]; then
-              gh release edit "$RELEASE_TAG" --prerelease
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release delete "$RELEASE_TAG" --yes --cleanup-tag
             fi
-          else
             gh release create "$RELEASE_TAG" "${files[@]}" \
               --title "$title" \
               --target "$GITHUB_SHA" \
               "${extra[@]}"
+          else
+            title="PrivGate Console ${VERSION}"
+            extra=(--latest --notes "$notes")
+            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+              gh release edit "$RELEASE_TAG" --title "$title" --target "$GITHUB_SHA" --notes "$notes"
+            else
+              gh release create "$RELEASE_TAG" "${files[@]}" \
+                --title "$title" \
+                --target "$GITHUB_SHA" \
+                "${extra[@]}"
+            fi
           fi

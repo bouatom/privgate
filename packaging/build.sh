@@ -72,8 +72,10 @@ if [[ "${PRIVGATE_SKIP_APP_BUILD:-}" != "1" ]]; then
   need npm
   (cd "$ROOT" && npm run build)
 
-  log "Windows broker publish"
-  if [[ -x "${DOTNET_ROOT:-}/dotnet" ]]; then
+  if [[ "${PRIVGATE_SKIP_AGENT:-}" == "1" ]]; then
+    log "Skipping Windows broker publish"
+  elif [[ -x "${DOTNET_ROOT:-}/dotnet" ]]; then
+    log "Windows broker publish"
     bash "$ROOT/scripts/smoke-agent-build.sh"
   else
     echo "dotnet SDK not in .tools; skip agent publish (device zip will be source-only)"
@@ -170,7 +172,9 @@ if want linux; then
   cp "$STAGE/node-v${NODE_VERSION}-linux-x64/bin/node" "$STAGE/linux/bin/node"
   chmod +x "$STAGE/linux/bin/node"
   rm -rf "$STAGE/node-v${NODE_VERSION}-linux-x64"
-  tar -C "$STAGE/linux" -czf "$OUT/PrivGate-Console-${VERSION}-linux-x64.tar.gz" .
+  if [[ "${PRIVGATE_SKIP_TARBALL:-}" != "1" ]]; then
+    tar -C "$STAGE/linux" -czf "$OUT/PrivGate-Console-${VERSION}-linux-x64.tar.gz" .
+  fi
 
   DEB_ROOT="$STAGE/deb"
   rm -rf "$DEB_ROOT"
@@ -195,6 +199,10 @@ if want linux; then
     docker run --rm -v "$STAGE:/stage" -v "$OUT:/out" debian:bookworm-slim \
       bash -lc "apt-get update -qq && apt-get install -y -qq dpkg-dev >/dev/null && dpkg-deb --build /stage/deb /out/privgate-console_${VERSION}_amd64.deb"
   else
+    if [[ "${PRIVGATE_SKIP_TARBALL:-}" == "1" ]]; then
+      echo "No dpkg-deb or docker; cannot build Linux .deb installer" >&2
+      exit 1
+    fi
     echo "No dpkg-deb or docker; Linux tar.gz is still in $OUT" >&2
   fi
 fi
