@@ -95,7 +95,7 @@ export function DevicesClient({
   function download() {
     setError("");
     if (method === "msi" && !msiReady) {
-      setError("This console cannot build an MSI (needs published client binaries and wixl). Use the deployment script.");
+      setError("MSI is not available here. Download the deployment script instead.");
       return;
     }
     if (!binariesReady) {
@@ -127,12 +127,16 @@ export function DevicesClient({
             type="button"
             className={method === "msi" ? "choice selected" : "choice"}
             aria-pressed={method === "msi"}
-            disabled={!canInstall}
+            disabled={!canInstall || !msiReady}
             onClick={() => setMethod("msi")}
           >
             <span className="k">Windows Installer</span>
             <h2>MSI</h2>
-            <p>Intune, Group Policy, or a double-click on the PC. One <span className="mono">.msi</span> file — not a zip.</p>
+            <p>
+              {msiReady
+                ? "Intune, Group Policy, or a double-click on the PC. One .msi file — not a zip."
+                : "Not available on this console. MSI build needs published client binaries and wixl (msitools on Linux/macOS). Use the deployment script."}
+            </p>
           </button>
           <button
             type="button"

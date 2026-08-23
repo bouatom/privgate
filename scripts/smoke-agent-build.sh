@@ -12,8 +12,8 @@ if [[ ! -x "$DOTNET_ROOT/dotnet" ]]; then
 fi
 
 echo "==> Publishing Windows Elevation Broker (net48)"
-dotnet publish "$ROOT/agent/PrivGate.Agent.csproj" -c Release -f net48 -o "$ROOT/agent/dist"
-dotnet publish "$ROOT/agent/helper/PrivGate.Helper.csproj" -c Release -f net48 -o "$ROOT/agent/dist"
+dotnet publish "$ROOT/agent/PrivGate.Agent.csproj" -c Release -f net48 -p:EnableWindowsTargeting=true -o "$ROOT/agent/dist"
+dotnet publish "$ROOT/agent/helper/PrivGate.Helper.csproj" -c Release -f net48 -p:EnableWindowsTargeting=true -o "$ROOT/agent/dist"
 
 test -f "$ROOT/agent/dist/PrivGate.Agent.exe"
 test -f "$ROOT/agent/dist/PrivGate.Helper.exe"

@@ -5,6 +5,7 @@ import { getDb } from "./db";
 import type { AdminSession } from "./models";
 import { getPortalUserByEmail } from "./portal";
 import { hasPermission as hasPerm, type PermissionId } from "./permissions";
+import { cookieSecure } from "./cookie-secure";
 import { sessionSecret } from "./secrets";
 
 export type { AdminSession } from "./models";
@@ -52,24 +53,25 @@ export async function getSession(): Promise<AdminSession | null> {
   return readSessionFromToken(token);
 }
 
-export function sessionCookie(token: string) {
+export function sessionCookie(token: string, req?: Request) {
   return {
     name: cookieName,
     value: token,
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: cookieSecure(req),
     path: "/",
     maxAge: 60 * 60 * 8,
   };
 }
 
-export function clearSessionCookie() {
+export function clearSessionCookie(req?: Request) {
   return {
     name: cookieName,
     value: "",
     httpOnly: true,
     sameSite: "lax" as const,
+    secure: cookieSecure(req),
     path: "/",
     maxAge: 0,
   };

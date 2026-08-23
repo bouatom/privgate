@@ -1,5 +1,6 @@
 # Build management-console installers (Windows EXE/MSI, Linux deb, macOS pkg)
-# and attach each file to a GitHub Release. Does not build the Windows client.
+# and attach each file to a GitHub Release. Also publishes the Windows client
+# into the console payload so Devices can serve the deployment script.
 
 name: Console installers
 
@@ -9,6 +10,8 @@ on:
     tags: ["v*"]
     paths:
       - "src/**"
+      - "agent/**"
+      - "scripts/smoke-agent-build.sh"
       - "packaging/**"
       - "public/**"
       - "package.json"
@@ -19,6 +22,8 @@ on:
     branches: [main]
     paths:
       - "src/**"
+      - "agent/**"
+      - "scripts/smoke-agent-build.sh"
       - "packaging/**"
       - "public/**"
       - "package.json"
@@ -36,7 +41,6 @@ permissions:
 
 env:
   PRIVGATE_NODE_VERSION: "22.15.1"
-  PRIVGATE_SKIP_AGENT: "1"
   PRIVGATE_SKIP_TARBALL: "1"
 
 jobs:

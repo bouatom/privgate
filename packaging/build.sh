@@ -61,6 +61,10 @@ assemble_app() {
     cp -R "$ROOT/public" "$dest/public"
   fi
   cp "$ROOT/packaging/host.cjs" "$dest/host.cjs"
+  if [[ -d "$ROOT/agent/dist" ]]; then
+    mkdir -p "$dest/agent/dist"
+    cp -a "$ROOT/agent/dist/." "$dest/agent/dist/"
+  fi
   copy_if "$ROOT/packaging/listen.cjs" "$dest/listen.cjs"
   copy_if "$ROOT/packaging/listen-config.cjs" "$dest/listen-config.cjs"
   copy_if "$ROOT/packaging/write-env.cjs" "$dest/write-env.cjs"
@@ -118,11 +122,9 @@ if [[ "${PRIVGATE_SKIP_APP_BUILD:-}" != "1" ]]; then
 
   if [[ "${PRIVGATE_SKIP_AGENT:-}" == "1" ]]; then
     log "Skipping Windows broker publish"
-  elif [[ -x "${DOTNET_ROOT:-}/dotnet" ]]; then
+  else
     log "Windows broker publish"
     bash "$ROOT/scripts/smoke-agent-build.sh"
-  else
-    echo "dotnet SDK not in .tools; skip agent publish (device zip will be source-only)"
   fi
 else
   log "Skipping app build (PRIVGATE_SKIP_APP_BUILD=1)"

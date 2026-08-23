@@ -26,6 +26,7 @@ function LoginForm({
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) {

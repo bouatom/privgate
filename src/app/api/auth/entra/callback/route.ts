@@ -87,7 +87,7 @@ export async function GET(req: Request) {
   });
   const dest = isWizardCompleted(db) ? "/dashboard" : "/setup";
   const res = NextResponse.redirect(new URL(dest, origin));
-  res.cookies.set(sessionCookie(token));
+  res.cookies.set(sessionCookie(token, req));
   res.cookies.set("privgate_oauth_state", "", { path: "/", maxAge: 0 });
   return res;
 }
