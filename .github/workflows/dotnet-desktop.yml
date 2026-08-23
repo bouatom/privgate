@@ -129,8 +129,9 @@ jobs:
       - name: Upload client MSI
         uses: actions/upload-artifact@v7
         with:
+          # Keep this a zip named client-msi. archive: false ignores `name` and
+          # publishes the file as PrivGate-Client.msi, which download cannot find.
           name: client-msi
-          archive: false
           path: agent/dist/PrivGate-Client.msi
           if-no-files-found: error
 
