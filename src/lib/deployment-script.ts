@@ -86,9 +86,15 @@ if ($svc) {
   Start-Sleep -Seconds 1
 }
 
-sc.exe create PrivGateBroker binPath= "\`"$bin\`"" start= auto DisplayName= "PrivGate Elevation Broker" | Out-Null
+New-Service -Name PrivGateBroker -BinaryPathName ('"' + $bin + '"') -DisplayName "PrivGate Elevation Broker" -StartupType Automatic | Out-Null
 sc.exe description PrivGateBroker "PrivGate SYSTEM elevation broker. Does not disable UAC or store admin passwords." | Out-Null
-Start-Service PrivGateBroker
+try {
+  Start-Service PrivGateBroker
+} catch {
+  $log = Join-Path $env:ProgramData "PrivGate\\broker.log"
+  $hint = if (Test-Path $log) { Get-Content $log -Tail 30 | Out-String } else { "No broker.log yet." }
+  throw ("PrivGateBroker did not start. " + $_.Exception.Message + [Environment]::NewLine + $hint)
+}
 
 Write-Host "PrivGate client installed. This PC will appear on the console as $env:COMPUTERNAME."
 $helper = Join-Path $InstallDir ${psQuote(HELPER_EXE)}

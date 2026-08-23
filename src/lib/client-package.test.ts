@@ -39,6 +39,7 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(script).toContain("http://192.168.1.10:3001");
     expect(script).toContain("enroll-token-example");
     expect(script).toContain("PrivGateBroker");
+    expect(script).toContain("New-Service");
     expect(script).toContain("FromBase64String");
     expect(script).toContain(AGENT);
     expect(script).not.toContain("/api/agent/bootstrap");
