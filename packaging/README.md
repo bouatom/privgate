@@ -1,12 +1,9 @@
 # Management console installers
 
-Build native packages for the PrivGate **control plane** (not the Windows endpoint broker).
+Published binaries are attached to **GitHub Releases**. This folder is how maintainers rebuild them.
 
 ```bash
-# .NET SDK for the broker lives in .tools/dotnet (no sudo)
 bash scripts/smoke-agent-build.sh
-
-# Console: Windows EXE + MSI, macOS PKG, Linux DEB + tar.gz
 bash packaging/build.sh
 ```
 
@@ -24,7 +21,7 @@ The process binds **127.0.0.1:3000** by default. Data and generated secrets: `%P
 
 ## Windows 10 — endpoint broker smoke
 
-1. Start the console (`npm run dev` or an installer above).
+1. Start the console from a GitHub Release installer.
 2. Log in as `ada@contoso.test`, enroll the PC, download the device zip (includes `PrivGate.Agent.exe` when `agent/dist` was published).
 3. On the PC, elevated PowerShell: `Install-PrivGate.ps1`.
 4. Copy `scripts/smoke-windows-client.ps1` to the PC and run it elevated.

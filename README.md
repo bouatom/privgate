@@ -1,72 +1,47 @@
 # PrivGate
 
-Admin-controlled privilege elevation for hybrid Active Directory + Entra ID users. Standard users stay non-admin. Admins allowlist signed programs, approve one-shot requests, or open a short JIT window. UAC is not bypassed and admin passwords are not stored on endpoints.
+**Keep every user standard. Elevate only what you approve.**
 
-## Run
+PrivGate is self-hosted privilege elevation for organizations that live in **hybrid Active Directory and Entra ID**. People work as standard users. When a signed installer or a one-off tool needs admin rights, IT allowlists it, approves a single run, or opens a short just-in-time window — then the rights go away.
 
-```bash
-cp .env.example .env   # optional; development defaults work
-npm install
-npm run dev
-```
+UAC stays on. Admin passwords never live on the PC. There is no kernel hook and no `runas /savecred`.
 
-Open [http://localhost:3000/login](http://localhost:3000/login) as `ada@contoso.test`.
+## Why teams use it
 
-## Test
-
-```bash
-npm test
-npm run typecheck
-npm run lint
-```
-
-## Layout
-
-- `src/` — Next.js control plane (console + API + SQLite)
-- `agent/` — Windows SYSTEM broker + helper (build on a Windows 11 VM)
-- `docs/SPEC.md` — GSD spec
-- `docs/threat-model.md` — STRIDE
-- `docs/openapi.yaml` — API
-- `docs/license-audit.md` — why this is custom vs Intune EPM
-- `docs/windows-vm.md` — broker lab
+- **One console** for hybrid-joined and Entra-joined Windows PCs — not a tenant-wide local-admin blast.
+- **Allowlists that actually match the binary** (SHA-256 and Authenticode publisher, not the filename).
+- **One-shot approvals** for unknown software, with a clear risk level in the queue.
+- **JIT admin** (15–60 minutes) that expires on the device even if the server is unreachable.
+- **Granular portal roles** so approvers, policy authors, and JIT operators are not all Master Admins.
+- **Works where Intune Endpoint Privilege Management is not licensed** or not covering domain-joined machines. Do not run both agents on the same PC.
 
 ## Install the management console
 
-Native installers (Windows EXE + MSI, macOS PKG, Linux DEB) are built with:
+Download the installer for your host OS from the **[latest GitHub Release](https://github.com/bouatom/privgate/releases/latest)**. That package **is** the product.
 
-```bash
-bash packaging/build.sh
-```
+| Platform | Installer |
+| --- | --- |
+| Windows 10 / 11 | `.exe` (recommended) or `.msi` |
+| macOS | `.pkg` |
+| Linux (amd64) | `.deb` or `.tar.gz` |
 
-See [packaging/README.md](packaging/README.md). Lab/dev can still use `npm run dev`.
+After install, open [http://127.0.0.1:3000](http://127.0.0.1:3000/). Lab login: `ada@contoso.test`.
 
-## Windows client (Elevation Broker)
+The console listens on loopback by default. Data and generated secrets land under ProgramData (Windows), `/Library/Application Support/PrivGate` (macOS), or `/var/lib/privgate` (Linux). Edit `console.env` there for Entra single sign-on and production secrets.
 
-On this Mac:
+Windows MSI: if the service does not start, run `install-service.cmd` from `C:\Program Files\PrivGate`.
 
-```bash
-bash scripts/smoke-agent-build.sh
-```
+## Enroll a Windows PC
 
-On a Windows 10 PC after installing the device zip from **Devices**:
+1. In the console: **Devices** → enroll the hostname → **Download installer**.
+2. On the PC, run `Install-PrivGate.ps1` from an elevated PowerShell. Requires .NET Framework 4.8 (inbox on current Windows 10/11).
+3. Standard users elevate with `PrivGate.Helper.exe --elevate <path>`.
+4. Approvers handle pending requests; policy admins maintain always-allow rules; JIT operators open time-boxed local-admin windows.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\smoke-windows-client.ps1
-```
-
+Supported endpoints: Windows 7 SP1 through 11, and Server 2008 R2 through 2025. See [docs/windows-vm.md](docs/windows-vm.md).
 
 ## Production
 
-Set `AUTH_MODE=entra` and Azure AD app roles `PrivGate.Approver` / `PrivGate.PolicyAdmin` (token claim `Approver` / `PolicyAdmin`). Turn on Conditional Access MFA. Do not run this broker on a device that already has Microsoft EPM.
+Turn on Entra sign-in (`AUTH_MODE=entra`), Conditional Access MFA, and secrets of at least 32 characters. After rotating ticket or device keys, re-download the installer for every enrolled host.
 
-The server refuses to start with the development secrets in place:
-
-```bash
-SESSION_SECRET=$(openssl rand -base64 48)
-TICKET_SIGNING_KEY=$(openssl rand -base64 48)
-DEVICE_SECRET_KEY=$(openssl rand -base64 48)
-```
-
-`npm start` binds loopback. See [docs/threat-model.md](docs/threat-model.md) for
-`PRIVGATE_PUBLIC_ORIGIN`, `PRIVGATE_TRUSTED_HOSTS`, `PRIVGATE_TRUST_PROXY`, and the
-documented residual risks.
+Operator notes: [docs/threat-model.md](docs/threat-model.md).
