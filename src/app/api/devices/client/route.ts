@@ -30,25 +30,30 @@ export async function GET(req: Request) {
   }
 
   if (format === "script") {
-    const { deploymentScript } = await import("@/lib/client-package");
-    const script = deploymentScript(apiBase, enrollmentToken());
-    const signature = signDeploymentArtifact(script, process.env);
+    try {
+      const { deploymentScript } = await import("@/lib/client-package");
+      const script = deploymentScript(apiBase, enrollmentToken());
+      const signature = signDeploymentArtifact(script, process.env);
 
-    appendAudit(db, auth.session.email, "device.client-script", "fleet", { apiBase });
-    return new NextResponse(
-      script +
-        `
+      appendAudit(db, auth.session.email, "device.client-script", "fleet", { apiBase });
+      return new NextResponse(
+        script +
+          `
 # PrivGate Script Signature (Ed25519 base64):
 # ${signature}
 `,
-      {
-        headers: {
-          "content-type": "text/plain; charset=utf-8",
-          "content-disposition": 'attachment; filename="Install-PrivGate.ps1"',
-          "cache-control": "no-store",
+        {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "content-disposition": 'attachment; filename="Install-PrivGate.ps1"',
+            "cache-control": "no-store",
+          },
         },
-      },
-    );
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not build the deployment script";
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
   }
 
   if (format === "msi") {

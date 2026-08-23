@@ -99,7 +99,9 @@ export function DevicesClient({
       return;
     }
     if (!binariesReady) {
-      setError("Publish the Windows client on this console first (`bash scripts/smoke-agent-build.sh`), then download again.");
+      setError(
+        "This console is missing the Windows client. Reinstall from GitHub Releases, or from a source checkout run bash scripts/smoke-agent-build.sh and restart.",
+      );
       return;
     }
     window.location.href = `/api/devices/client?format=${method}&apiBase=${encodeURIComponent(consoleUrl)}`;
@@ -135,7 +137,7 @@ export function DevicesClient({
             <p>
               {msiReady
                 ? "Intune, Group Policy, or a double-click on the PC. One .msi file — not a zip."
-                : "Not available on this console. MSI build needs published client binaries and wixl (msitools on Linux/macOS). Use the deployment script."}
+                : "Not available on this console. Use the deployment script. GitHub Releases console builds include the client MSI."}
             </p>
           </button>
           <button

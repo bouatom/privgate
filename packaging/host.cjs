@@ -29,5 +29,6 @@ if (!process.env.PRIVGATE_PUBLIC_ORIGIN && !isWildcardBind(cfg.bind) && !isLoopb
   process.env.PRIVGATE_PUBLIC_ORIGIN = `http://${cfg.bind}:${cfg.webPort}`;
 }
 fs.mkdirSync(dataDir, { recursive: true });
+process.env.PRIVGATE_APP_DIR = process.env.PRIVGATE_APP_DIR || __dirname;
 process.chdir(__dirname);
 require("./listen.cjs");

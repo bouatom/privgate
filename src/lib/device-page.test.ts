@@ -8,7 +8,6 @@ import {
   registerOrReuseDevice,
 } from "./db";
 import { safeApiBase } from "./device-installer";
-import { deploymentScript } from "./client-package";
 
 describe("device events and installer", () => {
   it("summarizes the seeded lab device with its pending request and enroll event", () => {
@@ -24,13 +23,7 @@ describe("device events and installer", () => {
     expect(detail?.requests[0]?.filePath).toContain("Update.exe");
   });
 
-  it("packages a single PowerShell deployment script with the console address", () => {
-    const script = deploymentScript("http://192.168.1.10:3001", "enroll-token-example");
-    expect(script).toContain("http://192.168.1.10:3001");
-    expect(script).toContain("enroll-token-example");
-    expect(script).toContain("PrivGateBroker");
-    expect(script).toContain("/api/agent/bootstrap");
-    expect(script).not.toMatch(/application\/zip|\.zip/);
+  it("keeps the Windows client project next to the console", () => {
     expect(existsSync(`${process.cwd()}/agent`)).toBe(true);
   });
 

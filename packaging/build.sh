@@ -61,9 +61,12 @@ assemble_app() {
     cp -R "$ROOT/public" "$dest/public"
   fi
   cp "$ROOT/packaging/host.cjs" "$dest/host.cjs"
-  if [[ -d "$ROOT/agent/dist" ]]; then
-    mkdir -p "$dest/agent/dist"
-    cp -a "$ROOT/agent/dist/." "$dest/agent/dist/"
+  mkdir -p "$dest/agent/dist"
+  cp -a "$ROOT/agent/dist/." "$dest/agent/dist/"
+  if [[ ! -f "$dest/agent/dist/PrivGate.Agent.exe" ]]; then
+    echo "Console payload is missing the Windows client ($dest/agent/dist/PrivGate.Agent.exe)." >&2
+    echo "A console that cannot enroll PCs must not ship. Run: bash scripts/smoke-agent-build.sh" >&2
+    exit 1
   fi
   copy_if "$ROOT/packaging/listen.cjs" "$dest/listen.cjs"
   copy_if "$ROOT/packaging/listen-config.cjs" "$dest/listen-config.cjs"
@@ -128,6 +131,21 @@ if [[ "${PRIVGATE_SKIP_APP_BUILD:-}" != "1" ]]; then
   fi
 else
   log "Skipping app build (PRIVGATE_SKIP_APP_BUILD=1)"
+fi
+
+if [[ ! -f "$ROOT/agent/dist/PrivGate.Agent.exe" ]]; then
+  echo "Windows client binaries are missing at agent/dist/PrivGate.Agent.exe" >&2
+  echo "Cannot ship a console that cannot enroll PCs. Run: bash scripts/smoke-agent-build.sh" >&2
+  exit 1
+fi
+if command -v wixl >/dev/null; then
+  log "Packaged Windows client MSI"
+  node "$ROOT/packaging/windows/build-client-msi.cjs" \
+    "$ROOT/agent/dist" \
+    "$ROOT/agent/dist/PrivGate-Client.msi" \
+    "$VERSION"
+else
+  echo "wixl not found; this console will still enroll PCs with the PowerShell script." >&2
 fi
 
 if want windows; then

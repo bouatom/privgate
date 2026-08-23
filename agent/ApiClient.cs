@@ -81,11 +81,17 @@ public sealed class ApiClient
                         int retryAfterSec = 1;
                         if (res.Headers.RetryAfter?.Delta.HasValue == true)
                         {
-                            retryAfterSec = (int)res.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                            retryAfterSec = Math.Max(1, (int)res.Headers.RetryAfter.Delta.Value.TotalSeconds);
                         }
-                        else if (int.TryParse(res.Headers.RetryAfter?.Comment, out var sec))
+                        else if (res.Headers.RetryAfter?.Date.HasValue == true)
                         {
-                            retryAfterSec = sec;
+                            var wait = res.Headers.RetryAfter.Date.Value - DateTimeOffset.UtcNow;
+                            retryAfterSec = Math.Max(1, (int)wait.TotalSeconds);
+                        }
+                        else if (res.Headers.TryGetValues("Retry-After", out var retryAfterValues) &&
+                                 int.TryParse(retryAfterValues.FirstOrDefault(), out var sec))
+                        {
+                            retryAfterSec = Math.Max(1, sec);
                         }
 
                         // Calculate backoff with jitter: (1.0 to 1.25) * retryAfterSec

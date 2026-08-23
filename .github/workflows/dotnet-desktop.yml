@@ -125,6 +125,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends nsis msitools
 
+      - name: Install msitools for the Windows client MSI
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends msitools
+
       - name: Install npm dependencies
         run: npm ci
 

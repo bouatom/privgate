@@ -75,6 +75,7 @@ process.env.NODE_ENV = process.env.NODE_ENV || "production";
 
 async function main() {
   const dir = appDir();
+  process.env.PRIVGATE_APP_DIR = dir;
   const cfg = parseListen(process.env);
   process.env.HOSTNAME = cfg.bind;
   process.env.PORT = String(cfg.webPort);

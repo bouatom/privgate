@@ -4,7 +4,7 @@ Published binaries land on **GitHub Releases** after the Console installers work
 
 - Push to `main` (or **Run workflow**) updates the **nightly** pre-release. `v0.1.0` stays the latest stable until you tag.
 - Push a tag `vX.Y.Z` to publish that version as the latest release.
-- CI does not build the Windows client/broker. Enroll PCs from **Devices** after the console is up.
+- CI publishes the Windows client into every console installer (`agent/dist`, plus a client MSI when `wixl` is available). After install, **Devices** can download the script or MSI without a local broker publish.
 
 This folder is how maintainers rebuild the same files locally.
 

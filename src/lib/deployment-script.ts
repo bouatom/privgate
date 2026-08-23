@@ -1,0 +1,99 @@
+import "server-only";
+import { readFileSync } from "node:fs";
+import {
+  AGENT_EXE,
+  HELPER_EXE,
+  clientBinariesReady,
+  clientBinaryPath,
+  listClientBinaries,
+} from "./client-binaries";
+
+function psQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function embeddedFiles(): { name: string; b64: string }[] {
+  const out: { name: string; b64: string }[] = [];
+  for (const name of listClientBinaries()) {
+    if (name.toLowerCase() === "appsettings.json") continue;
+    const src = clientBinaryPath(name);
+    if (!src) continue;
+    const buf = readFileSync(src);
+    if (buf.length > 20 * 1024 * 1024) {
+      throw new Error(`Client file ${name} is too large to embed in the deployment script`);
+    }
+    out.push({ name, b64: buf.toString("base64") });
+  }
+  return out;
+}
+
+export function deploymentScript(apiBase: string, token: string): string {
+  if (!clientBinariesReady()) {
+    throw new Error("Windows client binaries are not on this console.");
+  }
+  const files = embeddedFiles();
+  if (!files.some((f) => f.name === AGENT_EXE)) {
+    throw new Error("Windows client binaries are not on this console.");
+  }
+  const base = psQuote(apiBase.replace(/\/$/, ""));
+  const tok = psQuote(token);
+  const map = files.map((f) => `  ${psQuote(f.name)} = '${f.b64}'`).join("\n");
+  return `#Requires -RunAsAdministrator
+$ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$ApiBase = ${base}
+$EnrollmentToken = ${tok}
+$InstallDir = Join-Path $env:ProgramFiles "PrivGate"
+
+$ndpKey = "HKLM:\\SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v4\\Full"
+$release = (Get-ItemProperty $ndpKey -Name Release -ErrorAction SilentlyContinue).Release
+if (-not $release -or $release -lt 528040) {
+  throw "PrivGate requires .NET Framework 4.8 or later. Download: https://go.microsoft.com/fwlink/?LinkId=2085155"
+}
+
+New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+
+$Files = @{
+${map}
+}
+foreach ($name in $Files.Keys) {
+  [IO.File]::WriteAllBytes((Join-Path $InstallDir $name), [Convert]::FromBase64String($Files[$name]))
+}
+
+$settings = @{
+  ApiBase = $ApiBase
+  DeviceId = ""
+  DeviceSecret = ""
+  TicketSigningKey = ""
+  StateDirectory = ""
+  EnrollmentToken = $EnrollmentToken
+} | ConvertTo-Json
+Set-Content -Path (Join-Path $InstallDir "appsettings.json") -Value $settings -Encoding UTF8
+
+$reg = "HKLM:\\SOFTWARE\\PrivGate\\Client"
+New-Item -Path $reg -Force | Out-Null
+Set-ItemProperty -Path $reg -Name ApiBase -Value $ApiBase
+Set-ItemProperty -Path $reg -Name EnrollmentToken -Value $EnrollmentToken
+
+$bin = Join-Path $InstallDir ${psQuote(AGENT_EXE)}
+if (-not (Test-Path $bin)) { throw "${AGENT_EXE} was not written." }
+
+$svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
+if ($svc) {
+  Stop-Service PrivGateBroker -Force -ErrorAction SilentlyContinue
+  sc.exe delete PrivGateBroker | Out-Null
+  Start-Sleep -Seconds 1
+}
+
+sc.exe create PrivGateBroker binPath= "\`"$bin\`"" start= auto DisplayName= "PrivGate Elevation Broker" | Out-Null
+sc.exe description PrivGateBroker "PrivGate SYSTEM elevation broker. Does not disable UAC or store admin passwords." | Out-Null
+Start-Service PrivGateBroker
+
+Write-Host "PrivGate client installed. This PC will appear on the console as $env:COMPUTERNAME."
+$helper = Join-Path $InstallDir ${psQuote(HELPER_EXE)}
+if (Test-Path $helper) {
+  Write-Host "Standard user elevate: & '$helper' --elevate <path-to-file>"
+}
+`;
+}

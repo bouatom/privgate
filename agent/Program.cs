@@ -5,8 +5,9 @@ var configArg = args.FirstOrDefault(a => a.StartsWith("--config="));
 var configPath = configArg != null
     ? configArg.Substring("--config=".Length)
     : Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-var cfg = JsonSerializer.Deserialize<Cfg>(File.ReadAllText(configPath))
-    ?? throw new InvalidOperationException("appsettings.json missing");
+var cfg = CfgOverlay.Apply(
+    JsonSerializer.Deserialize<Cfg>(File.ReadAllText(configPath))
+        ?? throw new InvalidOperationException("appsettings.json missing"));
 cfg.DeviceId ??= "";
 cfg.EnrollmentToken ??= "";
 using var cts = new CancellationTokenSource();
