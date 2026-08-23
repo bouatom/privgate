@@ -168,7 +168,7 @@ export async function syncDirectory(db: DatabaseSync, settings?: DirectorySettin
       displayName: String(user.displayName || user.userPrincipalName),
       userPrincipalName: String(user.userPrincipalName),
       entraOid: String(user.id),
-      adSid: String(user.onPremisesSecurityIdentifier || ""),
+      adSid: user.onPremisesSecurityIdentifier || undefined,
     }));
   upsertUsers(db, users);
 

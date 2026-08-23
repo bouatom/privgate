@@ -2,24 +2,15 @@
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { IDENTITY_MODE_COPY, identityMode } from "@/lib/identity-mode";
 import type { AdSettings } from "@/lib/models";
+import { AdPanel } from "./ad-panel";
+import { EntraPanel } from "./entra-panel";
+import type { AdFormState, DeviceFlow, DirectoryStatus } from "./integrations-types";
+import { JsonImportPanel } from "./json-import-panel";
 
-type DirectoryStatus =
-  | { connected: false }
-  | {
-      connected: true;
-      tenantName: string;
-      tenantId: string;
-      lastSyncAt: string | null;
-      connectedBy: string;
-    };
-
-type DeviceFlow = {
-  state: string;
-  userCode: string;
-  verificationUri: string;
-  interval: number;
-};
+const DEFAULT_FILTER =
+  "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
 
 export function IntegrationsClient({
   directory: initialDirectory,
@@ -36,16 +27,14 @@ export function IntegrationsClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [ad, setAd] = useState<AdSettings>(initialAd);
-  const [adForm, setAdForm] = useState({
+  const [adForm, setAdForm] = useState<AdFormState>({
     host: initialAd.host,
     port: initialAd.port,
     useTls: initialAd.useTls,
     bindDn: initialAd.bindDn,
     password: "",
     baseDn: initialAd.baseDn,
-    userFilter:
-      initialAd.userFilter ||
-      "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
+    userFilter: initialAd.userFilter || DEFAULT_FILTER,
   });
   const [importJson, setImportJson] = useState(
     '[{"displayName":"Sam Support","userPrincipalName":"sam@contoso.test","adSid":"S-1-5-21-1000-1000-1000-1102","jitEligible":true}]',
@@ -58,7 +47,7 @@ export function IntegrationsClient({
 
   async function load() {
     const [dir, adRes] = await Promise.all([fetch("/api/directory"), fetch("/api/directory/ad")]);
-    if (dir.ok) setDirectory(await dir.json());
+    if (dir.ok) setDirectory((await dir.json()) as DirectoryStatus);
     if (adRes.ok) {
       const body = (await adRes.json()) as AdSettings;
       setAd(body);
@@ -140,17 +129,17 @@ export function IntegrationsClient({
     setError(body.error || "Could not start Entra setup.");
   }
 
-  async function syncNow() {
+  async function syncEntra() {
     setBusy(true);
     setError("");
     const res = await fetch("/api/directory", { method: "POST" });
     const body = (await res.json()) as { error?: string; users?: number; groups?: number };
     setBusy(false);
     if (!res.ok) {
-      setError(body.error || "Sync failed");
+      setError(body.error || "Entra sync failed");
       return;
     }
-    setMessage(`Synced ${body.users ?? 0} users and ${body.groups ?? 0} groups.`);
+    setMessage(`Entra sync: ${body.users ?? 0} users and ${body.groups ?? 0} groups.`);
     await load();
   }
 
@@ -169,7 +158,7 @@ export function IntegrationsClient({
       setError(body.error || "Could not save AD settings");
       return;
     }
-    setMessage("Active Directory connection settings saved. Bind password is stored encrypted.");
+    setMessage("Active Directory settings saved. Bind password is stored encrypted. Entra is unchanged.");
     setAdForm((prev) => ({ ...prev, password: "" }));
     await load();
   }
@@ -181,11 +170,26 @@ export function IntegrationsClient({
     const body = (await res.json()) as { error?: string };
     setBusy(false);
     if (!res.ok) {
-      setError(body.error || "AD connection test failed");
+      setError(body.error || "AD LDAP bind failed");
       await load();
       return;
     }
-    setMessage("Reached the domain controller. User sync still uses Entra or JSON import until LDAP search is enabled for this bind.");
+    setMessage("LDAP bind succeeded. You can sync AD users without connecting Entra ID.");
+    await load();
+  }
+
+  async function syncAd() {
+    setBusy(true);
+    setError("");
+    const res = await fetch("/api/directory/ad/sync", { method: "POST" });
+    const body = (await res.json()) as { error?: string; users?: number };
+    setBusy(false);
+    if (!res.ok) {
+      setError(body.error || "AD sync failed");
+      await load();
+      return;
+    }
+    setMessage(`AD sync: ${body.users ?? 0} users. Existing Entra object IDs were kept.`);
     await load();
   }
 
@@ -216,7 +220,11 @@ export function IntegrationsClient({
     startTransition(() => router.refresh());
   }
 
-  const connected = directory?.connected === true ? directory : null;
+  const mode = identityMode({
+    entraConnected: directory.connected === true,
+    adConfigured: ad.configured,
+  });
+  const copy = IDENTITY_MODE_COPY[mode];
 
   return (
     <>
@@ -224,105 +232,36 @@ export function IntegrationsClient({
         <div>
           <h1>Integrations</h1>
           <p className="lede">
-            Connect Microsoft Entra ID and on-premises Active Directory. Entra sign-in as Global Administrator creates
-            the Graph app. AD stores LDAP bind settings for hybrid identity.
+            Identity sources are independent. Connect on-premises Active Directory, Microsoft Entra
+            ID, both (hybrid), or neither.
           </p>
         </div>
       </div>
 
       <div className="panel stack" style={{ padding: 18, marginBottom: 16 }}>
-        <strong>Microsoft Entra ID</strong>
-        {connected ? (
-          <p className="lede">
-            Connected to <span className="mono">{connected.tenantName || connected.tenantId}</span>
-            {connected.lastSyncAt ? ` · last sync ${new Date(connected.lastSyncAt).toLocaleString()}` : ""}
-            {connected.connectedBy ? ` · by ${connected.connectedBy}` : ""}
-          </p>
-        ) : (
-          <p className="lede">Not connected. A Global Administrator sign-in is enough — no portal app registration.</p>
-        )}
-        {deviceFlow ? (
-          <div className="device-code">
-            <p className="lede">Open Microsoft sign-in and enter this code as Global Administrator:</p>
-            <div className="device-code-value">{deviceFlow.userCode}</div>
-            <a href={deviceFlow.verificationUri} target="_blank" rel="noreferrer">
-              {deviceFlow.verificationUri}
-            </a>
-            <p className="lede" style={{ fontSize: 12 }}>Waiting for Microsoft… the directory app is created after you approve.</p>
-          </div>
-        ) : null}
+        <strong>{copy.title}</strong>
+        <p className="lede">{copy.body}</p>
         {message ? <p className="ok">{message}</p> : null}
         {error ? <p className="err">{error}</p> : null}
-        <div className="row-actions">
-          {!connected && !deviceFlow ? (
-            <button className="primary" type="button" disabled={busy} onClick={() => void connectEntra()}>
-              {busy ? "Starting…" : "Connect Entra ID"}
-            </button>
-          ) : null}
-          {connected ? (
-            <button className="primary" type="button" disabled={busy} onClick={() => void syncNow()}>
-              {busy ? "Syncing…" : "Sync users & groups"}
-            </button>
-          ) : null}
-        </div>
       </div>
 
-      <form className="panel stack" style={{ padding: 18, marginBottom: 16 }} onSubmit={saveAd}>
-        <strong>Active Directory (LDAP)</strong>
-        <p className="lede" style={{ fontSize: 13 }}>
-          Point PrivGate at a domain controller. The bind password is encrypted at rest. Test checks that the host and
-          port accept a connection (LDAPS 636 or LDAP 389).
-        </p>
-        {ad?.lastTestedAt ? (
-          <p className="lede" style={{ fontSize: 12 }}>
-            Last test {new Date(ad.lastTestedAt).toLocaleString()}
-            {ad.lastError ? ` · ${ad.lastError}` : " · reachable"}
-          </p>
-        ) : null}
-        <div className="grid cards">
-          <div>
-            <label>Domain controller</label>
-            <input value={adForm.host} onChange={(e) => setAdForm({ ...adForm, host: e.target.value })} placeholder="dc01.contoso.test" />
-          </div>
-          <div>
-            <label>Port</label>
-            <input type="number" value={adForm.port} onChange={(e) => setAdForm({ ...adForm, port: Number(e.target.value) })} />
-          </div>
-          <div>
-            <label>Base DN</label>
-            <input value={adForm.baseDn} onChange={(e) => setAdForm({ ...adForm, baseDn: e.target.value })} placeholder="DC=contoso,DC=test" />
-          </div>
-        </div>
-        <div className="grid cards">
-          <div>
-            <label>Bind DN or UPN</label>
-            <input value={adForm.bindDn} onChange={(e) => setAdForm({ ...adForm, bindDn: e.target.value })} placeholder="CN=PrivGate,OU=Service,DC=contoso,DC=test" />
-          </div>
-          <div>
-            <label>Bind password {ad?.passwordSet ? "(saved)" : ""}</label>
-            <input type="password" value={adForm.password} onChange={(e) => setAdForm({ ...adForm, password: e.target.value })} placeholder={ad?.passwordSet ? "Leave blank to keep" : ""} autoComplete="new-password" />
-          </div>
-          <label className="choice" style={{ alignSelf: "end", marginBottom: 10 }}>
-            <input type="checkbox" checked={adForm.useTls} onChange={(e) => setAdForm({ ...adForm, useTls: e.target.checked, port: e.target.checked ? 636 : 389 })} />
-            Use TLS (LDAPS)
-          </label>
-        </div>
-        <div>
-          <label>User filter</label>
-          <input value={adForm.userFilter} onChange={(e) => setAdForm({ ...adForm, userFilter: e.target.value })} />
-        </div>
-        <div className="row-actions">
-          <button className="primary" type="submit" disabled={busy}>Save AD settings</button>
-          <button className="ghost" type="button" disabled={busy} onClick={() => void testAd()}>Test connection</button>
-        </div>
-      </form>
-
-      <form className="panel stack" style={{ padding: 18 }} onSubmit={importUsers}>
-        <strong>Manual JSON import</strong>
-        <p className="lede" style={{ fontSize: 12 }}>Fallback if Entra is not connected yet, or to inject SIDs from an AD export.</p>
-        <textarea rows={6} value={importJson} onChange={(e) => setImportJson(e.target.value)} />
-        <button className="primary" type="submit">Upsert users</button>
-      </form>
+      <EntraPanel
+        directory={directory}
+        deviceFlow={deviceFlow}
+        busy={busy}
+        onConnect={() => void connectEntra()}
+        onSync={() => void syncEntra()}
+      />
+      <AdPanel
+        ad={ad}
+        adForm={adForm}
+        setAdForm={setAdForm}
+        busy={busy}
+        onSave={(e) => void saveAd(e)}
+        onTest={() => void testAd()}
+        onSync={() => void syncAd()}
+      />
+      <JsonImportPanel importJson={importJson} setImportJson={setImportJson} onImport={(e) => void importUsers(e)} />
     </>
   );
 }

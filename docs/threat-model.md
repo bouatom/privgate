@@ -85,3 +85,7 @@ privileged administrative feature; treat `notifications.manage` accordingly.
 **SMTP TLS probing does not validate certificates.** `probeHost` connects with
 `rejectUnauthorized: false` purely to report reachability from the Notifications
 page. Delivery itself uses the configured `secure` setting.
+
+**AD LDAPS bind does not pin the domain-controller certificate.** Internal DCs
+often use a private CA. Treat `integrations.manage` as privileged: a bind
+password is sent to the configured host.

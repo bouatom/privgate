@@ -2,7 +2,7 @@
 
 Operator guide for the management console. Downloads: **[GitHub Releases](https://github.com/bouatom/privgate/releases/latest)**.
 
-PrivGate is self-hosted privilege elevation for **hybrid Active Directory and Entra ID**. People stay standard users. IT allowlists signed programs, approves a one-shot run, or opens a short just-in-time admin window — then the rights expire.
+PrivGate is self-hosted privilege elevation for **Active Directory, Entra ID, or hybrid**. People stay standard users. IT allowlists signed programs, approves a one-shot run, or opens a short just-in-time admin window — then the rights expire.
 
 UAC stays on. Admin passwords are never stored on the PC. The console installer **is** the product.
 
@@ -14,7 +14,7 @@ UAC stays on. Admin passwords are never stored on the PC. The console installer 
 | macOS | `PrivGate-Console-*-macos-*.pkg` |
 | Linux amd64 | `privgate-console_*_amd64.deb` |
 
-After setup, open [http://127.0.0.1:3000](http://127.0.0.1:3000/) on the console host, or `http://<console-host>:3000/` from another computer. The first visit is a **setup wizard** that creates the local Master Admin. Connect Entra ID later under Configuration → Integrations. Sign in with Entra appears on `/login` only after Entra is connected. There is **no demo login**.
+After setup, open [http://127.0.0.1:3000](http://127.0.0.1:3000/) on the console host, or `http://<console-host>:3000/` from another computer. The first visit is a **setup wizard** that creates the local Master Admin. Connect Entra ID and/or on-premises Active Directory later under Configuration → Integrations — they are independent. Sign in with Entra appears on `/login` only after Entra is connected. There is **no demo login**.
 
 The process binds **all interfaces** by default (`PRIVGATE_BIND=0.0.0.0`): management UI on **3000**, Windows brokers on **3001**. Data and generated secrets:
 

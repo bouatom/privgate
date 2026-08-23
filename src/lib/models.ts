@@ -83,5 +83,6 @@ export type AdSettings = {
   baseDn: string;
   userFilter: string;
   lastTestedAt: string | null;
+  lastSyncAt: string | null;
   lastError: string;
 };

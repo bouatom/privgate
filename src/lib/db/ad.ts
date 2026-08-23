@@ -1,7 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
-import { encryptSecret } from "../crypto-secret";
+import { decryptSecret, encryptSecret } from "../crypto-secret";
 import type { AdSettings } from "../models";
 import { deviceSecretKey } from "../secrets";
+
+const DEFAULT_USER_FILTER =
+  "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
 
 export function getAdSettings(db: DatabaseSync): AdSettings {
   const row = db.prepare("SELECT * FROM ad_settings WHERE id = 'default'").get() as Record<string, unknown> | undefined;
@@ -14,8 +17,9 @@ export function getAdSettings(db: DatabaseSync): AdSettings {
       bindDn: "",
       passwordSet: false,
       baseDn: "",
-      userFilter: "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))",
+      userFilter: DEFAULT_USER_FILTER,
       lastTestedAt: null,
+      lastSyncAt: null,
       lastError: "",
     };
   }
@@ -27,15 +31,29 @@ export function getAdSettings(db: DatabaseSync): AdSettings {
     bindDn: String(row.bind_dn || ""),
     passwordSet: Boolean(row.password_enc),
     baseDn: String(row.base_dn || ""),
-    userFilter: String(row.user_filter || ""),
+    userFilter: String(row.user_filter || DEFAULT_USER_FILTER),
     lastTestedAt: row.last_tested_at ? String(row.last_tested_at) : null,
+    lastSyncAt: row.last_sync_at ? String(row.last_sync_at) : null,
     lastError: String(row.last_error || ""),
   };
 }
 
+export function getAdBindPassword(db: DatabaseSync): string {
+  const row = db.prepare("SELECT password_enc FROM ad_settings WHERE id = 'default'").get() as
+    | { password_enc?: string }
+    | undefined;
+  if (!row?.password_enc) return "";
+  return decryptSecret(row.password_enc, deviceSecretKey());
+}
+
 export function saveAdSettings(
   db: DatabaseSync,
-  patch: Partial<AdSettings> & { password?: string; lastError?: string; lastTestedAt?: string | null },
+  patch: Partial<AdSettings> & {
+    password?: string;
+    lastError?: string;
+    lastTestedAt?: string | null;
+    lastSyncAt?: string | null;
+  },
   actor = "",
 ) {
   const current = getAdSettings(db);
@@ -46,8 +64,8 @@ export function saveAdSettings(
   let passEnc = existing?.password_enc || "";
   if (patch.password) passEnc = encryptSecret(patch.password, deviceSecretKey());
   db.prepare(
-    `INSERT INTO ad_settings (id, host, port, use_tls, bind_dn, password_enc, base_dn, user_filter, last_tested_at, last_error, updated_by)
-     VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO ad_settings (id, host, port, use_tls, bind_dn, password_enc, base_dn, user_filter, last_tested_at, last_sync_at, last_error, updated_by)
+     VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        host = excluded.host,
        port = excluded.port,
@@ -57,6 +75,7 @@ export function saveAdSettings(
        base_dn = excluded.base_dn,
        user_filter = excluded.user_filter,
        last_tested_at = excluded.last_tested_at,
+       last_sync_at = excluded.last_sync_at,
        last_error = excluded.last_error,
        updated_by = excluded.updated_by`,
   ).run(
@@ -68,6 +87,7 @@ export function saveAdSettings(
     next.baseDn,
     next.userFilter,
     patch.lastTestedAt === undefined ? current.lastTestedAt : patch.lastTestedAt,
+    patch.lastSyncAt === undefined ? current.lastSyncAt : patch.lastSyncAt,
     patch.lastError === undefined ? current.lastError : patch.lastError,
     actor || "",
   );

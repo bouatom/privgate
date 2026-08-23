@@ -129,10 +129,12 @@ export function migrate(db: DatabaseSync) {
       base_dn TEXT NOT NULL DEFAULT '',
       user_filter TEXT NOT NULL DEFAULT '',
       last_tested_at TEXT,
+      last_sync_at TEXT,
       last_error TEXT NOT NULL DEFAULT '',
       updated_by TEXT NOT NULL DEFAULT ''
     );
   `);
+  ensureColumn(db, "ad_settings", "last_sync_at", "TEXT");
   ensureColumn(db, "requests", "risk_level", "TEXT NOT NULL DEFAULT 'medium'");
   ensureColumn(db, "requests", "risk_reasons", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "oauth_state", "kind", "TEXT NOT NULL DEFAULT 'pkce'");

@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   // Do not polyfill `node:` for the browser. Client Components must import
   // types from `@/lib/models`; Node modules are marked `server-only`.
-  serverExternalPackages: ["ws"],
+  serverExternalPackages: ["ws", "ldapts"],
   experimental: {
     staleTimes: {
       dynamic: 0,

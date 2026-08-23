@@ -23,7 +23,7 @@ Set `PRIVGATE_TARGETS=windows`, `macos`, or `linux` to build one OS. Artifacts l
 
 A Linux `.tar.gz` is optional for local builds (`PRIVGATE_SKIP_TARBALL` is unset). GitHub Releases do not include it.
 
-The installer prompts for **bind address**, **management web port**, and **client/broker port**. Secrets are generated automatically (`AUTH_MODE=local`). Data: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. Set `PRIVGATE_BIND=127.0.0.1` at install to listen on this machine only. There is no demo login. Open `/setup` in the browser to create the Master Admin. Connect Entra ID later under Configuration → Integrations.
+The installer prompts for **bind address**, **management web port**, and **client/broker port**. Secrets are generated automatically (`AUTH_MODE=local`). Data: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. Set `PRIVGATE_BIND=127.0.0.1` at install to listen on this machine only. There is no demo login. Open `/setup` in the browser to create the Master Admin. Connect Entra ID and/or on-premises Active Directory later under Configuration → Integrations; each is optional.
 
 ## Upgrade the management console
 

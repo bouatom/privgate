@@ -55,8 +55,8 @@ export function upsertUsers(
      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
      ON CONFLICT(upn) DO UPDATE SET
        display_name = excluded.display_name,
-       ad_sid = excluded.ad_sid,
-       entra_oid = excluded.entra_oid,
+       ad_sid = CASE WHEN excluded.ad_sid != '' THEN excluded.ad_sid ELSE users.ad_sid END,
+       entra_oid = CASE WHEN excluded.entra_oid != '' THEN excluded.entra_oid ELSE users.entra_oid END,
        jit_eligible = excluded.jit_eligible,
        roles_json = excluded.roles_json`,
   );
@@ -68,8 +68,8 @@ export function upsertUsers(
       existing?.id ?? randomUUID(),
       user.displayName,
       user.userPrincipalName,
-      user.adSid ?? existing?.adSid ?? "",
-      user.entraOid ?? existing?.entraOid ?? "",
+      (user.adSid || existing?.adSid || "").trim(),
+      (user.entraOid || existing?.entraOid || "").trim(),
       jit,
       JSON.stringify(user.roles ?? (existing ? JSON.parse(existing.rolesJson) : [])),
     );

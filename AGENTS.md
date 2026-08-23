@@ -3,7 +3,7 @@
 ## Run
 - `npm install && npm run dev` — control plane at http://localhost:3000; first visit is `/setup` (create the local Master Admin). Brokers use port **3001**
 - Bind/ports: installer prompts, or `PRIVGATE_BIND` / `PRIVGATE_WEB_PORT` / `PRIVGATE_AGENT_PORT`. Configuration → Network
-- Connect Entra / AD: Configuration → Integrations. Login shows Entra SSO only after Entra is connected
+- Connect Entra and/or AD independently: Configuration → Integrations. Login shows Entra SSO only after Entra is connected. AD-only, Entra-only, and hybrid are all valid.
 - Notifications: Configuration → Notifications
 - After the wizard, first login opens the dashboard (`/dashboard`)
 - Devices: download an MSI or a deployment script; each PC registers by hostname and keeps a live WebSocket on port **3001** (`/api/agent/ws`)
