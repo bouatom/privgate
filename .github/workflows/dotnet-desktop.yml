@@ -65,9 +65,29 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
+  verify:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Test, typecheck, lint
+        run: npm test && npm run typecheck && npm run lint
+
   installers:
     name: ${{ matrix.name }} installer
-    needs: version
+    needs: [version, verify]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -150,10 +170,14 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
       VERSION: ${{ needs.version.outputs.version }}
       PRERELEASE: ${{ needs.version.outputs.prerelease }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download installers
         uses: actions/download-artifact@v8
         with:
@@ -168,7 +192,7 @@ jobs:
           has_win=0
           has_mac=0
           has_lin=0
-          for f in release-files/*; do
+          while IFS= read -r -d '' f; do
             [[ -f "$f" ]] || continue
             base="$(basename "$f")"
             case "$base" in
@@ -192,7 +216,7 @@ jobs:
                 exit 1
                 ;;
             esac
-          done
+          done < <(find release-files -type f -print0)
           if [[ ${#files[@]} -eq 0 || "$has_win" -ne 1 || "$has_mac" -ne 1 || "$has_lin" -ne 1 ]]; then
             echo "Need one Windows, macOS, and Linux installer; found:" >&2
             ls -la release-files >&2 || true
