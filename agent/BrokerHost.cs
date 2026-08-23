@@ -60,6 +60,7 @@ sealed class BrokerHost
             BrokerLog.Write($"registered as {cfg.DeviceId}");
         }
 
+        BrokerStatus.Current.Configure(cfg.DeviceId, cfg.ApiBase);
         var watchdog = new JitWatchdog(cfg.StateDirectory);
         using var realtime = new RealtimeChannel(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret, cfg.TicketSigningKey, watchdog, ct);
         var api = new ApiClient(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret, realtime);
@@ -103,7 +104,8 @@ sealed class BrokerHost
     async Task<string> Handle(JsonElement msg)
     {
         var mode = msg.GetProperty("mode").GetString();
-        var userSid = msg.GetProperty("userSid").GetString() ?? "";
+        if (mode == "status") return BrokerStatus.Current.ToJson();
+        var userSid = msg.TryGetProperty("userSid", out var sidEl) ? sidEl.GetString() ?? "" : "";
         if (mode == "jit-status")
         {
             var state = await _api.JitStateAsync(userSid, _ct);
@@ -136,6 +138,7 @@ sealed class BrokerHost
         }, _ct);
 
         var decision = result.GetProperty("decision").GetString();
+        BrokerStatus.Current.NoteRequest(filePath, decision ?? "unknown");
         if (decision == "allow")
         {
             var ticket = result.GetProperty("ticket").GetString() ?? "";

@@ -1,16 +1,37 @@
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
+using System.Windows.Forms;
 using PrivGate.Agent;
 
-if (BrokerService.ShouldRun(args))
+internal static class Program
 {
-    ServiceBase.Run(new BrokerService());
-    return;
-}
+    [STAThread]
+    static void Main(string[] args)
+    {
+        if (BrokerService.ShouldRun(args))
+        {
+            ServiceBase.Run(new BrokerService());
+            return;
+        }
 
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (_, e) =>
-{
-    e.Cancel = true;
-    cts.Cancel();
-};
-await BrokerHost.RunAsync(args, cts.Token);
+        if (args.Contains("--once") || args.Contains("--console"))
+        {
+            AllocConsole();
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                cts.Cancel();
+            };
+            BrokerHost.RunAsync(args, cts.Token).GetAwaiter().GetResult();
+            return;
+        }
+
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        Application.Run(new AgentTrayContext(args));
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool AllocConsole();
+}

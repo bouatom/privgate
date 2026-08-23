@@ -57,7 +57,9 @@ public sealed class RealtimeChannel : IDisposable
             {
                 await ConnectAsync(processCt).ConfigureAwait(false);
                 delayMs = 1000;
+                BrokerStatus.Current.MarkConnected();
                 await ReceiveLoop(processCt).ConfigureAwait(false);
+                BrokerStatus.Current.MarkDisconnected("socket closed");
             }
             catch (OperationCanceledException) when (processCt.IsCancellationRequested)
             {
@@ -66,6 +68,7 @@ public sealed class RealtimeChannel : IDisposable
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"PrivGate realtime: {ex.Message}");
+                BrokerStatus.Current.MarkDisconnected(ex.Message);
             }
             FailPending("realtime disconnected");
             try { socket?.Dispose(); } catch { /* ignore */ }
