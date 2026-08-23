@@ -11,22 +11,35 @@ public sealed class ApiClient
     readonly HttpClient http;
     readonly string deviceId;
     readonly string secret;
+    readonly RealtimeChannel? realtime;
 
-    public ApiClient(string apiBase, string deviceId, string secret)
+    public ApiClient(string apiBase, string deviceId, string secret, RealtimeChannel? realtime = null)
     {
         http = new HttpClient { BaseAddress = new Uri(apiBase.TrimEnd('/') + "/") };
         this.deviceId = deviceId;
         this.secret = secret;
+        this.realtime = realtime;
     }
 
     public async Task<JsonElement> EvaluateAsync(object body, CancellationToken ct = default)
     {
-        return await SendAsync(HttpMethod.Post, "/api/agent/evaluate", body, ct);
+        if (realtime is { IsConnected: true })
+        {
+            try { return await realtime.EvaluateAsync(body, ct).ConfigureAwait(false); }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime evaluate: {ex.Message}"); }
+        }
+        return await SendAsync(HttpMethod.Post, "/api/agent/evaluate", body, ct).ConfigureAwait(false);
     }
 
     public async Task<JsonElement> JitStateAsync(string userSid, CancellationToken ct = default)
     {
-        return await SendAsync(HttpMethod.Get, $"/api/agent/jit-state?userSid={Uri.EscapeDataString(userSid)}", null, ct);
+        if (realtime is { IsConnected: true })
+        {
+            try { return await realtime.JitStateAsync(userSid, ct).ConfigureAwait(false); }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime jit-state: {ex.Message}"); }
+        }
+        return await SendAsync(HttpMethod.Get, $"/api/agent/jit-state?userSid={Uri.EscapeDataString(userSid)}", null, ct)
+            .ConfigureAwait(false);
     }
 
     async Task<JsonElement> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
@@ -47,8 +60,6 @@ public sealed class ApiClient
         req.Headers.TryAddWithoutValidation("X-Signature", sig);
         req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         var res = await http.SendAsync(req, ct);
-        // ReadAsStringAsync(CancellationToken) is net5+; the no-CT overload is fine
-        // for .NET Framework 4.8 since the outer SendAsync already used the token.
         var text = await res.Content.ReadAsStringAsync();
         res.EnsureSuccessStatusCode();
         return JsonSerializer.Deserialize<JsonElement>(text);

@@ -4,6 +4,7 @@ import { isResponse, requireAdmin } from "@/lib/http";
 import { signTicket } from "@/lib/signing";
 import { ticketKeyForDevice } from "@/lib/evaluate";
 import { queueNotification } from "@/lib/notify";
+import { notifyJitGrant } from "@/lib/realtime/notify";
 
 export async function GET() {
   const auth = await requireAdmin("jit.view");
@@ -52,6 +53,7 @@ export async function POST(req: Request) {
     minutes: grant.durationMinutes,
     reason: grant.reason,
   });
+  notifyJitGrant(grant, ticket);
   queueNotification(db, {
     kind: "jit",
     riskLevel: "high",

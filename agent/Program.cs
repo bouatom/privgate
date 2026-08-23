@@ -7,11 +7,19 @@ var configPath = configArg != null
     : Path.Combine(AppContext.BaseDirectory, "appsettings.json");
 var cfg = JsonSerializer.Deserialize<Cfg>(File.ReadAllText(configPath))
     ?? throw new InvalidOperationException("appsettings.json missing");
-
-var api = new ApiClient(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret);
-var watchdog = new JitWatchdog(cfg.StateDirectory);
+cfg.DeviceId ??= "";
+cfg.EnrollmentToken ??= "";
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+if (string.IsNullOrWhiteSpace(cfg.DeviceId) || !string.IsNullOrWhiteSpace(cfg.EnrollmentToken))
+{
+    cfg = await DeviceRegistration.RegisterAsync(cfg, configPath, cts.Token);
+}
+
+var watchdog = new JitWatchdog(cfg.StateDirectory);
+using var realtime = new RealtimeChannel(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret, cfg.TicketSigningKey, watchdog, cts.Token);
+var api = new ApiClient(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret, realtime);
+_ = Task.Run(() => realtime.RunAsync(), cts.Token);
 
 _ = Task.Run(async () =>
 {
@@ -120,4 +128,3 @@ if (args.Contains("--once") && args.Length >= 3)
 var pipe = new NamedPipeHost(Handle);
 await pipe.ListenAsync(cts.Token);
 
-sealed record Cfg(string ApiBase, string DeviceId, string DeviceSecret, string TicketSigningKey, string? StateDirectory);

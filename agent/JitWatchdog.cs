@@ -34,6 +34,28 @@ public sealed class JitWatchdog
         }
     }
 
+    public void RevokeNow(string userSid)
+    {
+        RevokeLocalAdmin(userSid);
+        if (!File.Exists(statePath)) return;
+        try
+        {
+            var state = JsonSerializer.Deserialize<JitState>(File.ReadAllText(statePath));
+            if (state is not null && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Process.Start(new ProcessStartInfo("schtasks.exe", $"/Delete /F /TN PrivGate-JIT-{state.grantId}")
+                {
+                    UseShellExecute = false,
+                })?.WaitForExit(10_000);
+            }
+        }
+        catch
+        {
+            // Local revoke still proceeds; the scheduled task is a second line of defense.
+        }
+        File.Delete(statePath);
+    }
+
     public bool Tick(DateTimeOffset now, Action<string> revokeUser)
     {
         if (!File.Exists(statePath)) return false;

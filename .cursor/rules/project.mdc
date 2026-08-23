@@ -8,3 +8,4 @@ alwaysApply: true
 - Follow `AGENTS.md` in the repo root.
 - Run the listed test/lint command before claiming done.
 - Do not commit secrets. Commit only when the user asks.
+- One file = one domain. Soft cap 300 lines, hard cap 400. Split before adding to a dump module. Barrels re-export only.

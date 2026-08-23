@@ -19,9 +19,9 @@ Windows SYSTEM service. It does **not** disable UAC, store admin passwords, or i
 
 1. Standard user runs `PrivGate.Helper --elevate <file>`.
 2. Helper talks to the broker over the `PrivGateElevation` named pipe (not over the network as the user).
-3. Broker hashes the file, reads Authenticode publisher, and calls `/api/agent/evaluate` with device HMAC.
-4. On an allow ticket it launches **that** file (job object blocks children unless the ticket says otherwise).
-5. On a JIT ticket it adds the user SID to local Administrators and registers `PrivGate-JIT-{id}` to remove them at expiry — even if the API is down.
+3. Broker hashes the file, reads Authenticode publisher, and evaluates over a persistent WebSocket (`/api/agent/ws`) with device HMAC. HTTP `/api/agent/evaluate` is the fallback if the socket is down.
+4. On an allow ticket it launches **that** file (job object blocks children unless the ticket says otherwise). If the decision is pending, the broker **waits on the socket** for the operator’s approve/deny instead of asking the user to retry.
+5. On a JIT ticket — including a JIT grant pushed from the console — it adds the user SID to local Administrators and registers `PrivGate-JIT-{id}` to remove them at expiry — even if the API is down. A JIT revoke from the console is applied immediately over the same socket.
 
 ## Runtime target
 
@@ -36,7 +36,7 @@ Both projects target **`net48`** (`.NET Framework 4.8`).
 
 ## Install
 
-Lab device `dev-lab-01` / secret `lab-device-secret-do-not-use-in-prod` matches the control-plane seed and is only usable against `npm run dev`. Prefer **Devices → Download installer** so the PC gets a packaged `Install-PrivGate.ps1`. Replace the lab secret after first real enroll.
+Prefer **Devices** and download either the **MSI** or the **deployment script**. The file already contains this console’s address. The client registers the PC by hostname. Do not zip extra files onto the package.
 
 See [docs/windows-vm.md](../docs/windows-vm.md).
 

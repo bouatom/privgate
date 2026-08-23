@@ -1,0 +1,52 @@
+import "server-only";
+import { DatabaseSync } from "node:sqlite";
+import fs from "node:fs";
+import path from "node:path";
+import { consumeBootstrap } from "../bootstrap";
+import { migrate } from "./schema";
+import { seedDemo } from "./seed";
+
+const globalDb = globalThis as unknown as { __privgateDb?: DatabaseSync; __privgateDbPath?: string };
+
+export function dbPath(): string {
+  return process.env.PRIVGATE_DB || path.join(process.cwd(), "data", "privgate.db");
+}
+
+export function getDb(): DatabaseSync {
+  const target = dbPath();
+  if (globalDb.__privgateDb && globalDb.__privgateDbPath === target) {
+    try {
+      globalDb.__privgateDb.prepare("SELECT 1 FROM portal_users LIMIT 0").all();
+      return globalDb.__privgateDb;
+    } catch {
+      try {
+        globalDb.__privgateDb.close();
+      } catch {
+        /* ignore */
+      }
+      globalDb.__privgateDb = undefined;
+      globalDb.__privgateDbPath = undefined;
+    }
+  }
+  if (target !== ":memory:") {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+  }
+  const db = new DatabaseSync(target);
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON;");
+  migrate(db);
+  consumeBootstrap(db);
+  globalDb.__privgateDb = db;
+  globalDb.__privgateDbPath = target;
+  return db;
+}
+
+export function resetDbForTests(target = ":memory:"): DatabaseSync {
+  globalDb.__privgateDb?.close?.();
+  globalDb.__privgateDb = undefined;
+  globalDb.__privgateDbPath = undefined;
+  process.env.PRIVGATE_DB = target;
+  const db = getDb();
+  seedDemo(db);
+  return db;
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb, listDeviceSummaries, enrollDevice, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
 import { deviceSecretKey } from "@/lib/secrets";
+import { notifyDeviceChange } from "@/lib/realtime/notify";
 
 export async function GET() {
   const auth = await requireAdmin("devices.view");
@@ -22,5 +23,6 @@ export async function POST(req: Request) {
     deviceSecretKey(),
   );
   appendAudit(db, auth.session.email, "device.enroll", enrolled.id, { hostname: enrolled.hostname });
+  notifyDeviceChange();
   return NextResponse.json(enrolled, { status: 201 });
 }

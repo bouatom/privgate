@@ -8,6 +8,8 @@ import {
   pkcePair,
   publicDirectoryStatus,
   setupApplicationBody,
+  entraJwksUrl,
+  entraIdTokenVerifyOptions,
 } from "./entra";
 import { resetDbForTests, replaceGroups, groupIdsForUser, listGroups } from "./db";
 import { setupRedirectUris } from "./origin";
@@ -62,5 +64,17 @@ describe("directory groups", () => {
     expect(listGroups(db)[0]?.name).toBe("Finance");
     expect(groupIdsForUser(db, "user-admin")).toEqual(["g1"]);
     expect(groupIdsForUser(db, "user-staff")).toEqual([]);
+  });
+});
+
+describe("entra id_token verification options", () => {
+  it("pins issuer for a directory tenant and skips it for organizations", () => {
+    const tenant = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    expect(entraJwksUrl(tenant)).toContain(tenant);
+    expect(entraIdTokenVerifyOptions(tenant, "client")).toEqual({
+      audience: "client",
+      issuer: `https://login.microsoftonline.com/${tenant}/v2.0`,
+    });
+    expect(entraIdTokenVerifyOptions("organizations", "client")).toEqual({ audience: "client" });
   });
 });

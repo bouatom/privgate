@@ -16,4 +16,15 @@ describe("device HMAC contract", () => {
     expect(sig).not.toContain("+");
     expect(sig).not.toContain("/");
   });
+
+  it("signs the realtime WebSocket upgrade the same way", () => {
+    const sig = hmacDevice(
+      "lab-device-secret-do-not-use-in-prod",
+      "1710000000000",
+      "GET",
+      "/api/agent/ws",
+      bodySha256(""),
+    );
+    expect(sig.length).toBeGreaterThan(20);
+  });
 });

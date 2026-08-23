@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import {
   activeJit,
@@ -15,6 +16,7 @@ import { assessRisk, type RiskLevel } from "./risk";
 import { queueNotification, requestNotifyEvent } from "./notify";
 import { deviceTicketKey, signTicket, type ElevationTicket } from "./signing";
 import { ticketSigningKey } from "./secrets";
+import { notifyPendingRequest } from "./realtime/notify";
 import type { DatabaseSync } from "node:sqlite";
 
 export type EvaluateBody = {
@@ -145,6 +147,7 @@ export function evaluateForDevice(
     risk: risk.level,
   });
   queueNotification(db, requestNotifyEvent("pending", { ...req, riskLevel: risk.level }, db));
+  notifyPendingRequest(req);
   return {
     decision: "pending",
     reason: decision.reason,

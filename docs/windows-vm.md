@@ -26,8 +26,8 @@ The Elevation Broker is a Windows SYSTEM service. This Mac cannot run it.
 1. Supported Windows VM (see table above), hybrid-joined or domain-joined test user **without** local Administrators.
 2. If not pre-installed, install [.NET Framework 4.8](https://go.microsoft.com/fwlink/?LinkId=2085155).
    The .NET **SDK** is only needed if you want to compile from source on the VM; it is **not**
-   required when using the pre-built installer zip.
-3. On **Devices**, set the control plane URL the VM can reach, enroll the hostname, and download the installer zip.
+   required when using the pre-built client MSI or deployment script.
+3. On **Devices**, download the **MSI** or the **deployment script**. The console address is already in the file. Install it elevated on the VM; the client registers the hostname.
 4. On the VM, run `Install-PrivGate.ps1` from an **elevated** PowerShell.
 5. As the standard user, run `PrivGate.Helper.exe --elevate "C:\path\app.exe"`.
 
@@ -51,8 +51,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\smoke-windows-client.ps1
 Manual extras:
 
 - Allowlisted signed MSI elevates; `powershell.exe` is denied.
-- Unlisted EXE appears on the dashboard; after approve, helper can elevate once.
-- JIT 15 minutes: user is added to Administrators; after expiry, membership is gone **with the API stopped** (local scheduled task). During JIT the broker does **not** launch the file as SYSTEM — re-run the app so UAC can prompt.
+- Unlisted EXE appears on the dashboard; after approve, the helper already waiting on the PC elevates (live WebSocket). If the socket is down, run the helper again.
+- JIT 15 minutes: user is added to Administrators when the grant is pushed (or on the next helper call); after expiry, membership is gone **with the API stopped** (local scheduled task). Console revoke is pushed immediately. During JIT the broker does **not** launch the file as SYSTEM — re-run the app so UAC can prompt.
 
 
 Do not install Microsoft EPM on the same VM.
