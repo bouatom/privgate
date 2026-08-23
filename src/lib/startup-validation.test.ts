@@ -1,5 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { validateStartupSecrets } from "./startup-validation";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+
+const require = createRequire(import.meta.url);
+const { validateStartupSecrets } = require(
+  path.resolve(__dirname, "../../packaging/startup-validation.cjs"),
+) as {
+  validateStartupSecrets: (env?: Record<string, string | undefined>) => { ok: boolean; error?: string };
+};
 
 describe("validateStartupSecrets", () => {
   it("accepts valid secrets", () => {
@@ -93,7 +101,6 @@ describe("validateStartupSecrets", () => {
   });
 
   it("accepts secrets generated with crypto.randomBytes(32).toString('base64url')", () => {
-    // Simulated output from crypto.randomBytes(32).toString('base64url')
     const env = {
       SESSION_SECRET: "7HdT_RfQi2E-K4mN8pLvWx9ZaBcDeFgHiJkLmNoPqRs",
       TICKET_SIGNING_KEY: "qRsT9UvWxY0aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0u",

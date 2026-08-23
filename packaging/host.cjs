@@ -20,8 +20,8 @@ const dataDir = defaultDataDir();
 applyInstallerConfig(dataDir, {});
 loadEnvIntoProcess(dataDir);
 
-// Validate startup secrets BEFORE binding to any port
-const { validateStartupSecretsOrExit } = require("../src/lib/startup-validation.ts");
+// Must stay CommonJS next to this file — the installer does not ship src/*.ts.
+const { validateStartupSecretsOrExit } = require("./startup-validation.cjs");
 validateStartupSecretsOrExit(process.env, console);
 
 const cfg = parseListen(process.env);

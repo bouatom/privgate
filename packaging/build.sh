@@ -64,6 +64,7 @@ assemble_app() {
   copy_if "$ROOT/packaging/listen.cjs" "$dest/listen.cjs"
   copy_if "$ROOT/packaging/listen-config.cjs" "$dest/listen-config.cjs"
   copy_if "$ROOT/packaging/write-env.cjs" "$dest/write-env.cjs"
+  copy_if "$ROOT/packaging/startup-validation.cjs" "$dest/startup-validation.cjs"
 }
 
 if [[ "${PRIVGATE_SKIP_APP_BUILD:-}" != "1" ]]; then
