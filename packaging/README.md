@@ -1,6 +1,11 @@
 # Management console installers
 
-Published binaries are attached to **GitHub Releases** and to **Actions artifacts** on the Console installers workflow (`workflow_dispatch` or a push that touches the console/packaging). This folder is how maintainers rebuild them locally.
+Published binaries land on **GitHub Releases** after the Console installers workflow succeeds (not on pull requests).
+
+- Push to `main` (or **Run workflow**) updates the **nightly** pre-release. `v0.1.0` stays the latest stable until you tag.
+- Push a tag `vX.Y.Z` to publish that version as the latest release.
+
+This folder is how maintainers rebuild the same files locally.
 
 ```bash
 bash scripts/smoke-agent-build.sh

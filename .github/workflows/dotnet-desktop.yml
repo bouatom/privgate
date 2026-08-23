@@ -1,11 +1,12 @@
 # Build management-console installers (Windows EXE/MSI, Linux deb/tar, macOS pkg)
-# and the Windows Elevation Broker that those packages can ship alongside.
+# and publish them to a GitHub Release after both jobs succeed.
 
 name: Console installers
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "agent/**"
       - "src/**"
@@ -40,14 +41,41 @@ permissions:
   contents: read
 
 env:
-  PRIVGATE_VERSION: "0.1.0"
   PRIVGATE_NODE_VERSION: "22.15.1"
 
 jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+      release_tag: ${{ steps.set.outputs.release_tag }}
+      prerelease: ${{ steps.set.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve version
+        id: set
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "release_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+            echo "release_tag=nightly" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+
   windows-linux:
     name: Windows + Linux installers
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -94,8 +122,11 @@ jobs:
 
   macos:
     name: macOS installer
+    needs: version
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -125,3 +156,66 @@ jobs:
           name: privgate-console-macos
           path: dist/installers/*.pkg
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, windows-linux, macos]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          pattern: privgate-*
+          path: release-files
+          merge-multiple: true
+
+      - name: Publish release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release-files/*)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No installer files to publish" >&2
+            exit 1
+          fi
+          ls -lh "${files[@]}"
+
+          notes="Console installers from ${GITHUB_SHA}.
+
+          | OS | File |
+          | --- | --- |
+          | Windows | \`PrivGate-Console-${VERSION}-win-x64.exe\` (recommended) or \`.msi\` |
+          | macOS | \`PrivGate-Console-${VERSION}-macos-*.pkg\` |
+          | Linux amd64 | \`privgate-console_${VERSION}_amd64.deb\` or \`.tar.gz\` |
+
+          Open http://127.0.0.1:3000/ after install. There is no demo login.
+          Enroll each PC from **Devices** after the console is up."
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            title="PrivGate Console ${VERSION} (nightly)"
+            extra=(--prerelease --latest=false --notes "$notes")
+          else
+            title="PrivGate Console ${VERSION}"
+            extra=(--latest --notes "$notes")
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+            gh release edit "$RELEASE_TAG" --title "$title" --target "$GITHUB_SHA" --notes "$notes"
+            if [[ "$PRERELEASE" == "true" ]]; then
+              gh release edit "$RELEASE_TAG" --prerelease
+            fi
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --title "$title" \
+              --target "$GITHUB_SHA" \
+              "${extra[@]}"
+          fi
