@@ -1,19 +1,34 @@
-# Publish the Windows Elevation Broker (net48). This is not a WPF/WinForms
-# or MSIX packaging project — the GitHub ".NET Core Desktop" template does
-# not apply here.
+# Build management-console installers (Windows EXE/MSI, Linux deb/tar, macOS pkg)
+# and the Windows Elevation Broker that those packages can ship alongside.
 
-name: Windows broker
+name: Console installers
 
 on:
   push:
     branches: [main]
     paths:
       - "agent/**"
+      - "src/**"
+      - "packaging/**"
+      - "public/**"
+      - "scripts/smoke-agent-build.sh"
+      - "scripts/dotnet-env.sh"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
       - ".github/workflows/dotnet-desktop.yml"
   pull_request:
     branches: [main]
     paths:
       - "agent/**"
+      - "src/**"
+      - "packaging/**"
+      - "public/**"
+      - "scripts/smoke-agent-build.sh"
+      - "scripts/dotnet-env.sh"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
       - ".github/workflows/dotnet-desktop.yml"
   workflow_dispatch:
 
@@ -24,33 +39,89 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PRIVGATE_VERSION: "0.1.0"
+  PRIVGATE_NODE_VERSION: "22.15.1"
+
 jobs:
-  publish:
+  windows-linux:
+    name: Windows + Linux installers
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
 
       - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
-      - name: Publish Elevation Broker
+      - name: Install packaging tools
         run: |
-          set -euo pipefail
-          dotnet publish agent/PrivGate.Agent.csproj -c Release -f net48 -o agent/dist
-          dotnet publish agent/helper/PrivGate.Helper.csproj -c Release -f net48 -o agent/dist
-          test -f agent/dist/PrivGate.Agent.exe
-          test -f agent/dist/PrivGate.Helper.exe
-          ls -lh agent/dist/*.exe
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis msitools
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build console installers
+        env:
+          PRIVGATE_TARGETS: windows,linux
+        run: bash packaging/build.sh
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: privgate-console-windows-linux
+          path: dist/installers/*
+          if-no-files-found: error
 
       - name: Upload broker binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: privgate-agent
           path: |
             agent/dist/PrivGate.Agent.exe
             agent/dist/PrivGate.Helper.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS installer
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build macOS pkg
+        env:
+          PRIVGATE_TARGETS: macos
+        run: bash packaging/build.sh
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: privgate-console-macos
+          path: dist/installers/*.pkg
           if-no-files-found: error
