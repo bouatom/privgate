@@ -6,6 +6,9 @@ import { wizardPending } from "@/lib/setup-state";
 import { ConsoleShell } from "./console-shell";
 import { LiveRefresh } from "./live-refresh";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const db = getDb();
   const needsAdmin = portalNeedsSetup(db);

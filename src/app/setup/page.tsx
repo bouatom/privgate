@@ -6,6 +6,9 @@ import { portalNeedsSetup } from "@/lib/portal";
 import { isWizardCompleted } from "@/lib/setup-state";
 import { SetupClient } from "./setup-client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default async function SetupPage() {
   const db = getDb();
   const needsAdmin = portalNeedsSetup(db);

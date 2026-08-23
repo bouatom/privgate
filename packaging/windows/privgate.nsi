@@ -61,8 +61,6 @@ Function .onInit
   ${If} $0 != ""
     StrCpy $INSTDIR $0
   ${EndIf}
-  IfFileExists "$DataDir\PrivGate\console.env" 0 +2
-    StrCpy $IsUpgrade "1"
   IfFileExists "$INSTDIR\PrivGateConsole.exe" 0 +2
     StrCpy $IsUpgrade "1"
 FunctionEnd
@@ -160,6 +158,9 @@ Section "Install"
   File /r "payload\*.*"
 
   Call InitDataDir
+  ${If} $IsUpgrade != "1"
+    RMDir /r "$DataDir\PrivGate"
+  ${EndIf}
   CreateDirectory "$DataDir\PrivGate"
   CreateDirectory "$DataDir\PrivGate\logs"
 
@@ -187,9 +188,17 @@ Section "Install"
   CreateShortCut "$SMPROGRAMS\PrivGate Console.lnk" "http://127.0.0.1:$WebPort/setup"
 SectionEnd
 
+Function un.InitDataDir
+  ReadEnvStr $DataDir ProgramData
+  StrCmp $DataDir "" 0 +2
+  StrCpy $DataDir "C:\ProgramData"
+FunctionEnd
+
 Section "Uninstall"
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" stop'
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" uninstall'
+  Call un.InitDataDir
+  RMDir /r "$DataDir\PrivGate"
   RMDir /r "$INSTDIR"
   Delete "$SMPROGRAMS\PrivGate Console.lnk"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivGateConsole"

@@ -9,8 +9,8 @@ describe("setup wizard state", () => {
     expect(isWizardCompleted(db)).toBe(false);
   });
 
-  it("marks an already-running console complete on first seed", () => {
-    const db = resetDbForTests(":memory:");
+  it("does not auto-complete the wizard when a leftover portal user exists", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
     db.prepare("DELETE FROM setup_state").run();
     const created = createPortalUser(db, {
       displayName: "Ops",
@@ -21,7 +21,7 @@ describe("setup wizard state", () => {
     });
     if ("error" in created) throw new Error(created.error);
     seedSetupState(db);
-    expect(isWizardCompleted(db)).toBe(true);
+    expect(isWizardCompleted(db)).toBe(false);
   });
 
   it("completeWizard is idempotent", () => {

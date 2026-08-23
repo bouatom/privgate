@@ -4,4 +4,8 @@ set -euo pipefail
 if [[ -f /Library/LaunchDaemons/com.privgate.console.plist ]]; then
   launchctl bootout system/com.privgate.console 2>/dev/null || true
 fi
+# Fresh install (no previous binaries): drop leftover Application Support data.
+if [[ ! -f /opt/privgate/host.cjs ]]; then
+  rm -rf "/Library/Application Support/PrivGate"
+fi
 exit 0

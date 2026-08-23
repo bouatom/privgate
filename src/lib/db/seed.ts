@@ -6,8 +6,8 @@ import { appendAudit } from "./audit";
 
 const DEMO_UPNS = ["ada@contoso.test", "riley@contoso.test"] as const;
 const DEMO_USER_IDS = ["user-admin", "user-staff"] as const;
-const DEMO_DEVICE_ID = "dev-lab-01";
-const DEMO_DEVICE_HOST = "LAB-W11-01";
+export const DEMO_DEVICE_ID = "dev-lab-01";
+export const DEMO_DEVICE_HOST = "LAB-W11-01";
 const DEMO_POLICY_ID = "pol-widget";
 const DEMO_GROUP_ID = "g-helpdesk";
 const DEMO_REQUEST_IDS = ["req-pending-1", "req-approved-1", "req-denied-1"] as const;
@@ -162,8 +162,8 @@ export function seedDemo(db: DatabaseSync, env: NodeJS.Dict<string | undefined> 
  * Strip lab identities left behind by older builds that called seedDemo on
  * first boot. Safe to run on every production open.
  */
-export function purgeDemoFixtures(db: DatabaseSync, env: NodeJS.Dict<string | undefined> = process.env) {
-  if (fixturesAllowed(env)) return;
+export function purgeDemoFixtures(db: DatabaseSync, env: NodeJS.Dict<string | undefined> = process.env): boolean {
+  if (fixturesAllowed(env)) return false;
 
   const userIn = DEMO_USER_IDS.map(() => "?").join(",");
   const upnIn = DEMO_UPNS.map(() => "?").join(",");
@@ -200,5 +200,7 @@ export function purgeDemoFixtures(db: DatabaseSync, env: NodeJS.Dict<string | un
 
   if (Number(before.c) > 0) {
     appendAudit(db, "system", "seed.purge", "database", { note: "removed leftover demo identities" });
+    return true;
   }
+  return false;
 }

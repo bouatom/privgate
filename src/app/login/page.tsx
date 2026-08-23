@@ -5,6 +5,9 @@ import { portalNeedsSetup } from "@/lib/portal";
 import { isWizardCompleted } from "@/lib/setup-state";
 import { LoginClient } from "./login-client";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export default function LoginPage() {
   const db = getDb();
   if (portalNeedsSetup(db)) redirect("/setup");

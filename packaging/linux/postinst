@@ -16,6 +16,9 @@ chmod 700 /var/lib/privgate
 if [ "$1" = "configure" ] && [ -n "${2:-}" ] && [ -f /var/lib/privgate/console.env ]; then
   /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir /var/lib/privgate --preserve
 else
+  rm -rf /var/lib/privgate
+  mkdir -p /var/lib/privgate /var/log/privgate
+  chmod 700 /var/lib/privgate
   BIND="0.0.0.0"
   WEB_PORT="3000"
   AGENT_PORT="3001"

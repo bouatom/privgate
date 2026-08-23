@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { consumeBootstrap } from "../bootstrap";
+import { applyFactoryResetIfNeeded } from "../first-run";
 import { migrate } from "./schema";
 import { purgeDemoFixtures, seedDemo } from "./seed";
 
@@ -35,8 +36,9 @@ export function getDb(): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   migrate(db);
-  consumeBootstrap(db);
   purgeDemoFixtures(db);
+  applyFactoryResetIfNeeded(db);
+  consumeBootstrap(db);
   globalDb.__privgateDb = db;
   globalDb.__privgateDbPath = target;
   return db;

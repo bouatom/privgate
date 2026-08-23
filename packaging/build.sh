@@ -230,10 +230,11 @@ if want linux; then
   cp "$ROOT/packaging/linux/control" "$DEB_ROOT/DEBIAN/control"
   cp "$ROOT/packaging/linux/postinst" "$DEB_ROOT/DEBIAN/postinst"
   cp "$ROOT/packaging/linux/prerm" "$DEB_ROOT/DEBIAN/prerm"
+  cp "$ROOT/packaging/linux/postrm" "$DEB_ROOT/DEBIAN/postrm"
   copy_if "$ROOT/packaging/linux/preinst" "$DEB_ROOT/DEBIAN/preinst"
   copy_if "$ROOT/packaging/linux/config" "$DEB_ROOT/DEBIAN/config"
   copy_if "$ROOT/packaging/linux/templates" "$DEB_ROOT/DEBIAN/templates"
-  chmod 755 "$DEB_ROOT/DEBIAN/postinst" "$DEB_ROOT/DEBIAN/prerm"
+  chmod 755 "$DEB_ROOT/DEBIAN/postinst" "$DEB_ROOT/DEBIAN/prerm" "$DEB_ROOT/DEBIAN/postrm"
   if [[ -f "$DEB_ROOT/DEBIAN/preinst" ]]; then
     chmod 755 "$DEB_ROOT/DEBIAN/preinst"
   fi
