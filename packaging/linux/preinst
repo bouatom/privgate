@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+# Stop a running console so dpkg can replace binaries. Needed when upgrading
+# from packages whose prerm did not stop the unit on "upgrade".
+if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop privgate.service 2>/dev/null || true
+  fi
+fi

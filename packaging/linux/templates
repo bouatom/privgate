@@ -1,0 +1,18 @@
+Template: privgate-console/bind
+Type: select
+Choices: All interfaces (0.0.0.0), This computer only (127.0.0.1)
+Default: All interfaces (0.0.0.0)
+Description: Network bind address
+ Other computers can open the management console when it listens on every interface.
+
+Template: privgate-console/web_port
+Type: string
+Default: 3000
+Description: Management web port
+ Browser port for the PrivGate console.
+
+Template: privgate-console/agent_port
+Type: string
+Default: 3001
+Description: Client / broker port
+ Port Windows endpoints use for /api/agent.

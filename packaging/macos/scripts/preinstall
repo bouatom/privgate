@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+# Stop launchd before pkg extracts so /opt/privgate binaries can be replaced.
+if [[ -f /Library/LaunchDaemons/com.privgate.console.plist ]]; then
+  launchctl bootout system/com.privgate.console 2>/dev/null || true
+fi
+exit 0

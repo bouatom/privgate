@@ -96,11 +96,8 @@ if want windows; then
   rm -rf "$STAGE/win-node"
   cp "$CACHE/WinSW-x64.exe" "$STAGE/win/PrivGateConsole.exe"
   cp "$ROOT/packaging/windows/privgate-console.xml" "$STAGE/win/PrivGateConsole.xml"
-  if [[ -f "$ROOT/packaging/write-env.cjs" ]]; then
-    printf '%s\n' '@echo off' 'cd /d "%~dp0"' 'if not defined ProgramData set ProgramData=C:\ProgramData' 'node.exe write-env.cjs --dir "%ProgramData%\PrivGate"' 'PrivGateConsole.exe install' 'PrivGateConsole.exe start' 'echo Open http://127.0.0.1:3000/setup to create the first administrator if the installer did not.' > "$STAGE/win/install-service.cmd"
-  else
-    printf '%s\n' '@echo off' 'cd /d "%~dp0"' 'PrivGateConsole.exe install' 'PrivGateConsole.exe start' 'echo Open http://127.0.0.1:3000/' > "$STAGE/win/install-service.cmd"
-  fi
+  copy_if "$ROOT/packaging/windows/service-ctl.cmd" "$STAGE/win/service-ctl.cmd"
+  copy_if "$ROOT/packaging/windows/install-service.cmd" "$STAGE/win/install-service.cmd"
 
   if command -v makensis >/dev/null; then
     log "NSIS EXE"
@@ -108,7 +105,7 @@ if want windows; then
     mkdir -p "$STAGE/nsis/payload"
     cp -R "$STAGE/win/." "$STAGE/nsis/payload/"
     cp "$ROOT/packaging/windows/privgate.nsi" "$STAGE/nsis/privgate.nsi"
-    (cd "$STAGE/nsis" && makensis -V2 privgate.nsi)
+    (cd "$STAGE/nsis" && makensis -V2 "-DPRIVGATE_VERSION=${VERSION}" privgate.nsi)
     mv "$STAGE/nsis/PrivGate-Console-Setup.exe" "$OUT/PrivGate-Console-${VERSION}-win-x64.exe"
   else
     echo "makensis not installed; skipping Windows EXE" >&2
@@ -116,7 +113,7 @@ if want windows; then
 
   log "MSI"
   if command -v wixl >/dev/null; then
-    node "$ROOT/packaging/windows/generate-wxs.cjs" "$STAGE/win" "$STAGE/privgate.wxs"
+    node "$ROOT/packaging/windows/generate-wxs.cjs" "$STAGE/win" "$STAGE/privgate.wxs" "$VERSION"
     if wixl --arch x64 -o "$OUT/PrivGate-Console-${VERSION}-win-x64.msi" "$STAGE/privgate.wxs"; then
       echo "MSI written"
     else
@@ -150,7 +147,11 @@ if want macos; then
     rm -rf "$SCRIPTS"
     mkdir -p "$SCRIPTS"
     cp "$ROOT/packaging/macos/scripts/postinstall" "$SCRIPTS/postinstall"
+    copy_if "$ROOT/packaging/macos/scripts/preinstall" "$SCRIPTS/preinstall"
     chmod 755 "$SCRIPTS/postinstall"
+    if [[ -f "$SCRIPTS/preinstall" ]]; then
+      chmod 755 "$SCRIPTS/preinstall"
+    fi
     pkgbuild \
       --root "$STAGE/mac" \
       --identifier com.privgate.console \
@@ -184,14 +185,19 @@ if want linux; then
   cp "$ROOT/packaging/linux/control" "$DEB_ROOT/DEBIAN/control"
   cp "$ROOT/packaging/linux/postinst" "$DEB_ROOT/DEBIAN/postinst"
   cp "$ROOT/packaging/linux/prerm" "$DEB_ROOT/DEBIAN/prerm"
+  copy_if "$ROOT/packaging/linux/preinst" "$DEB_ROOT/DEBIAN/preinst"
   copy_if "$ROOT/packaging/linux/config" "$DEB_ROOT/DEBIAN/config"
   copy_if "$ROOT/packaging/linux/templates" "$DEB_ROOT/DEBIAN/templates"
   chmod 755 "$DEB_ROOT/DEBIAN/postinst" "$DEB_ROOT/DEBIAN/prerm"
+  if [[ -f "$DEB_ROOT/DEBIAN/preinst" ]]; then
+    chmod 755 "$DEB_ROOT/DEBIAN/preinst"
+  fi
   if [[ -f "$DEB_ROOT/DEBIAN/config" ]]; then
     chmod 755 "$DEB_ROOT/DEBIAN/config"
   fi
   INSTALLED_SIZE="$(du -sk "$DEB_ROOT/opt" | awk '{print $1}')"
   perl -i -pe "s/PLACEHOLDER/$INSTALLED_SIZE/" "$DEB_ROOT/DEBIAN/control"
+  perl -i -pe "s/^Version: .*/Version: ${VERSION}/" "$DEB_ROOT/DEBIAN/control"
 
   if command -v dpkg-deb >/dev/null; then
     dpkg-deb --build "$DEB_ROOT" "$OUT/privgate-console_${VERSION}_amd64.deb"

@@ -23,11 +23,30 @@ Set `PRIVGATE_TARGETS=windows`, `macos`, or `linux` to build one OS. Artifacts l
 
 A Linux `.tar.gz` is optional for local builds (`PRIVGATE_SKIP_TARBALL` is unset). GitHub Releases do not include it.
 
-The installer prompts for **bind address**, **management web port**, **client/broker port**, and the **first Master Admin**. Secrets are generated automatically (`AUTH_MODE=local`). Data: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. Set `PRIVGATE_BIND=127.0.0.1` at install to listen on this machine only. There is no demo login; if you skip the admin account, open `/setup` in the browser.
+The installer prompts for **bind address**, **management web port**, and **client/broker port**. Secrets are generated automatically (`AUTH_MODE=local`). Data: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. Set `PRIVGATE_BIND=127.0.0.1` at install to listen on this machine only. There is no demo login. Open `/setup` in the browser to create the Master Admin. Connect Entra ID later under Configuration → Integrations.
+
+## Upgrade the management console
+
+Install the newer package over the old one. Do not uninstall first.
+
+| OS | Command |
+| --- | --- |
+| Windows EXE | Run `PrivGate-Console-*-win-x64.exe` as Administrator (or `/S`). Same install directory. |
+| Windows MSI | `msiexec /i PrivGate-Console-*-win-x64.msi` (same UpgradeCode; replaces the previous product). |
+| macOS | Open the new `.pkg` (or `sudo installer -pkg … -target /`). |
+| Linux | `sudo dpkg -i privgate-console_*_amd64.deb` |
+
+What stays: SQLite and `console.env` (secrets, bind, ports) under the platform data directory. The service is stopped, app files and the bundled Node runtime are replaced, then the service starts again.
+
+What does not stay: files you added by hand under the install prefix (`C:\Program Files\PrivGate`, `/opt/privgate`). Change listen settings after upgrade in `console.env` (or `dpkg-reconfigure privgate-console` on Linux), then restart the service.
+
+Uninstall removes the application and service only. Data directories are left in place so a later install is still in-place. Delete the data directory yourself if you want a clean slate.
+
+The MSI copies files and stops/starts `PrivGateConsole` when that service already exists. If you installed from MSI and the service was never registered, run `install-service.cmd` in `C:\Program Files\PrivGate` once.
 
 ## Windows 10 — endpoint broker smoke
 
 1. Start the console from a GitHub Release installer.
-2. Sign in with the Master Admin created at install (or `/setup`), enroll the PC, download the device zip (includes `PrivGate.Agent.exe` when `agent/dist` was published).
-3. On the PC, elevated PowerShell: `Install-PrivGate.ps1`.
+2. Sign in with the Master Admin created at `/setup`. On **Devices**, download the MSI or the deployment script (one file, console address included).
+3. On the PC, install that file elevated. The client registers the hostname.
 4. Copy `scripts/smoke-windows-client.ps1` to the PC and run it elevated.

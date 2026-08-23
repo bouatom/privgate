@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
-if [ "$1" = "remove" ]; then
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ] || [ "$1" = "deconfigure" ]; then
   systemctl stop privgate.service 2>/dev/null || true
+fi
+if [ "$1" = "remove" ]; then
   systemctl disable privgate.service 2>/dev/null || true
 fi

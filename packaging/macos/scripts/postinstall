@@ -1,8 +1,37 @@
 #!/bin/bash
 set -euo pipefail
-mkdir -p "/Library/Application Support/PrivGate" /Library/Logs/PrivGate
-chmod 700 "/Library/Application Support/PrivGate"
+DATA="/Library/Application Support/PrivGate"
+mkdir -p "$DATA" /Library/Logs/PrivGate
+chmod 700 "$DATA"
+
+ENVFILE="$DATA/console.env"
+
+if [[ -f "$ENVFILE" ]]; then
+  /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir "$DATA" --preserve
+else
+  BIND="0.0.0.0"
+  WEB_PORT="3000"
+  AGENT_PORT="3001"
+
+  if [[ -z "${COMMAND_LINE_INSTALL:-}" ]] && command -v osascript >/dev/null 2>&1; then
+    BIND_CHOICE="$(osascript -e 'choose from list {"All network interfaces (other computers can connect)","This computer only"} with prompt "PrivGate network access" default items {"All network interfaces (other computers can connect)"}' || true)"
+    if [[ "$BIND_CHOICE" == *"This computer only"* ]]; then BIND="127.0.0.1"; fi
+    WEB_PORT="$(osascript -e 'text returned of (display dialog "Management web port:" default answer "3000")' 2>/dev/null || echo 3000)"
+    AGENT_PORT="$(osascript -e 'text returned of (display dialog "Client / broker port:" default answer "3001")' 2>/dev/null || echo 3001)"
+  fi
+
+  INI="$(mktemp)"
+  chmod 600 "$INI"
+  {
+    printf 'bind=%s\n' "$BIND"
+    printf 'webPort=%s\n' "$WEB_PORT"
+    printf 'agentPort=%s\n' "$AGENT_PORT"
+  } > "$INI"
+  /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir "$DATA" --ini "$INI"
+  rm -f "$INI"
+fi
+
 cp /opt/privgate/com.privgate.console.plist /Library/LaunchDaemons/com.privgate.console.plist
 launchctl bootout system/com.privgate.console 2>/dev/null || true
 launchctl bootstrap system /Library/LaunchDaemons/com.privgate.console.plist
-echo "PrivGate Console is installed. Open http://127.0.0.1:3000/ (ada@contoso.test in development)."
+echo "PrivGate Console: http://127.0.0.1:3000/setup  (create the Master Admin in the browser)"
