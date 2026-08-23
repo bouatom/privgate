@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PERMISSIONS, type PermissionId } from "@/lib/permissions";
-import type { PortalRole, PortalUser } from "@/lib/portal";
+import type { PortalRole, PortalUser } from "@/lib/models";
 
 const groups = [...new Set(PERMISSIONS.map((p) => p.group))];
 

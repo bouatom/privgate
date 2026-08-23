@@ -1,6 +1,8 @@
+import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import { hashPassword } from "./passwords";
+import type { PortalRole, PortalUser } from "./models";
+import { assertPassword, hashPassword } from "./passwords";
 import {
   ALL_PERMISSIONS,
   PREDEFINED_ROLES,
@@ -9,27 +11,7 @@ import {
   type PermissionId,
 } from "./permissions";
 
-export type PortalRole = {
-  id: string;
-  name: string;
-  description: string;
-  permissions: PermissionId[];
-  system: boolean;
-};
-
-export type PortalUser = {
-  id: string;
-  displayName: string;
-  email: string;
-  kind: "local" | "sso";
-  passwordSet: boolean;
-  entraOid: string;
-  disabled: boolean;
-  createdAt: string;
-  roleIds: string[];
-  roleNames: string[];
-  permissions: PermissionId[];
-};
+export type { PortalRole, PortalUser } from "./models";
 
 export function migratePortal(db: DatabaseSync) {
   db.exec(`
@@ -57,7 +39,6 @@ export function migratePortal(db: DatabaseSync) {
     );
   `);
   ensurePredefinedRoles(db);
-  seedDefaultMaster(db);
 }
 
 function ensurePredefinedRoles(db: DatabaseSync) {
@@ -75,16 +56,13 @@ function ensurePredefinedRoles(db: DatabaseSync) {
   }
 }
 
-function seedDefaultMaster(db: DatabaseSync) {
-  const count = db.prepare("SELECT COUNT(*) AS c FROM portal_users").get() as { c: number };
-  if (count.c > 0) return;
-  const id = "portal-ada";
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO portal_users (id, display_name, email, kind, password_hash, entra_oid, disabled, created_at)
-     VALUES (?, ?, ?, 'local', '', '', 0, ?)`,
-  ).run(id, "Ada Admin", "ada@contoso.test", now);
-  db.prepare("INSERT INTO portal_user_roles (user_id, role_id) VALUES (?, ?)").run(id, "role-master-admin");
+export function countPortalUsers(db: DatabaseSync): number {
+  const row = db.prepare("SELECT COUNT(*) AS c FROM portal_users").get() as { c: number };
+  return Number(row.c) || 0;
+}
+
+export function portalNeedsSetup(db: DatabaseSync): boolean {
+  return countPortalUsers(db) < 1;
 }
 
 function roleFromRow(row: Record<string, unknown>): PortalRole {
@@ -262,8 +240,9 @@ export function createPortalUser(
   if (!input.roleIds?.length) return { error: "assign at least one role" };
   const unknown = input.roleIds.filter((id) => !getRole(db, id));
   if (unknown.length) return { error: "unknown role" };
-  if (input.kind === "local" && !input.password && process.env.NODE_ENV === "production") {
-    return { error: "password required for local users" };
+  if (input.kind === "local") {
+    const problem = assertPassword(input.password);
+    if (problem) return { error: problem };
   }
   if (input.kind === "sso" && input.password) {
     return { error: "SSO users sign in with Entra ID, not a local password" };

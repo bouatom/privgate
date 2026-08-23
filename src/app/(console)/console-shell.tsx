@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { AdminSession } from "@/lib/auth";
+import type { AdminSession } from "@/lib/models";
 import { hasAnyPermission, NAV_PERMISSION } from "@/lib/permissions";
 import { SessionContext } from "./session-context";
 

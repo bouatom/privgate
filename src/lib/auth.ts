@@ -1,17 +1,13 @@
+import "server-only";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { getDb } from "./db";
+import type { AdminSession } from "./models";
 import { getPortalUserByEmail } from "./portal";
 import { hasPermission as hasPerm, type PermissionId } from "./permissions";
 import { sessionSecret } from "./secrets";
 
-export type AdminSession = {
-  id: string;
-  email: string;
-  name: string;
-  roles: string[];
-  permissions: PermissionId[];
-};
+export type { AdminSession } from "./models";
 
 const cookieName = "privgate_session";
 

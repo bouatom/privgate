@@ -1,3 +1,4 @@
+import "server-only";
 import { crc32, deflateRawSync } from "node:zlib";
 
 export type ZipEntry = { name: string; data: Buffer | string };

@@ -42,12 +42,15 @@ Optional hardening:
 
 | Variable | Purpose |
 | --- | --- |
-| `PRIVGATE_PUBLIC_ORIGIN` | Canonical origin used for OAuth redirects and installer `ApiBase`. Set this behind a proxy. |
+| `PRIVGATE_PUBLIC_ORIGIN` | Canonical origin used for OAuth redirects. Set this behind a proxy. |
+| `PRIVGATE_AGENT_ORIGIN` | Canonical origin written into device installers when it is not “same host, agent port”. |
+| `PRIVGATE_BIND` | Listen address. Default `0.0.0.0` (LAN). `127.0.0.1` for this host only. Legacy alias: `HOSTNAME`. |
+| `PRIVGATE_WEB_PORT` | Management console TCP port. Default `3000`. Legacy alias: `PORT`. |
+| `PRIVGATE_AGENT_PORT` | Broker `/api/agent` TCP port. Default `3001`. Set equal to the web port to share one listener. |
 | `PRIVGATE_TRUSTED_HOSTS` | Comma-separated `host[:port]` allowlist for the `Host` header. |
 | `PRIVGATE_TRUST_PROXY=1` | Also honour `X-Forwarded-Host` / `X-Forwarded-Proto`, still subject to the allowlist. |
 
-`npm start` binds `127.0.0.1` by default. Standalone deployments set `HOSTNAME`;
-keep it on loopback and terminate TLS in front of the console.
+`npm run dev` / packaged installs bind every interface so other computers can open the console. The agent port only accepts `/api/agent/*`. Windows packaged services add inbound firewall rules for both ports. Keep TLS termination in front of the console in production.
 
 Rotating `TICKET_SIGNING_KEY` or `DEVICE_SECRET_KEY` invalidates every enrolled
 endpoint. Re-download the installer from **Devices** for each host afterwards.

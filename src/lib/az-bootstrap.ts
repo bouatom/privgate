@@ -1,3 +1,4 @@
+import "server-only";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 

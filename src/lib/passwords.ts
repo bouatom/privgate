@@ -1,4 +1,15 @@
+import "server-only";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+
+export const MIN_PASSWORD_LENGTH = 10;
+
+export function assertPassword(plain: string | undefined): string | undefined {
+  const value = (plain || "").trim();
+  if (!value) return "password required for local users";
+  if (value.length < MIN_PASSWORD_LENGTH) {
+    return `password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+}
 
 export function hashPassword(plain: string): string {
   const salt = randomBytes(16);

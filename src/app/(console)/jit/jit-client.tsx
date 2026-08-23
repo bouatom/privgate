@@ -3,7 +3,7 @@
 import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatWhen } from "@/lib/format";
-import type { PresentedUser } from "@/lib/present";
+import type { PresentedUser } from "@/lib/models";
 
 type Device = { id: string; hostname: string };
 type Grant = {

@@ -4,33 +4,41 @@ import { migratePortal, listRoles, listPortalUsers, createRole, createPortalUser
 import { hashPassword, verifyPassword } from "./passwords";
 import { hasPermission, isMasterPermissions, ALL_PERMISSIONS, PREDEFINED_ROLES } from "./permissions";
 
+const PASS = "TestPass-12";
+
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   migratePortal(db);
   return db;
 }
 
+function addMaster(db: DatabaseSync, email = "master@example.test") {
+  const result = createPortalUser(db, {
+    displayName: "Master",
+    email,
+    kind: "local",
+    password: PASS,
+    roleIds: ["role-master-admin"],
+  });
+  if ("error" in result) throw new Error(result.error);
+  return result;
+}
+
 afterEach(() => {
   // no persistent state; each test creates its own in-memory DB
 });
 
-describe("migratePortal + seed", () => {
-  it("seeds Ada as Master Admin on empty DB", () => {
+describe("migratePortal", () => {
+  it("does not create a demo Master Admin", () => {
     const db = freshDb();
-    const users = listPortalUsers(db);
-    expect(users.length).toBe(1);
-    const ada = users[0]!;
-    expect(ada.email).toBe("ada@contoso.test");
-    expect(ada.kind).toBe("local");
-    expect(ada.disabled).toBe(false);
-    expect(isMasterPermissions(ada.permissions)).toBe(true);
+    expect(listPortalUsers(db)).toHaveLength(0);
+    expect(countMasterAdmins(db)).toBe(0);
   });
 
-  it("does not re-seed if portal_users already has rows", () => {
+  it("stays empty if migrate runs twice", () => {
     const db = freshDb();
-    migratePortal(db); // second call
-    const users = listPortalUsers(db);
-    expect(users.length).toBe(1);
+    migratePortal(db);
+    expect(listPortalUsers(db)).toHaveLength(0);
   });
 
   it("upserts all predefined roles on each migration", () => {
@@ -127,14 +135,25 @@ describe("createPortalUser", () => {
 
   it("rejects duplicate email", () => {
     const db = freshDb();
-    createPortalUser(db, { displayName: "First", email: "dup@contoso.test", kind: "local", roleIds: ["role-approver"] });
-    const result = createPortalUser(db, { displayName: "Second", email: "dup@contoso.test", kind: "local", roleIds: ["role-approver"] });
+    createPortalUser(db, { displayName: "First", email: "dup@contoso.test", kind: "local", password: PASS, roleIds: ["role-approver"] });
+    const result = createPortalUser(db, { displayName: "Second", email: "dup@contoso.test", kind: "local", password: PASS, roleIds: ["role-approver"] });
+    expect("error" in result).toBe(true);
+  });
+
+  it("rejects a local user without a password", () => {
+    const db = freshDb();
+    const result = createPortalUser(db, {
+      displayName: "No Pass",
+      email: "nopass@contoso.test",
+      kind: "local",
+      roleIds: ["role-approver"],
+    });
     expect("error" in result).toBe(true);
   });
 
   it("rejects user with no roles", () => {
     const db = freshDb();
-    const result = createPortalUser(db, { displayName: "No Role", email: "norole@contoso.test", kind: "local", roleIds: [] });
+    const result = createPortalUser(db, { displayName: "No Role", email: "norole@contoso.test", kind: "local", password: PASS, roleIds: [] });
     expect("error" in result).toBe(true);
   });
 });
@@ -142,9 +161,8 @@ describe("createPortalUser", () => {
 describe("last-master protection", () => {
   it("cannot disable the only Master Admin", () => {
     const db = freshDb();
-    const users = listPortalUsers(db);
-    const ada = users.find((u) => u.email === "ada@contoso.test")!;
-    const result = updatePortalUser(db, ada.id, { disabled: true });
+    const master = addMaster(db);
+    const result = updatePortalUser(db, master.id, { disabled: true });
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.error).toMatch(/master admin/i);
@@ -152,23 +170,16 @@ describe("last-master protection", () => {
 
   it("cannot strip Master Admin role from the only master", () => {
     const db = freshDb();
-    const users = listPortalUsers(db);
-    const ada = users.find((u) => u.email === "ada@contoso.test")!;
-    // Assign Approver only (no master perms)
-    const result = updatePortalUser(db, ada.id, { roleIds: ["role-approver"] });
+    const master = addMaster(db);
+    const result = updatePortalUser(db, master.id, { roleIds: ["role-approver"] });
     expect("error" in result).toBe(true);
   });
 
   it("allows disable when a second Master Admin exists", () => {
     const db = freshDb();
-    createPortalUser(db, {
-      displayName: "Second Master",
-      email: "master2@contoso.test",
-      kind: "local",
-      roleIds: ["role-master-admin"],
-    });
-    const ada = listPortalUsers(db).find((u) => u.email === "ada@contoso.test")!;
-    const result = updatePortalUser(db, ada.id, { disabled: true });
+    const first = addMaster(db);
+    addMaster(db, "master2@contoso.test");
+    const result = updatePortalUser(db, first.id, { disabled: true });
     expect("error" in result).toBe(false);
   });
 });
@@ -214,6 +225,7 @@ describe("Approver cannot manage portal users (API-level permission check)", () 
       displayName: "App Rova",
       email: "approver@contoso.test",
       kind: "local",
+      password: PASS,
       roleIds: ["role-approver"],
     });
     if ("error" in result) throw new Error(result.error);
@@ -224,19 +236,15 @@ describe("Approver cannot manage portal users (API-level permission check)", () 
 });
 
 describe("countMasterAdmins", () => {
-  it("returns 1 after seed", () => {
+  it("returns 0 on an empty portal", () => {
     const db = freshDb();
-    expect(countMasterAdmins(db)).toBe(1);
+    expect(countMasterAdmins(db)).toBe(0);
   });
 
   it("returns 2 after adding a second master", () => {
     const db = freshDb();
-    createPortalUser(db, {
-      displayName: "Second",
-      email: "second@contoso.test",
-      kind: "local",
-      roleIds: ["role-master-admin"],
-    });
+    addMaster(db);
+    addMaster(db, "second@contoso.test");
     expect(countMasterAdmins(db)).toBe(2);
   });
 });

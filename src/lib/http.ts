@@ -1,3 +1,4 @@
+import "server-only";
 import { NextResponse } from "next/server";
 import { can, getSession, type AdminSession } from "./auth";
 import type { PermissionId } from "./permissions";

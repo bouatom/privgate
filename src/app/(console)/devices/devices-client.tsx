@@ -1,18 +1,18 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { displayPath } from "@/lib/format";
 
 type DeviceSummary = {
   id: string;
   hostname: string;
-  joinType: string;
   enrolledAt: string;
   pendingRequests: number;
   activeJit: number;
   lastEventAt: string | null;
   lastAction: string | null;
+  online: boolean;
 };
 
 type EventRow = {
@@ -47,12 +47,13 @@ type JitRow = {
 type Detail = {
   id: string;
   hostname: string;
-  joinType: string;
   enrolledAt: string;
   events: EventRow[];
   requests: RequestRow[];
   jit: JitRow[];
 };
+
+type Method = "msi" | "script";
 
 function reasonsOf(raw: string): string[] {
   try {
@@ -68,55 +69,40 @@ export function DevicesClient({
   selected,
   detail,
   canInstall,
-  initialApiBase,
+  consoleUrl,
+  binariesReady,
+  msiReady,
 }: {
   devices: DeviceSummary[];
   selected: string;
   detail: Detail | null;
   canInstall: boolean;
-  initialApiBase: string;
+  consoleUrl: string;
+  binariesReady: boolean;
+  msiReady: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [host, setHost] = useState("");
-  const [joinType, setJoinType] = useState("hybrid");
-  const [apiBase, setApiBase] = useState(initialApiBase);
-  const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState<Method>(msiReady ? "msi" : "script");
   const [error, setError] = useState("");
 
   const selectedDevice = useMemo(() => devices.find((d) => d.id === selected), [devices, selected]);
-
-  useEffect(() => {
-    setApiBase((prev) => prev || window.location.origin);
-  }, []);
 
   function selectDevice(id: string) {
     startTransition(() => router.push(`/devices?id=${encodeURIComponent(id)}`));
   }
 
-  function downloadInstaller(id: string) {
-    const url = `/api/devices/${id}/installer?apiBase=${encodeURIComponent(apiBase || window.location.origin)}`;
-    window.location.href = url;
-  }
-
-  async function enroll(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
+  function download() {
     setError("");
-    const res = await fetch("/api/devices", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ hostname: host, joinType }),
-    });
-    const body = (await res.json()) as { id?: string; error?: string };
-    setBusy(false);
-    if (!res.ok || !body.id) {
-      setError(body.error || "Could not enroll device");
+    if (method === "msi" && !msiReady) {
+      setError("This console cannot build an MSI (needs published client binaries and wixl). Use the deployment script.");
       return;
     }
-    setHost("");
-    startTransition(() => router.push(`/devices?id=${encodeURIComponent(body.id!)}`));
-    downloadInstaller(body.id);
+    if (!binariesReady) {
+      setError("Publish the Windows client on this console first (`bash scripts/smoke-agent-build.sh`), then download again.");
+      return;
+    }
+    window.location.href = `/api/devices/client?format=${method}&apiBase=${encodeURIComponent(consoleUrl)}`;
   }
 
   return (
@@ -125,81 +111,95 @@ export function DevicesClient({
         <div>
           <h1>Devices</h1>
           <p className="lede">
-            Enroll a Windows PC, download its broker installer, and review elevation events on that host.
+            Install the Windows client. Each PC registers itself and shows up here as its hostname.
           </p>
         </div>
       </div>
 
-      <form className="panel stack" style={{ padding: 18, marginBottom: 16 }} onSubmit={enroll}>
-        <strong>Windows installer</strong>
+      <section className="panel stack" style={{ padding: 18, marginBottom: 16 }}>
+        <strong>Deploy the Windows client</strong>
         <p className="lede" style={{ fontSize: 13 }}>
-          Enroll the hostname, then run <span className="mono">Install-PrivGate.ps1</span> elevated on the PC. The zip
-          includes the device secret, control-plane URL, and agent source. It does not disable UAC.
+          Choose one file. The management console address is already in it. You do not enroll names in advance,
+          and you do not pick a join type.
         </p>
-        <div className="grid cards">
-          <div>
-            <label>Hostname</label>
-            <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="LAB-W11-01" required />
-          </div>
-          <div>
-            <label>Join type</label>
-            <select value={joinType} onChange={(e) => setJoinType(e.target.value)}>
-              <option value="hybrid">Hybrid AD + Entra</option>
-              <option value="entra">Entra joined</option>
-              <option value="ad">AD joined</option>
-            </select>
-          </div>
-          <div>
-            <label>Control plane URL the PC can reach</label>
-            <input value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="http://192.168.1.10:3000" />
-          </div>
+        <div className="choice-grid">
+          <button
+            type="button"
+            className={method === "msi" ? "choice selected" : "choice"}
+            aria-pressed={method === "msi"}
+            disabled={!canInstall}
+            onClick={() => setMethod("msi")}
+          >
+            <span className="k">Windows Installer</span>
+            <h2>MSI</h2>
+            <p>Intune, Group Policy, or a double-click on the PC. One <span className="mono">.msi</span> file — not a zip.</p>
+          </button>
+          <button
+            type="button"
+            className={method === "script" ? "choice selected" : "choice"}
+            aria-pressed={method === "script"}
+            disabled={!canInstall}
+            onClick={() => setMethod("script")}
+          >
+            <span className="k">PowerShell</span>
+            <h2>Deployment script</h2>
+            <p>Imaging, psexec, or a scheduled task. One <span className="mono">.ps1</span> file — not a zip.</p>
+          </button>
         </div>
+        <p className="lede deploy-url">
+          This installer will call <span className="mono">{consoleUrl}</span>
+          {" "}(Configuration → Network).
+        </p>
         {error ? <p className="err">{error}</p> : null}
         <div className="row-actions">
           {canInstall ? (
-            <button className="primary" type="submit" disabled={busy}>
-              {busy ? "Packaging…" : "Enroll and download installer"}
+            <button className="primary" type="button" onClick={download}>
+              {method === "msi" ? "Download MSI" : "Download deployment script"}
             </button>
           ) : (
-            <p className="lede" style={{ fontSize: 12 }}>Policy admins can enroll devices and download installers.</p>
+            <p className="lede" style={{ fontSize: 12 }}>Policy admins can download the Windows client.</p>
           )}
-          {canInstall && selected ? (
-            <button className="ghost" type="button" onClick={() => downloadInstaller(selected)}>
-              Download installer for {selectedDevice?.hostname || "this device"}
-            </button>
-          ) : null}
         </div>
-      </form>
+      </section>
 
       <div className="device-layout">
         <div className="panel" style={{ padding: 0 }}>
           <table>
             <thead>
               <tr>
-                <th>Device</th>
+                <th>Hostname</th>
                 <th>Activity</th>
               </tr>
             </thead>
             <tbody>
-              {devices.map((d) => (
-                <tr
-                  key={d.id}
-                  className={d.id === selected ? "device-row selected" : "device-row"}
-                  onClick={() => selectDevice(d.id)}
-                >
-                  <td>
-                    <div>{d.hostname}</div>
-                    <div className="mono">{d.joinType}</div>
-                    <div className="mono">{d.id}</div>
-                  </td>
-                  <td>
-                    {d.pendingRequests ? <span className="pill pending">{d.pendingRequests} pending</span> : null}{" "}
-                    {d.activeJit ? <span className="pill active">JIT</span> : null}
-                    <div className="mono">{d.lastAction || "no events yet"}</div>
-                    <div className="mono">{d.lastEventAt ? new Date(d.lastEventAt).toLocaleString() : "—"}</div>
+              {devices.length ? (
+                devices.map((d) => (
+                  <tr
+                    key={d.id}
+                    className={d.id === selected ? "device-row selected" : "device-row"}
+                    onClick={() => selectDevice(d.id)}
+                  >
+                    <td>
+                      <div>
+                        {d.hostname}{" "}
+                        {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}
+                      </div>
+                    </td>
+                    <td>
+                      {d.pendingRequests ? <span className="pill pending">{d.pendingRequests} pending</span> : null}{" "}
+                      {d.activeJit ? <span className="pill active">JIT</span> : null}
+                      <div className="mono">{d.lastAction || "waiting for this PC"}</div>
+                      <div className="mono">{d.lastEventAt ? new Date(d.lastEventAt).toLocaleString() : "—"}</div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={2} className="lede" style={{ padding: 18 }}>
+                    No clients yet. After you install the MSI or script, the computer appears here as its hostname.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
@@ -210,7 +210,7 @@ export function DevicesClient({
               <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
                 <strong>{detail.hostname}</strong>
                 <p className="lede" style={{ fontSize: 13, marginTop: 6 }}>
-                  Enrolled {new Date(detail.enrolledAt).toLocaleString()} · {detail.joinType}
+                  First seen {new Date(detail.enrolledAt).toLocaleString()}
                 </p>
               </div>
               <h2 className="section-title">Events</h2>
@@ -321,7 +321,11 @@ export function DevicesClient({
             </>
           ) : (
             <div className="panel" style={{ padding: 18 }}>
-              <p className="lede">Select a device to see its events.</p>
+              <p className="lede">
+                {selectedDevice
+                  ? `Select ${selectedDevice.hostname} again if detail did not load.`
+                  : "Install a client to see that computer here."}
+              </p>
             </div>
           )}
         </div>

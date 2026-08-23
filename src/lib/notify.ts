@@ -1,3 +1,4 @@
+import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import { getNotificationSecrets, getNotificationSettings, getUser, getDevice } from "./db";
 import { sendSmtp } from "./smtp";

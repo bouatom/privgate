@@ -1,6 +1,9 @@
 import { can, getSession } from "@/lib/auth";
 import { headers } from "next/headers";
 import { deviceDetail, getDb, listDeviceSummaries } from "@/lib/db";
+import { clientBinariesReady, clientMsiAvailable } from "@/lib/client-package";
+import { connectedDeviceIds } from "@/lib/realtime/bus";
+import { agentOriginFromWebOrigin } from "@/lib/listen";
 import { requestOrigin } from "@/lib/origin";
 import { DevicesClient } from "./devices-client";
 import { Forbidden } from "../forbidden";
@@ -14,7 +17,8 @@ export default async function DevicesPage({
   const session = await getSession();
   if (!can(session, "devices.view") && !can(session, "devices.enroll")) return <Forbidden />;
   const db = getDb();
-  const devices = listDeviceSummaries(db);
+  const online = new Set(connectedDeviceIds());
+  const devices = listDeviceSummaries(db).map((d) => ({ ...d, online: online.has(d.id) }));
   const selected = devices.some((d) => d.id === id) ? id! : devices[0]?.id || "";
   const detail = selected ? deviceDetail(db, selected) ?? null : null;
   const hdrs = await headers();
@@ -27,7 +31,9 @@ export default async function DevicesPage({
       selected={selected}
       detail={detail}
       canInstall={can(session, "devices.enroll")}
-      initialApiBase={origin}
+      consoleUrl={agentOriginFromWebOrigin(origin)}
+      binariesReady={clientBinariesReady()}
+      msiReady={clientMsiAvailable()}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { AdSettings } from "@/lib/db";
+import type { AdSettings } from "@/lib/models";
 
 type DirectoryStatus =
   | { connected: false }

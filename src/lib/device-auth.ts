@@ -1,3 +1,4 @@
+import "server-only";
 import { createHash } from "node:crypto";
 import { hmacDevice, safeEqual } from "./signing";
 import { decryptSecret } from "./crypto-secret";

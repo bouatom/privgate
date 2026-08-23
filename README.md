@@ -25,18 +25,18 @@ Download the installer for your host OS from the **[latest GitHub Release](https
 | --- | --- |
 | Windows 10 / 11 | `.exe` (recommended) or `.msi` |
 | macOS | `.pkg` |
-| Linux (amd64) | `.deb` or `.tar.gz` |
+| Linux (amd64) | `.deb` |
 
-After install, open [http://127.0.0.1:3000](http://127.0.0.1:3000/). Lab login: `ada@contoso.test`.
+After install, open the console from this machine at [http://127.0.0.1:3000](http://127.0.0.1:3000/) or from another computer at `http://<console-host>:3000/`. The first visit is a **setup wizard** that creates the local Master Admin. Connect Entra ID later under Configuration → Integrations (SSO appears on the login page only after that). Download the Windows **MSI** or **deployment script** from **Devices**; each PC registers itself by hostname. There are no demo logins.
 
-The console listens on loopback by default. Data and generated secrets land under ProgramData (Windows), `/Library/Application Support/PrivGate` (macOS), or `/var/lib/privgate` (Linux). Edit `console.env` there for Entra single sign-on and production secrets.
+The process listens on **all interfaces** by default: management UI on port **3000**, Windows brokers on port **3001**. Data and generated secrets land under ProgramData (Windows), `/Library/Application Support/PrivGate` (macOS), or `/var/lib/privgate` (Linux). There are no demo logins.
 
 Windows MSI: if the service does not start, run `install-service.cmd` from `C:\Program Files\PrivGate`.
 
 ## Enroll a Windows PC
 
-1. In the console: **Devices** → enroll the hostname → **Download installer**.
-2. On the PC, run `Install-PrivGate.ps1` from an elevated PowerShell. Requires .NET Framework 4.8 (inbox on current Windows 10/11).
+1. In the console: **Devices** → pick **MSI** or **deployment script** → download that one file.
+2. On the PC, run the MSI or the script from an elevated PowerShell. Requires .NET Framework 4.8 (inbox on current Windows 10/11). The client registers the computer’s hostname.
 3. Standard users elevate with `PrivGate.Helper.exe --elevate <path>`.
 4. Approvers handle pending requests; policy admins maintain always-allow rules; JIT operators open time-boxed local-admin windows.
 
@@ -44,6 +44,6 @@ Supported endpoints: Windows 7 SP1 through 11, and Server 2008 R2 through 2025. 
 
 ## Production
 
-Turn on Entra sign-in (`AUTH_MODE=entra`), Conditional Access MFA, and secrets of at least 32 characters. After rotating ticket or device keys, re-download the installer for every enrolled host.
+Turn on Entra sign-in (`AUTH_MODE=entra`), Conditional Access MFA, and keep the generated secrets. After rotating ticket or device keys, re-download the installer for every enrolled host.
 
 Operator notes: [Documentation](docs/index.md) · [Threat model](docs/threat-model.md).

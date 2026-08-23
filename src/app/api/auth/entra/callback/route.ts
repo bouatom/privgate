@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { decodeJwt } from "jose";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { getDb, takeOauthState } from "@/lib/db";
 import { issueSession, sessionCookie } from "@/lib/auth";
+import { entraIdTokenVerifyOptions, entraJwksUrl } from "@/lib/entra";
 import { getPortalUserByEmail } from "@/lib/portal";
 import { requestOrigin } from "@/lib/origin";
+import { isWizardCompleted } from "@/lib/setup-state";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -56,9 +58,18 @@ export async function GET(req: Request) {
   }
   const tokens = (await tokenRes.json()) as { id_token?: string };
   if (!tokens.id_token) return NextResponse.json({ error: "no id_token" }, { status: 401 });
-  const claims = decodeJwt(tokens.id_token);
-  const email = String(claims.preferred_username || claims.email || "");
-  const oid = String(claims.oid || "");
+  let email: string;
+  let oid: string;
+  let name: string;
+  try {
+    const JWKS = createRemoteJWKSet(new URL(entraJwksUrl(tenant)));
+    const { payload } = await jwtVerify(tokens.id_token, JWKS, entraIdTokenVerifyOptions(tenant, clientId));
+    email = String(payload.preferred_username || payload.email || "");
+    oid = String(payload.oid || "");
+    name = String(payload.name || "");
+  } catch {
+    return NextResponse.json({ error: "invalid id_token" }, { status: 401 });
+  }
   const portal = email ? getPortalUserByEmail(db, email) : undefined;
   if (!portal || portal.disabled || !portal.permissions.length) {
     return NextResponse.json({ error: "not an admin" }, { status: 403 });
@@ -72,9 +83,10 @@ export async function GET(req: Request) {
   const token = await issueSession({
     id: portal.id,
     email: portal.email,
-    name: String(claims.name || portal.displayName),
+    name: name || portal.displayName,
   });
-  const res = NextResponse.redirect(new URL("/dashboard", origin));
+  const dest = isWizardCompleted(db) ? "/dashboard" : "/setup";
+  const res = NextResponse.redirect(new URL(dest, origin));
   res.cookies.set(sessionCookie(token));
   res.cookies.set("privgate_oauth_state", "", { path: "/", maxAge: 0 });
   return res;

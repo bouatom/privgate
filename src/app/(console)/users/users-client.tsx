@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import type { PresentedUser } from "@/lib/present";
+import type { PresentedUser } from "@/lib/models";
 
 type Group = { id: string; name: string; directorySource: string; memberCount: number };
 

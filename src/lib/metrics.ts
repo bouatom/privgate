@@ -1,3 +1,4 @@
+import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import { getAdSettings, listAudit, listDeviceSummaries, listJit, listPolicies, listRequests, listUsers } from "./db";
 import { publicDirectoryStatus } from "./entra";

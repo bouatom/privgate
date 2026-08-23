@@ -12,8 +12,9 @@
  *  - `PRIVGATE_TRUST_PROXY=1` additionally allows `X-Forwarded-Proto` /
  *    `X-Forwarded-Host`, still subject to the allowlist above.
  *
- * With none of these set the request URL's own host is used, which is correct for
- * the default loopback deployment.
+ * With none of these set the request URL's own host is used, which is correct when
+ * operators open the console by LAN IP (`http://192.168.x.x:3000`) and when it is
+ * bound only to loopback.
  */
 
 type Env = Record<string, string | undefined>;

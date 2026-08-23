@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import type { NotificationSettings } from "@/lib/db";
+import type { NotificationSettings } from "@/lib/models";
 
 export function NotificationsClient({ initial }: { initial: NotificationSettings }) {
   const router = useRouter();
@@ -123,7 +123,7 @@ export function NotificationsClient({ initial }: { initial: NotificationSettings
         </div>
         <div>
           <label>Approver recipients</label>
-          <input value={form.recipients} onChange={(e) => setForm({ ...form, recipients: e.target.value })} placeholder="ada@contoso.test, secops@contoso.test" />
+          <input value={form.recipients} onChange={(e) => setForm({ ...form, recipients: e.target.value })} placeholder="secops@example.com" />
         </div>
 
         <strong style={{ marginTop: 8 }}>Webhook</strong>

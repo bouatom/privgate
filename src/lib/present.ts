@@ -1,24 +1,8 @@
+import "server-only";
 import type { AuditEvent, DirectoryUser } from "./db";
+import type { PresentedAudit, PresentedUser } from "./models";
 
-export type PresentedUser = {
-  id: string;
-  displayName: string;
-  userPrincipalName: string;
-  adSid: string;
-  entraOid: string;
-  jitEligible: boolean;
-  disabled: boolean;
-  roles: string[];
-};
-
-export type PresentedAudit = {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-  details: Record<string, unknown>;
-};
+export type { PresentedAudit, PresentedUser } from "./models";
 
 export function presentUsers(users: DirectoryUser[]): PresentedUser[] {
   return users.map((u) => ({

@@ -312,6 +312,26 @@ input, select, textarea {
   padding: 24px;
 }
 .login .panel { width: min(420px, 100%); padding: 28px; }
+.login .panel.wizard { width: min(36rem, 100%); }
+.wizard-progress {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 4px;
+}
+.wizard-progress span {
+  display: block;
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background: var(--line);
+}
+.wizard-progress span.on { background: var(--amber); }
+.wizard-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
 .err { color: var(--bad); font-size: 14px; }
 
 .device-layout {
@@ -320,6 +340,37 @@ input, select, textarea {
   gap: 16px;
   align-items: start;
 }
+.choice-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+button.choice {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  background: var(--input);
+  color: inherit;
+  cursor: pointer;
+}
+button.choice h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+}
+button.choice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+button.choice.selected {
+  border-color: var(--amber);
+  box-shadow: inset 0 0 0 1px var(--amber);
+  background: var(--panel);
+}
+.deploy-url { font-size: 13px; }
 tr.device-row { cursor: pointer; }
 tr.device-row.selected td { background: var(--nav-active); }
 .section-title {
@@ -350,6 +401,7 @@ tr.device-row.selected td { background: var(--nav-active); }
   .cards { grid-template-columns: 1fr; }
   .cards.four { grid-template-columns: 1fr; }
   .device-layout { grid-template-columns: 1fr; }
+  .choice-grid { grid-template-columns: 1fr; }
   .chrome { padding: 16px 20px 0; }
   .main { padding: 12px 20px 48px; }
 }

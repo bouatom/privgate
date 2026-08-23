@@ -1,3 +1,4 @@
+import "server-only";
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
 
 const HKDF_SALT = "privgate.crypto-secret.v1";

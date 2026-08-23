@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { AdminSession } from "@/lib/auth";
+import type { AdminSession } from "@/lib/models";
 
 export const SessionContext = createContext<AdminSession | null>(null);
 

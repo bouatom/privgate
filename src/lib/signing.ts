@@ -1,3 +1,4 @@
+import "server-only";
 import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 
 export type TicketType = "elevate" | "jit";

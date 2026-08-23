@@ -1,8 +1,14 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { resetDbForTests, deviceDetail, listDeviceSummaries, enrollDevice } from "./db";
-import { buildInstallerEntries, installScript, safeApiBase } from "./device-installer";
-import { zipBuffers } from "./zip";
+import {
+  resetDbForTests,
+  deviceDetail,
+  listDeviceSummaries,
+  enrollDevice,
+  registerOrReuseDevice,
+} from "./db";
+import { safeApiBase } from "./device-installer";
+import { deploymentScript } from "./client-package";
 
 describe("device events and installer", () => {
   it("summarizes the seeded lab device with its pending request and enroll event", () => {
@@ -18,28 +24,14 @@ describe("device events and installer", () => {
     expect(detail?.requests[0]?.filePath).toContain("Update.exe");
   });
 
-  it("packages a zip installer with device credentials and install script", () => {
-    const entries = buildInstallerEntries({
-      hostname: "LAB-W11-01",
-      deviceId: "dev-lab-01",
-      deviceSecret: "lab-device-secret-do-not-use-in-prod",
-      apiBase: "http://192.168.1.10:3000",
-      ticketSigningKey: "dev-only-ticket-hmac-key-change",
-      agentRoot: `${process.cwd()}/agent`,
-    });
-    expect(entries.some((e) => e.name === "Install-PrivGate.ps1")).toBe(true);
-    const settings = entries.find((e) => e.name === "appsettings.json")?.data.toString();
-    expect(settings).toContain("dev-lab-01");
-    expect(settings).toContain("192.168.1.10");
-    expect(entries.some((e) => e.name === "agent/Program.cs")).toBe(true);
-    expect(installScript()).toContain("PrivGateBroker");
-    if (existsSync(`${process.cwd()}/agent/dist/PrivGate.Agent.exe`)) {
-      expect(entries.some((e) => e.name === "PrivGate.Agent.exe")).toBe(true);
-    }
-
-    const zip = zipBuffers(entries);
-    expect(zip.subarray(0, 2).toString("utf8")).toBe("PK");
-    expect(zip.includes(Buffer.from("Install-PrivGate.ps1"))).toBe(true);
+  it("packages a single PowerShell deployment script with the console address", () => {
+    const script = deploymentScript("http://192.168.1.10:3001", "enroll-token-example");
+    expect(script).toContain("http://192.168.1.10:3001");
+    expect(script).toContain("enroll-token-example");
+    expect(script).toContain("PrivGateBroker");
+    expect(script).toContain("/api/agent/bootstrap");
+    expect(script).not.toMatch(/application\/zip|\.zip/);
+    expect(existsSync(`${process.cwd()}/agent`)).toBe(true);
   });
 
   it("rejects non-http control plane URLs", () => {
@@ -49,9 +41,18 @@ describe("device events and installer", () => {
     );
   });
 
+  it("registers a PC by hostname and reuses it on reinstall", () => {
+    const db = resetDbForTests(":memory:");
+    const first = registerOrReuseDevice(db, "FINANCE-W11", "unknown", "dev-device-secret-key-32bytes!!");
+    const second = registerOrReuseDevice(db, "finance-w11", "ad", "dev-device-secret-key-32bytes!!");
+    expect(second.id).toBe(first.id);
+    expect(second.reused).toBe(true);
+    expect(listDeviceSummaries(db).map((d) => d.hostname)).toEqual(["FINANCE-W11", "LAB-W11-01"]);
+  });
+
   it("enrolls a second device into the summary list", () => {
     const db = resetDbForTests(":memory:");
-    enrollDevice(db, "FINANCE-W11", "hybrid", "dev-device-secret-key-32bytes!!");
+    enrollDevice(db, "FINANCE-W11", "unknown", "dev-device-secret-key-32bytes!!");
     expect(listDeviceSummaries(db).map((d) => d.hostname)).toEqual(["FINANCE-W11", "LAB-W11-01"]);
   });
 });
