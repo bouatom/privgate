@@ -14,7 +14,7 @@ export type {
 } from "./types";
 
 export { dbPath, getDb, resetDbForTests } from "./connection";
-export { appendAudit, listAudit, listAuditActions, listAuditForDevice } from "./audit";
+export { appendAudit, listAudit, listAuditActions, listAuditCount, listAuditForDevice } from "./audit";
 export {
   findUserBySid,
   getUser,

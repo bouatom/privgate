@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { listAudit, listAuditActions, resetDbForTests } from "./index";
+import { listAudit, listAuditActions, listAuditCount, resetDbForTests } from "./index";
 
 function insertEvent(
   db: ReturnType<typeof resetDbForTests>,
@@ -86,5 +86,46 @@ describe("listAuditActions", () => {
     insertEvent(db, "2026-01-02T00:00:00.000Z", "b", "jit.grant");
     insertEvent(db, "2026-01-03T00:00:00.000Z", "c", "request.approve");
     expect(listAuditActions(db)).toEqual(["jit.grant", "request.approve"]);
+  });
+});
+
+describe("listAuditCount", () => {
+  it("counts every matching row regardless of limit and offset", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    for (let i = 1; i <= 7; i++) {
+      insertEvent(db, `2026-01-0${i}T00:00:00.000Z`, "actor", `action.${i}`);
+    }
+    expect(listAuditCount(db)).toBe(7);
+    expect(listAuditCount(db, {})).toBe(7);
+  });
+
+  it("applies the same filter shape as listAudit (q/action/from/to)", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    insertEvent(db, "2026-01-01T00:00:00.000Z", "ada", "request.approve", "req-1");
+    insertEvent(db, "2026-02-01T00:00:00.000Z", "ada", "request.deny", "req-2");
+    insertEvent(db, "2026-02-02T00:00:00.000Z", "bob", "request.approve", "req-3");
+    expect(listAuditCount(db, { q: "ada" })).toBe(2);
+    expect(listAuditCount(db, { action: "request.approve" })).toBe(2);
+    expect(
+      listAuditCount(db, { from: "2026-01-15T00:00:00.000Z", to: "2026-02-28T23:59:59.999Z" }),
+    ).toBe(2);
+    expect(listAuditCount(db, { q: "ada", action: "request.approve" })).toBe(1);
+    expect(listAuditCount(db, { q: "no-such-token" })).toBe(0);
+  });
+
+  it("agrees with paginated listAudit pages (page X of Y math)", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    for (let i = 0; i < 55; i++) {
+      insertEvent(db, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString(), "actor", "bulk.event");
+    }
+    const pageSize = 50;
+    const total = listAuditCount(db);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    expect(totalPages).toBe(2);
+    let seen = 0;
+    for (let page = 0; page < totalPages; page++) {
+      seen += listAudit(db, { limit: pageSize, offset: page * pageSize }).length;
+    }
+    expect(seen).toBe(total);
   });
 });

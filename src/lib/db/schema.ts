@@ -80,6 +80,7 @@ export function migrate(db: DatabaseSync) {
       target TEXT NOT NULL,
       details TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_at ON audit_events(at);
     CREATE TABLE IF NOT EXISTS consumed_nonces (
       nonce TEXT PRIMARY KEY,
       consumed_at TEXT NOT NULL

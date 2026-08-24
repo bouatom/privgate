@@ -51,6 +51,7 @@ export function DevicesClient({
   detail,
   canInstall,
   canManageAllowlists,
+  canApproveRequests,
   canUpdate,
   currentVersion,
   policies,
@@ -63,6 +64,7 @@ export function DevicesClient({
   detail: DeviceDetailModel | null;
   canInstall: boolean;
   canManageAllowlists: boolean;
+  canApproveRequests: boolean;
   canUpdate: boolean;
   currentVersion: string;
   policies: Policy[];
@@ -262,6 +264,7 @@ export function DevicesClient({
               detail={detail}
               policies={policies}
               canManageAllowlists={canManageAllowlists}
+              canApproveRequests={canApproveRequests}
             />
           ) : (
             <div className="panel" style={{ padding: 18 }}>

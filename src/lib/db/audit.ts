@@ -30,13 +30,8 @@ export type AuditListOptions = {
 const AUDIT_DEFAULT_LIMIT = 200;
 const AUDIT_MAX_LIMIT = 1000;
 
-/**
- * List audit events newest-first. Accepts either a legacy bare search string
- * (`listAudit(db, "text")` — kept for existing callers) or an options object
- * with SQL-bounded filters for date range, exact action, and pagination.
- */
-export function listAudit(db: DatabaseSync, options: string | AuditListOptions = {}): AuditEvent[] {
-  const opts = typeof options === "string" ? { q: options } : options;
+/** Builds the WHERE clause shared by listAudit and listAuditCount so counts and rows always agree. */
+function auditWhere(opts: AuditListOptions): { where: string; params: Array<string | number> } {
   const clauses: string[] = [];
   const params: Array<string | number> = [];
   if (opts.q) {
@@ -56,13 +51,32 @@ export function listAudit(db: DatabaseSync, options: string | AuditListOptions =
     clauses.push("at <= ?");
     params.push(opts.to);
   }
-  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return { where: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+}
+
+/**
+ * List audit events newest-first. Accepts either a legacy bare search string
+ * (`listAudit(db, "text")` — kept for existing callers) or an options object
+ * with SQL-bounded filters for date range, exact action, and pagination.
+ */
+export function listAudit(db: DatabaseSync, options: string | AuditListOptions = {}): AuditEvent[] {
+  const opts = typeof options === "string" ? { q: options } : options;
+  const { where, params } = auditWhere(opts);
   const limit = Math.max(0, Math.min(opts.limit ?? AUDIT_DEFAULT_LIMIT, AUDIT_MAX_LIMIT));
   const offset = Math.max(0, opts.offset ?? 0);
   const rows = db
     .prepare(`SELECT * FROM audit_events ${where} ORDER BY at DESC LIMIT ? OFFSET ?`)
     .all(...params, limit, offset) as Record<string, unknown>[];
   return rows.map(auditFromRow);
+}
+
+/** Total events matching the same filters as listAudit (q/action/from/to); limit/offset ignored. */
+export function listAuditCount(db: DatabaseSync, options: Omit<AuditListOptions, "limit" | "offset"> = {}): number {
+  const { where, params } = auditWhere(options);
+  const row = db.prepare(`SELECT COUNT(*) AS total FROM audit_events ${where}`).get(...params) as
+    | { total?: unknown }
+    | undefined;
+  return Number(row?.total ?? 0);
 }
 
 /** Distinct actions present in the audit log, for filter dropdowns. */

@@ -10,7 +10,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const db = getDb();
   const decided = decideRequest(db, id, "denied", auth.session.email);
-  if (!decided) return NextResponse.json({ error: "not pending" }, { status: 409 });
+  // Same race copy as the approve route: a 409 here means another admin
+  // already decided this request while the button was in flight.
+  if (!decided) {
+    return NextResponse.json({ error: "Another admin already decided this request." }, { status: 409 });
+  }
   appendAudit(db, auth.session.email, "request.deny", id, { file: decided.filePath });
   notifyRequestDenied(decided);
   queueNotification(

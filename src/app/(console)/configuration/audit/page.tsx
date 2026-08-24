@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { can, getSession } from "@/lib/auth";
-import { getDb, getDevice, listAudit, listAuditActions } from "@/lib/db";
+import { getDb, getDevice, listAudit, listAuditActions, listAuditCount } from "@/lib/db";
 import { formatDetails, formatWhen } from "@/lib/format";
 import { Forbidden } from "../../forbidden";
 import { presentAudit } from "@/lib/present";
@@ -51,19 +51,23 @@ export default async function AuditPage({
   const offset = Math.max(0, Number.parseInt(params.offset || "0", 10) || 0);
   const db = getDb();
 
-  // Fetch one extra row to know whether an older page exists.
-  const found = listAudit(db, {
+  const filters = {
     q: params.q || undefined,
     action: params.action || undefined,
     from: dayBound(params.from, "start"),
     to: dayBound(params.to, "end"),
-    limit: PAGE_SIZE + 1,
-    offset,
-  });
+  };
+
+  // Fetch one extra row to know whether an older page exists.
+  const found = listAudit(db, { ...filters, limit: PAGE_SIZE + 1, offset });
   const hasOlder = found.length > PAGE_SIZE;
   const rows = presentAudit(found.slice(0, PAGE_SIZE), deviceActorResolver(db));
   const actions = listAuditActions(db);
   const filtered = Boolean(params.q || params.from || params.to || params.action);
+  // Exact total for the same filters, so the pager label always agrees with the rows.
+  const total = listAuditCount(db, filters);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(Math.floor(offset / PAGE_SIZE) + 1, totalPages);
 
   return (
     <>
@@ -127,6 +131,9 @@ export default async function AuditPage({
               ← Newer
             </Link>
           ) : null}
+          <span className="lede">
+            Page {currentPage} of {totalPages}
+          </span>
           {hasOlder ? (
             <Link className="ghost" href={pagerHref(params, offset + PAGE_SIZE)}>
               Older →

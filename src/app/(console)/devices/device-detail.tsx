@@ -62,10 +62,13 @@ export function DeviceDetail({
   detail,
   policies,
   canManageAllowlists,
+  canApproveRequests = false,
 }: {
   detail: DeviceDetailModel;
   policies: Policy[];
   canManageAllowlists: boolean;
+  /** Enables the "Rule saved — also approve?" follow-up for pending request rows. */
+  canApproveRequests?: boolean;
 }) {
   const [logFilter, setLogFilter] = useState<"blocked" | "all">("blocked");
   const blocked = useMemo(
@@ -150,6 +153,9 @@ export function DeviceDetail({
                     <AllowlistFromRequestButton
                       canManage={canManageAllowlists}
                       policies={policies}
+                      requestId={row.id}
+                      requestPending={row.status === "pending"}
+                      canApproveRequest={canApproveRequests}
                       source={{
                         filePath: row.filePath,
                         fileHash: row.fileHash,

@@ -35,6 +35,7 @@ export default async function DevicesPage({
       detail={detail}
       canInstall={can(session, "devices.enroll")}
       canManageAllowlists={can(session, "policies.manage")}
+      canApproveRequests={can(session, "requests.approve")}
       canUpdate={can(session, "devices.update")}
       currentVersion={currentClientVersion()}
       policies={can(session, "policies.manage") ? listPolicies(db) : []}
