@@ -72,7 +72,12 @@ sealed class BrokerHost
             {
                 try
                 {
-                    watchdog.Tick(DateTimeOffset.UtcNow, JitWatchdog.RevokeLocalAdmin);
+                    var expired = watchdog.Tick(DateTimeOffset.UtcNow, JitWatchdog.RevokeLocalAdmin);
+                    if (expired is not null)
+                    {
+                        BrokerLog.Write($"jit window elapsed for grant {expired.grantId}; reporting expiry");
+                        await api.ReportJitExpiredAsync(expired.grantId);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -110,6 +115,14 @@ sealed class BrokerHost
         {
             var state = await _api.JitStateAsync(userSid, _ct);
             return state.GetRawText();
+        }
+        if (mode == "uac-canceled")
+        {
+            await _api.ReportUacCanceledAsync(
+                msg.TryGetProperty("filePath", out var canceledPath) ? canceledPath.GetString() ?? "" : "",
+                userSid,
+                _ct);
+            return JsonSerializer.Serialize(new { ok = true });
         }
 
         var filePath = msg.GetProperty("filePath").GetString() ?? "";

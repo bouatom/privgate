@@ -5,10 +5,12 @@ import { signTicket } from "@/lib/signing";
 import { ticketKeyForDevice } from "@/lib/evaluate";
 import { queueNotification } from "@/lib/notify";
 import { notifyJitGrant } from "@/lib/realtime/notify";
+import { expireDueJit } from "@/lib/jit-expiry";
 
 export async function GET() {
   const auth = await requireAdmin("jit.view");
   if (isResponse(auth)) return auth;
+  expireDueJit();
   return NextResponse.json(listJit(getDb()));
 }
 
@@ -22,6 +24,7 @@ export async function POST(req: Request) {
     reason?: string;
   };
   const db = getDb();
+  expireDueJit();
   const grant = createJit(db, {
     userId: body.userId || "",
     deviceId: body.deviceId || "",

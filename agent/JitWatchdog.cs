@@ -56,15 +56,20 @@ public sealed class JitWatchdog
         File.Delete(statePath);
     }
 
-    public bool Tick(DateTimeOffset now, Action<string> revokeUser)
+    /// <summary>
+    /// Removes local admin when the armed window has elapsed and clears state.
+    /// Returns the revoked state so the caller can report expiry to the server,
+    /// or null when nothing was due.
+    /// </summary>
+    internal JitState? Tick(DateTimeOffset now, Action<string> revokeUser)
     {
-        if (!File.Exists(statePath)) return false;
+        if (!File.Exists(statePath)) return null;
         var state = JsonSerializer.Deserialize<JitState>(File.ReadAllText(statePath));
-        if (state is null) return false;
-        if (now.ToUnixTimeSeconds() < state.exp) return false;
+        if (state is null) return null;
+        if (now.ToUnixTimeSeconds() < state.exp) return null;
         revokeUser(state.userSid);
         File.Delete(statePath);
-        return true;
+        return state;
     }
 
     public static void RevokeLocalAdmin(string userSid) => RunNet("delete", userSid);
@@ -110,5 +115,5 @@ public sealed class JitWatchdog
         BrokerLog.Write($"net.exe {args} exit={proc.ExitCode} {output}");
     }
 
-    sealed record JitState(string grantId, string userSid, long exp);
+    internal sealed record JitState(string grantId, string userSid, long exp);
 }

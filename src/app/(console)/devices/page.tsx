@@ -2,6 +2,8 @@ import { can, getSession } from "@/lib/auth";
 import { headers } from "next/headers";
 import { deviceDetail, getDb, listDeviceSummaries, listPolicies } from "@/lib/db";
 import { clientBinariesReady, clientMsiAvailable } from "@/lib/client-package";
+import { currentClientVersion } from "@/lib/client-version";
+import { expireDueJit } from "@/lib/jit-expiry";
 import { connectedDeviceIds } from "@/lib/realtime/bus";
 import { agentOriginFromWebOrigin } from "@/lib/listen";
 import { requestOrigin } from "@/lib/origin";
@@ -17,6 +19,7 @@ export default async function DevicesPage({
   const session = await getSession();
   if (!can(session, "devices.view") && !can(session, "devices.enroll")) return <Forbidden />;
   const db = getDb();
+  expireDueJit();
   const online = new Set(connectedDeviceIds());
   const devices = listDeviceSummaries(db).map((d) => ({ ...d, online: online.has(d.id) }));
   const selected = devices.some((d) => d.id === id) ? id! : devices[0]?.id || "";
@@ -32,6 +35,8 @@ export default async function DevicesPage({
       detail={detail}
       canInstall={can(session, "devices.enroll")}
       canManageAllowlists={can(session, "policies.manage")}
+      canUpdate={can(session, "devices.update")}
+      currentVersion={currentClientVersion()}
       policies={can(session, "policies.manage") ? listPolicies(db) : []}
       consoleUrl={agentOriginFromWebOrigin(origin)}
       binariesReady={clientBinariesReady()}

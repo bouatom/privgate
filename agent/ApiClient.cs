@@ -46,6 +46,40 @@ public sealed class ApiClient
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Reports a cancelled stock-UAC attempt over the realtime channel. Telemetry
+    /// only: when the websocket is down the report is dropped (no HTTP fallback).
+    /// </summary>
+    public async Task<JsonElement> ReportUacCanceledAsync(string filePath, string userSid, CancellationToken ct = default)
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try
+            {
+                return await realtime.UacCanceledAsync(filePath, userSid, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime uac-canceled: {ex.Message}"); }
+        }
+        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+    }
+
+    /// <summary>
+    /// Reports that the local JIT watchdog revoked an elapsed window. Realtime
+    /// only: if offline, the server's expiry sweep reconciles the row instead.
+    /// </summary>
+    public async Task<JsonElement> ReportJitExpiredAsync(string grantId, CancellationToken ct = default)
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try
+            {
+                return await realtime.JitExpiredAsync(grantId, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime jit-expired: {ex.Message}"); }
+        }
+        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+    }
+
     async Task<JsonElement> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
     {
         var raw = body is null ? "" : JsonSerializer.Serialize(body);

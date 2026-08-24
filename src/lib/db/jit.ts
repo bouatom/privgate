@@ -91,6 +91,18 @@ export function getJit(db: DatabaseSync, id: string): JitGrant | undefined {
   return row ? jitFromRow(row) : undefined;
 }
 
+/// Flips every due active grant to 'expired' and returns what changed so callers
+/// can notify devices and audit. Pure db layer: no realtime imports here.
+export function expireDueGrants(db: DatabaseSync, now = new Date()): JitGrant[] {
+  const due = db
+    .prepare(`SELECT * FROM jit_grants WHERE status = 'active' AND expires_at <= ?`)
+    .all(now.toISOString()) as Record<string, unknown>[];
+  if (due.length === 0) return [];
+  const ids = due.map((row) => String(row.id));
+  db.prepare(`UPDATE jit_grants SET status = 'expired' WHERE id IN (${ids.map(() => "?").join(", ")})`).run(...ids);
+  return due.map(jitFromRow);
+}
+
 export function revokeJit(db: DatabaseSync, id: string, actor: string): JitGrant | undefined {
   const row = db.prepare("SELECT * FROM jit_grants WHERE id = ?").get(id) as Record<string, unknown> | undefined;
   if (!row) return undefined;

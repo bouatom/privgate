@@ -22,6 +22,7 @@ public sealed class RealtimeChannel : IDisposable
     readonly string secret;
     readonly string ticketKey;
     readonly JitWatchdog watchdog;
+    readonly UpdateManager updates;
     readonly CancellationToken processCt;
     readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> rpcs = new();
     readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> tickets = new();
@@ -44,6 +45,7 @@ public sealed class RealtimeChannel : IDisposable
         this.ticketKey = ticketKey;
         this.watchdog = watchdog;
         this.processCt = processCt;
+        updates = new UpdateManager(apiBase, deviceId, secret);
     }
 
     public bool IsConnected => socket?.State == WebSocketState.Open;
@@ -58,6 +60,7 @@ public sealed class RealtimeChannel : IDisposable
                 await ConnectAsync(processCt).ConfigureAwait(false);
                 delayMs = 1000;
                 BrokerStatus.Current.MarkConnected();
+                await ReportVersionAsync(processCt).ConfigureAwait(false);
                 await ReceiveLoop(processCt).ConfigureAwait(false);
                 BrokerStatus.Current.MarkDisconnected("socket closed");
             }
@@ -94,6 +97,25 @@ public sealed class RealtimeChannel : IDisposable
     public Task<JsonElement> JitStateAsync(string userSid, CancellationToken ct)
     {
         return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-state", ["userSid"] = userSid }, ct);
+    }
+
+    /// <summary>Reports a cancelled stock-UAC attempt (best-effort telemetry).</summary>
+    public Task<JsonElement> UacCanceledAsync(string filePath, string userSid, CancellationToken ct)
+    {
+        return RpcAsync(
+            new Dictionary<string, object?>
+            {
+                ["type"] = "uac-canceled",
+                ["filePath"] = filePath,
+                ["userSid"] = userSid,
+            },
+            ct);
+    }
+
+    /// <summary>Tells the server an armed JIT window elapsed locally.</summary>
+    public Task<JsonElement> JitExpiredAsync(string grantId, CancellationToken ct)
+    {
+        return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-expired", ["grantId"] = grantId }, ct);
     }
 
     async Task ConnectAsync(CancellationToken ct)
@@ -184,6 +206,25 @@ public sealed class RealtimeChannel : IDisposable
             if (sid.Length > 0) watchdog.RevokeNow(sid);
             BrokerStatus.Current.NoteJit(false);
             BrokerStatus.Current.NoteNotice("JIT admin ended", "Temporary local Administrators membership was removed.");
+            return;
+        }
+        if (type == "agent-update")
+        {
+            updates.BeginUpdate(msg);
+        }
+    }
+
+    async Task ReportVersionAsync(CancellationToken ct)
+    {
+        try
+        {
+            await RpcAsync(
+                new Dictionary<string, object?> { ["type"] = "version-report", ["version"] = UpdateManager.AgentVersion() },
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"PrivGate realtime: version-report failed: {ex.Message}");
         }
     }
 

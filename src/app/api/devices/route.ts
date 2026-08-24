@@ -3,10 +3,12 @@ import { getDb, listDeviceSummaries, enrollDevice, appendAudit } from "@/lib/db"
 import { isResponse, requireAdmin } from "@/lib/http";
 import { deviceSecretKey } from "@/lib/secrets";
 import { notifyDeviceChange } from "@/lib/realtime/notify";
+import { expireDueJit } from "@/lib/jit-expiry";
 
 export async function GET() {
   const auth = await requireAdmin("devices.view");
   if (isResponse(auth)) return auth;
+  expireDueJit();
   return NextResponse.json(listDeviceSummaries(getDb()));
 }
 

@@ -1,12 +1,25 @@
 import "server-only";
 import { getDb, getJit, findUserBySid, activeJit, revokeJit } from "../db";
 import { evaluateForDevice, type EvaluateBody } from "../evaluate";
+import { setDeviceAgentVersion } from "../db/devices";
+import { insertRequest } from "../db/requests";
+import { appendAudit } from "../db/audit";
+import { expireDueGrants } from "../db/jit";
 
 export type AgentRpc =
   | { id?: string; type: "ping" }
   | { id?: string; type: "evaluate"; body: EvaluateBody }
   | { id?: string; type: "jit-state"; userSid: string }
-  | { id?: string; type: "jit-expired"; grantId: string };
+  | { id?: string; type: "jit-expired"; grantId: string }
+  | { id?: string; type: "version-report"; version: string }
+  | {
+      id?: string;
+      type: "uac-canceled";
+      userSid: string;
+      filePath?: string;
+      fileHash?: string;
+      publisher?: string;
+    };
 
 export function handleAgentRpc(
   deviceId: string,
@@ -25,6 +38,7 @@ export function handleAgentRpc(
   }
   if (message.type === "jit-state") {
     const db = getDb();
+    expireDueGrants(db);
     const user = findUserBySid(db, message.userSid || "");
     if (!user) {
       return { id: message.id, type: "result", ok: true, payload: { active: false } };
@@ -45,6 +59,43 @@ export function handleAgentRpc(
     }
     revokeJit(db, message.grantId, `device:${deviceId}`);
     return { id: message.id, type: "result", ok: true, payload: { ok: true } };
+  }
+  if (message.type === "version-report") {
+    const version = String(message.version || "").trim();
+    if (!version || !/^[\w.\-+]{1,64}$/.test(version)) {
+      return { id: message.id, type: "result", ok: false, error: "invalid version" };
+    }
+    setDeviceAgentVersion(getDb(), deviceId, version);
+    return { id: message.id, type: "result", ok: true, payload: { version } };
+  }
+  if (message.type === "uac-canceled") {
+    const db = getDb();
+    const user = findUserBySid(db, message.userSid || "");
+    if (!user) {
+      return { id: message.id, type: "result", ok: false, error: "unknown directory user" };
+    }
+    const filePath = String(message.filePath || "").trim().slice(0, 1024) || "(unidentified program)";
+    const fileHash = /^[\da-fA-F]{64}$/.test(String(message.fileHash || "")) ? String(message.fileHash) : "";
+    const publisher = String(message.publisher || "").trim().slice(0, 256);
+    const dupe = db
+      .prepare(
+        `SELECT id FROM requests WHERE user_id = ? AND device_id = ? AND file_path = ? AND status = 'canceled'`,
+      )
+      .get(user.id, deviceId, filePath);
+    if (!dupe) {
+      insertRequest(db, {
+        userId: user.id,
+        deviceId,
+        filePath,
+        fileHash,
+        publisher,
+        arguments: "",
+        status: "canceled",
+        decidedBy: "user",
+      });
+      appendAudit(db, `device:${deviceId}`, "device.uac.canceled", deviceId, { filePath });
+    }
+    return { id: message.id, type: "result", ok: true, payload: { recorded: !dupe } };
   }
   return { id: (message as { id?: string }).id, type: "result", ok: false, error: "unknown message" };
 }
