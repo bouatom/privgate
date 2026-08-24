@@ -8,7 +8,9 @@ import type { Device, DeviceSummary } from "./types";
 
 export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> & { hostname: string }> {
   const rows = db
-    .prepare("SELECT id, hostname, join_type, enrolled_at, agent_version FROM devices ORDER BY hostname")
+    .prepare(
+      "SELECT id, hostname, join_type, enrolled_at, agent_version, last_seen_at, update_requested_at FROM devices ORDER BY hostname",
+    )
     .all() as Record<string, unknown>[];
   return rows.map((row) => ({
     id: String(row.id),
@@ -16,6 +18,8 @@ export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> &
     joinType: String(row.join_type),
     enrolledAt: String(row.enrolled_at),
     agentVersion: String(row.agent_version ?? ""),
+    lastSeenAt: String(row.last_seen_at ?? ""),
+    updateRequestedAt: String(row.update_requested_at ?? ""),
     secretEnc: "",
   }));
 }
@@ -23,7 +27,7 @@ export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> &
 export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
   const rows = db
     .prepare(
-      `SELECT d.id, d.hostname, d.join_type, d.enrolled_at, d.agent_version,
+      `SELECT d.id, d.hostname, d.join_type, d.enrolled_at, d.agent_version, d.last_seen_at, d.update_requested_at,
         (SELECT COUNT(*) FROM requests r WHERE r.device_id = d.id AND r.status = 'pending') AS pending_requests,
         (SELECT COUNT(*) FROM jit_grants j WHERE j.device_id = d.id AND j.status = 'active') AS active_jit,
         (SELECT a.at FROM audit_events a
@@ -48,6 +52,8 @@ export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
     lastEventAt: row.last_event_at ? String(row.last_event_at) : null,
     lastAction: row.last_action ? String(row.last_action) : null,
     agentVersion: String(row.agent_version ?? ""),
+    lastSeenAt: row.last_seen_at ? String(row.last_seen_at) : null,
+    updateRequestedAt: row.update_requested_at ? String(row.update_requested_at) : null,
   }));
 }
 
@@ -60,6 +66,8 @@ export function deviceDetail(db: DatabaseSync, deviceId: string) {
     joinType: device.joinType,
     enrolledAt: device.enrolledAt,
     agentVersion: device.agentVersion,
+    lastSeenAt: device.lastSeenAt,
+    updateRequestedAt: device.updateRequestedAt,
     events: listAuditForDevice(db, deviceId).map((e) => ({
       ...e,
       details: JSON.parse(e.details || "{}") as Record<string, unknown>,
@@ -91,6 +99,8 @@ function deviceFromRow(row: Record<string, unknown>): Device {
     secretEnc: String(row.secret_enc),
     enrolledAt: String(row.enrolled_at),
     agentVersion: String(row.agent_version ?? ""),
+    lastSeenAt: String(row.last_seen_at ?? ""),
+    updateRequestedAt: String(row.update_requested_at ?? ""),
   };
 }
 
@@ -145,4 +155,14 @@ export function consumeNonce(db: DatabaseSync, nonce: string): boolean {
 
 export function setDeviceAgentVersion(db: DatabaseSync, deviceId: string, version: string) {
   db.prepare("UPDATE devices SET agent_version = ? WHERE id = ?").run(version, deviceId);
+}
+
+/** Stamp the socket presence window: called on agent connect and socket close. */
+export function touchDeviceLastSeen(db: DatabaseSync, deviceId: string) {
+  db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), deviceId);
+}
+
+/** Queue (ISO timestamp) or un-queue ('') an update for an offline device. */
+export function setDeviceUpdateRequestedAt(db: DatabaseSync, deviceId: string, value: string) {
+  db.prepare("UPDATE devices SET update_requested_at = ? WHERE id = ?").run(value, deviceId);
 }

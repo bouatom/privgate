@@ -8,6 +8,8 @@ import { registerDeviceSocket, publishConsole } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
 import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
+import { touchDeviceLastSeen } from "../db/devices";
+import { drainQueuedUpdateOnReconnect } from "../agent-update";
 import { registerShutdownHook } from "../lifecycle/shutdown";
 
 const WS_PATH = "/api/agent/ws";
@@ -16,6 +18,25 @@ const wss = new WebSocketServer({ noServer: true });
 // Live agent sockets so shutdown can send a proper close frame (1001) instead
 // of letting SIGTERM drop the TCP connection mid-flight.
 const openSockets = new Set<WebSocket>();
+
+/**
+ * bus.registerDeviceSocket wrapped with device bookkeeping: stamps last_seen_at
+ * on connect and on socket close, and serves any update that was queued while
+ * the device was offline (the socket is registered first, so pushes land).
+ */
+export function registerTrackedDeviceSocket(
+  deviceId: string,
+  socket: { send: (data: string) => void; ready: () => boolean },
+): () => void {
+  const db = getDb();
+  touchDeviceLastSeen(db, deviceId);
+  const unregister = registerDeviceSocket(deviceId, socket);
+  drainQueuedUpdateOnReconnect(db, deviceId);
+  return () => {
+    unregister();
+    touchDeviceLastSeen(getDb(), deviceId);
+  };
+}
 
 function pathnameOf(url: string | undefined): string {
   try {
@@ -90,7 +111,7 @@ function accept(req: IncomingMessage, ws: WebSocket) {
   ws.on("close", forgetSocket);
   ws.on("error", forgetSocket);
 
-  const unregister = registerDeviceSocket(auth.deviceId, {
+  const unregister = registerTrackedDeviceSocket(auth.deviceId, {
     send: (data) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     },

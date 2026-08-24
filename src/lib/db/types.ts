@@ -55,6 +55,10 @@ export type Device = {
   secretEnc: string;
   enrolledAt: string;
   agentVersion: string;
+  /** ISO timestamp of the last socket connect/close; '' when never seen. */
+  lastSeenAt: string;
+  /** ISO timestamp of a queued update request; '' when none is pending. */
+  updateRequestedAt: string;
 };
 
 export type DeviceSummary = {
@@ -67,6 +71,8 @@ export type DeviceSummary = {
   lastEventAt: string | null;
   lastAction: string | null;
   agentVersion: string;
+  lastSeenAt: string | null;
+  updateRequestedAt: string | null;
 };
 
 export type DirectorySettings = {
