@@ -1,7 +1,9 @@
 # Build management-console installers (Windows EXE/MSI, Linux deb, macOS pkg)
-# and attach each file to a GitHub Release. Builds PrivGate-Client.msi once
-# (Ubuntu + msitools/wixl) and ships it inside every console payload so
-# Devices can brand it without runtime wixl.
+# and attach each file to a GitHub Release together with a sha256sums.txt
+# manifest. Builds PrivGate-Client.msi once (Ubuntu + msitools/wixl) and ships
+# it inside every console payload so Devices can brand it without runtime wixl.
+# A parser-only gate syntax-checks every *.ps1 under scripts/ and packaging/;
+# those scripts are parsed, never executed.
 
 name: Console installers
 
@@ -90,6 +92,52 @@ jobs:
       - name: Test, typecheck, lint
         run: npm test && npm run typecheck && npm run lint
 
+  pwsh-syntax:
+    name: PowerShell syntax gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Parser-only gate: every .ps1 under scripts/ and packaging/ is fed to
+      # [System.Management.Automation.Language.Parser]::ParseFile so syntax
+      # errors fail the build. Nothing is ever executed — dev Macs have no
+      # pwsh, so this is the only place these files get checked.
+      - name: Parse every .ps1 (never execute)
+        run: |
+          set -euo pipefail
+          scripts=()
+          while IFS= read -r script; do
+            scripts+=("$script")
+          done < <(find scripts packaging -type f -name '*.ps1' | LC_ALL=C sort)
+          echo "Found ${#scripts[@]} PowerShell script(s) to parse:"
+          printf '  %s\n' "${scripts[@]}"
+          status=0
+          for script in "${scripts[@]}"; do
+            echo "::group::Parser::ParseFile ${script}"
+            pwsh -NoProfile -Command '
+              & {
+                param([string]$Path)
+                $tokens = $null
+                $errors = $null
+                [System.Management.Automation.Language.Parser]::ParseFile(
+                  $Path, [ref]$tokens, [ref]$errors) | Out-Null
+                if ($errors -and $errors.Count -gt 0) {
+                  foreach ($e in $errors) {
+                    Write-Output ("::error file={0},line={1},col={2}::{3}" -f $Path, $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
+                  }
+                  exit 1
+                }
+                Write-Output "parse OK: $Path"
+              }' "$script" || status=1
+            echo "::endgroup::"
+          done
+          if [[ "$status" -ne 0 ]]; then
+            echo "PowerShell parse errors found; failing the build." >&2
+          fi
+          exit "$status"
+
   client-msi:
     name: Client MSI
     needs: [version]
@@ -137,7 +185,7 @@ jobs:
 
   installers:
     name: ${{ matrix.name }} installer
-    needs: [version, verify, client-msi]
+    needs: [version, verify, client-msi, pwsh-syntax]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -243,6 +291,62 @@ jobs:
           path: release-files
           merge-multiple: true
 
+      # update-server.sh/.ps1 auto-verify a sha256sums.txt beside the installer,
+      # so the manifest must exist on every release. Generated here — the only
+      # place all released installers are collected — over exactly the files
+      # that ship, using coreutils format "<64-hex>  <relative-name>" (two
+      # spaces). The optional Linux tar.gz is included when present; the
+      # standalone client MSI never ships, so it gets no entry.
+      - name: Generate sha256sums.txt
+        run: |
+          set -euo pipefail
+          mkdir -p checksums
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          found=0
+          has_exe=0 has_msi=0 has_pkg=0 has_deb=0
+          while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            case "$base" in
+              PrivGate-Console-*.exe|PrivGate-Console-*-win-x64.msi|PrivGate-Console-*-macos-*.pkg|privgate-console_*_amd64.deb|PrivGate-Console-*-linux-x64.tar.gz)
+                (cd release-files && sha256sum -- "$base") >> "$tmp"
+                case "$base" in
+                  *.exe) has_exe=1 ;;
+                  *.msi) has_msi=1 ;;
+                  *.pkg) has_pkg=1 ;;
+                  *.deb) has_deb=1 ;;
+                esac
+                found=$((found + 1))
+                ;;
+              *)
+                echo "Not part of the checksum manifest: $base" >&2
+                ;;
+            esac
+          done < <(find release-files -type f -print0)
+          if [[ ${found} -eq 0 ]]; then
+            echo "No installer artifacts found under release-files/" >&2
+            exit 1
+          fi
+          # Mirror of the release assertion below: a partial manifest must not
+          # ship, because updaters verify each downloaded file against it.
+          if [[ "$has_exe" -ne 1 || "$has_msi" -ne 1 || "$has_pkg" -ne 1 || "$has_deb" -ne 1 ]]; then
+            echo "Manifest must cover Windows EXE+MSI, macOS pkg, and Linux deb; matched only ${found} file(s):" >&2
+            ls -la release-files >&2 || true
+            exit 1
+          fi
+          LC_ALL=C sort -o checksums/sha256sums.txt "$tmp"
+          echo "== checksums/sha256sums.txt =="
+          cat checksums/sha256sums.txt
+          # Round-trip check proves the manifest parses in standard format.
+          (cd release-files && sha256sum --check --strict ../checksums/sha256sums.txt)
+
+      - name: Upload sha256sums.txt artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sha256sums
+          path: checksums/sha256sums.txt
+          if-no-files-found: error
+
       - name: Publish release
         run: |
           set -euo pipefail
@@ -275,6 +379,11 @@ jobs:
                 files+=("$f")
                 has_lin=1
                 ;;
+              sha256sums.txt)
+                # Regenerated below; also guards job re-runs where the earlier
+                # sha256sums artifact lands in release-files via merge-multiple.
+                echo "Skipping checksum manifest (published separately): $base" >&2
+                ;;
               *)
                 echo "Refusing to publish archive or client binary: $base" >&2
                 exit 1
@@ -290,6 +399,9 @@ jobs:
           fi
           ls -lh "${files[@]}"
 
+          # Ship the checksum manifest beside the installers it covers.
+          files+=("checksums/sha256sums.txt")
+
           notes="Management console installers from ${GITHUB_SHA}.
 
           | OS | Installer |
@@ -297,6 +409,7 @@ jobs:
           | Windows | \`PrivGate-Console-${VERSION}-win-x64.exe\` (recommended) or \`.msi\` |
           | macOS | \`PrivGate-Console-${VERSION}-macos-*.pkg\` |
           | Linux amd64 | \`privgate-console_${VERSION}_amd64.deb\` |
+          | Checksums | \`sha256sums.txt\` (SHA-256; verify with \`sha256sum -c\`) |
 
           Open http://127.0.0.1:3000/ after install. There is no demo login.
           Enroll each PC from **Devices** after the console is up."
