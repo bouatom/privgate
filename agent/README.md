@@ -1,6 +1,6 @@
 # PrivGate Elevation Broker
 
-Windows SYSTEM service. It does **not** disable UAC, store admin passwords, or intercept the UAC dialog.
+Windows SYSTEM service. It does **not** disable UAC, store admin passwords, or intercept the UAC dialog. After stock UAC closes (including Cancel), the tray can offer a PrivGate request; that evaluate is what the console logs.
 
 ## Supported OS
 

@@ -6,33 +6,37 @@ namespace PrivGate.Agent;
 
 static class ElevationPrompt
 {
-    static int _lastConsentPid;
+    static readonly ConsentWatch Watch = new();
     static bool _busy;
+    static bool _promptOpen;
 
     internal static void TickConsent()
     {
-        if (_busy) return;
+        if (_busy || _promptOpen) return;
         var mine = Process.GetCurrentProcess().SessionId;
+        var pids = new List<int>();
         foreach (var proc in Process.GetProcessesByName("consent"))
         {
             try
             {
-                if (proc.SessionId != mine || proc.Id == _lastConsentPid) continue;
-                _lastConsentPid = proc.Id;
-                AskAfterUac();
-                return;
+                if (proc.SessionId == mine) pids.Add(proc.Id);
             }
             catch
             {
                 // Process may exit while we inspect it.
             }
         }
+        if (!Watch.ShouldPrompt(pids)) return;
+        BrokerLog.Write("uac.closed — offering PrivGate request (Windows prompt ended; not intercepted)");
+        _promptOpen = true;
+        try { AskAfterUac(); }
+        finally { _promptOpen = false; }
     }
 
     static void AskAfterUac()
     {
         var choice = MessageBox.Show(
-            "Windows is asking for administrator permission. PrivGate can open the program on this desktop after an approver allows it — you do not need to sign out.\n\nRequest Disk Management now? Choose No to pick a different program.",
+            "The Windows administrator prompt has closed. If you cancelled it, PrivGate can request that program for you. An approver can allow it without an admin password, and it will open on this desktop.\n\nWindows does not tell PrivGate which file you tried. Request Disk Management now? Choose No to pick the program yourself.",
             "PrivGate",
             MessageBoxButtons.YesNoCancel,
             MessageBoxIcon.Information);
@@ -44,7 +48,7 @@ static class ElevationPrompt
         }
         using var dlg = new OpenFileDialog
         {
-            Title = "Choose a program to request through PrivGate",
+            Title = "Choose the program Windows just blocked",
             Filter = "Programs and snap-ins (*.exe;*.msc;*.msi)|*.exe;*.msc;*.msi|All files (*.*)|*.*",
             CheckFileExists = true,
         };
