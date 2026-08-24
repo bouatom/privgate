@@ -20,6 +20,8 @@ type DeviceSummary = {
   lastSeenAt: string | null;
   updateRequestedAt: string | null;
   online: boolean;
+  uiAlive: boolean | null;
+  uiLastSeenAt: string | null;
 };
 
 type BulkSummary = {
@@ -201,7 +203,15 @@ export function DevicesClient({
                       <td>
                         <div>
                           {d.hostname}{" "}
-                          {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}
+                          {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}{" "}
+                          {/* GUI liveness: the service can be connected while
+                              the tray is dead — that is exactly the state where
+                              UAC escapes go unnoticed. */}
+                          {d.uiAlive === true ? (
+                            <span className="pill active">UI running</span>
+                          ) : d.uiAlive === false ? (
+                            <span className="pill pending">UI silent</span>
+                          ) : null}
                         </div>
                         <div className="mono">{lastSeenLabel(d)}</div>
                       </td>

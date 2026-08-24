@@ -5,6 +5,7 @@ import { reconcileReportedVersion } from "../agent-update";
 import { insertRequest } from "../db/requests";
 import { appendAudit } from "../db/audit";
 import { expireDueGrants } from "../db/jit";
+import { noteClientStatus } from "./bus";
 
 export type AgentRpc =
   | { id?: string; type: "ping" }
@@ -12,6 +13,7 @@ export type AgentRpc =
   | { id?: string; type: "jit-state"; userSid: string }
   | { id?: string; type: "jit-expired"; grantId: string }
   | { id?: string; type: "version-report"; version: string }
+  | { id?: string; type: "client-status"; uptimeSec: number; pid: number }
   | {
       id?: string;
       type: "uac-canceled";
@@ -21,12 +23,32 @@ export type AgentRpc =
       publisher?: string;
     };
 
+/** GUI heartbeat sanity window: 0..30 days of tray uptime. */
+const MAX_UPTIME_SEC = 30 * 24 * 3600;
+
 export function handleAgentRpc(
   deviceId: string,
   message: AgentRpc,
 ): { id?: string; type: string; ok?: boolean; payload?: unknown; error?: string } {
   if (message.type === "ping") {
     return { id: message.id, type: "pong" };
+  }
+  if (message.type === "client-status") {
+    const uptime = message.uptimeSec;
+    const pid = message.pid;
+    const valid =
+      typeof uptime === "number" &&
+      Number.isFinite(uptime) &&
+      uptime >= 0 &&
+      uptime <= MAX_UPTIME_SEC &&
+      Number.isInteger(pid) &&
+      pid > 0 &&
+      pid <= 0xffffffff;
+    if (!valid) {
+      return { id: message.id, type: "result", ok: false, error: "uptimeSec/pid invalid" };
+    }
+    noteClientStatus(deviceId, Math.floor(uptime), pid);
+    return { id: message.id, type: "result", ok: true, payload: { recorded: true } };
   }
   if (message.type === "evaluate") {
     const body = message.body;

@@ -54,6 +54,10 @@ export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
     agentVersion: String(row.agent_version ?? ""),
     lastSeenAt: row.last_seen_at ? String(row.last_seen_at) : null,
     updateRequestedAt: row.update_requested_at ? String(row.update_requested_at) : null,
+    // Runtime values, filled by callers with realtime-hub access (devices
+    // page). Null here so DB-only consumers never render a misleading pill.
+    uiAlive: null,
+    uiLastSeenAt: null,
   }));
 }
 

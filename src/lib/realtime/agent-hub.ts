@@ -4,7 +4,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { verifyDeviceRequest } from "../device-auth";
-import { registerDeviceSocket, publishConsole } from "./bus";
+import { registerDeviceSocket, publishConsole, dropClientStatus } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
 import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
@@ -131,6 +131,7 @@ function accept(req: IncomingMessage, ws: WebSocket) {
   });
   ws.on("close", () => {
     unregister();
+    dropClientStatus(auth.deviceId);
     publishConsole("devices");
   });
 }

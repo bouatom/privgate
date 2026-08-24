@@ -73,6 +73,10 @@ export type DeviceSummary = {
   agentVersion: string;
   lastSeenAt: string | null;
   updateRequestedAt: string | null;
+  /** True while the device socket is live AND its GUI heartbeat is fresh. */
+  uiAlive: boolean | null;
+  /** ISO timestamp of the newest GUI heartbeat; null when none ever arrived. */
+  uiLastSeenAt: string | null;
 };
 
 export type DirectorySettings = {

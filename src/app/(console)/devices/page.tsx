@@ -4,7 +4,7 @@ import { deviceDetail, getDb, listDeviceSummaries, listPolicies } from "@/lib/db
 import { clientBinariesReady, clientMsiAvailable } from "@/lib/client-package";
 import { currentClientVersion } from "@/lib/client-version";
 import { expireDueJit } from "@/lib/jit-expiry";
-import { connectedDeviceIds } from "@/lib/realtime/bus";
+import { connectedDeviceIds, uiStatusFor } from "@/lib/realtime/bus";
 import { agentOriginFromWebOrigin } from "@/lib/listen";
 import { requestOrigin } from "@/lib/origin";
 import { DevicesClient } from "./devices-client";
@@ -21,7 +21,11 @@ export default async function DevicesPage({
   const db = getDb();
   expireDueJit();
   const online = new Set(connectedDeviceIds());
-  const devices = listDeviceSummaries(db).map((d) => ({ ...d, online: online.has(d.id) }));
+  const devices = listDeviceSummaries(db).map((d) => ({
+    ...d,
+    online: online.has(d.id),
+    ...uiStatusFor(d.id, online.has(d.id)),
+  }));
   const selected = devices.some((d) => d.id === id) ? id! : devices[0]?.id || "";
   const detail = selected ? deviceDetail(db, selected) ?? null : null;
   const hdrs = await headers();
