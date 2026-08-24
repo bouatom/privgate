@@ -33,6 +33,11 @@ export function JitClient({
   const [, startTransition] = useTransition();
   const [form, setForm] = useState({ userId: "", deviceId: "", durationMinutes: 15, reason: "" });
   const [error, setError] = useState("");
+
+  function clampMinutes(value: number): number {
+    if (!Number.isFinite(value)) return 15;
+    return Math.min(60, Math.max(15, Math.round(value)));
+  }
   const eligible = users.filter(
     (u) => u.jitEligible && !u.disabled && !u.roles.some((role) => role === "Approver" || role === "PolicyAdmin"),
   );
@@ -40,13 +45,14 @@ export function JitClient({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (!confirm(`Open a ${form.durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`)) {
+    const durationMinutes = clampMinutes(form.durationMinutes);
+    if (!confirm(`Open a ${durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`)) {
       return;
     }
     const res = await fetch("/api/jit", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, durationMinutes }),
     });
     if (!res.ok) {
       const body = await res.json();
@@ -109,6 +115,7 @@ export function JitClient({
               max={60}
               value={form.durationMinutes}
               onChange={(e) => setForm({ ...form, durationMinutes: Number(e.target.value) })}
+              onBlur={(e) => setForm({ ...form, durationMinutes: clampMinutes(Number(e.target.value)) })}
             />
           </div>
         </div>

@@ -13,6 +13,11 @@ export function NotificationsClient({ initial }: { initial: NotificationSettings
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  // "Send test" uses the SAVED settings, so it would lie about unsaved edits.
+  // Disable while the form differs from the last saved config.
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial) || smtpPass.trim() !== "";
+  const sendTestHint = "Send test uses your saved settings. Save changes first.";
+
   useEffect(() => {
     setForm(initial);
   }, [initial]);
@@ -140,7 +145,17 @@ export function NotificationsClient({ initial }: { initial: NotificationSettings
         {error ? <p className="err">{error}</p> : null}
         <div className="row-actions">
           <button className="primary" type="submit" disabled={busy}>Save</button>
-          <button className="ghost" type="button" disabled={busy} onClick={() => void test()}>Send test</button>
+          <span title={dirty ? sendTestHint : undefined}>
+            <button
+              className="ghost"
+              type="button"
+              disabled={busy || dirty}
+              title={dirty ? sendTestHint : undefined}
+              onClick={() => void test()}
+            >
+              Send test
+            </button>
+          </span>
         </div>
       </form>
     </>

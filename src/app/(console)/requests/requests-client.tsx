@@ -61,7 +61,11 @@ export function RequestsClient({
     const res = await fetch(`/api/requests/${id}/${action}`, { method: "POST" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(body.error || `Could not ${action} this request.`);
+      setError(
+        res.status === 409
+          ? "Another admin already decided this request."
+          : body.error || `Could not ${action} this request.`,
+      );
       setBusy(null);
       return;
     }
@@ -75,7 +79,7 @@ export function RequestsClient({
     filter === "pending"
       ? rows.filter((r) => r.status === "pending")
       : filter === "blocked"
-        ? rows.filter((r) => r.status === "pending" || r.status === "denied")
+        ? rows.filter((r) => r.status === "pending" || r.status === "denied" || r.status === "canceled")
         : rows;
 
   return (
@@ -85,8 +89,9 @@ export function RequestsClient({
           <h1>Elevation requests</h1>
           <p className="lede">
             Standard users asked to run something that is not on the always-allow list. Risk is scored from the
-            binary, path, publisher, and arguments — not the filename alone. Policy admins can turn a row into
-            an always-allow rule using the recorded hash and publisher.
+            binary, path, publisher, and arguments — not the filename alone. Policy admins can turn a row into an
+            always-allow rule using the recorded hash and publisher; saving a rule never decides the request —
+            approval stays separate, and you will be asked whether to approve a waiting row right after saving.
           </p>
         </div>
       </div>
@@ -173,6 +178,9 @@ export function RequestsClient({
                     <AllowlistFromRequestButton
                       canManage={canManageAllowlists}
                       policies={policies}
+                      requestId={row.id}
+                      requestPending={row.status === "pending"}
+                      canApproveRequest={canApprove}
                       source={{
                         filePath: row.filePath,
                         fileHash: row.fileHash,
@@ -189,9 +197,9 @@ export function RequestsClient({
               <tr>
                 <td colSpan={6} className="lede" style={{ padding: 18 }}>
                   {filter === "pending"
-                    ? "No pending elevations. Switch to pending and blocked to review denials, or all requests for history."
+                    ? "No pending elevations. Switch to pending and blocked to review denials and cancellations, or all requests for history."
                     : filter === "blocked"
-                      ? "No pending or blocked elevations."
+                      ? "No pending, denied, or canceled elevations."
                       : "No elevation requests yet."}
                 </td>
               </tr>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { displayPath } from "@/lib/format";
+import { displayPath, formatDetails } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 
@@ -193,7 +193,7 @@ export function DeviceDetail({
                   <td>
                     <div className="mono">{row.actor}</div>
                     <div className="mono">{row.target}</div>
-                    <div className="mono">{JSON.stringify(row.details)}</div>
+                    {formatDetails(row.details) ? <div className="mono">{formatDetails(row.details)}</div> : null}
                   </td>
                 </tr>
               ))

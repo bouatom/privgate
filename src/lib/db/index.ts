@@ -14,7 +14,7 @@ export type {
 } from "./types";
 
 export { dbPath, getDb, resetDbForTests } from "./connection";
-export { appendAudit, listAudit, listAuditForDevice } from "./audit";
+export { appendAudit, listAudit, listAuditActions, listAuditForDevice } from "./audit";
 export {
   findUserBySid,
   getUser,
@@ -38,6 +38,8 @@ export {
   listDevices,
   registerOrReuseDevice,
   setDeviceAgentVersion,
+  setDeviceUpdateRequestedAt,
+  touchDeviceLastSeen,
 } from "./devices";
 export {
   deleteOauthState,

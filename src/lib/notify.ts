@@ -1,5 +1,6 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
+import { appendAudit } from "./db/audit";
 import { getNotificationSecrets, getNotificationSettings, getUser, getDevice } from "./db";
 import { sendSmtp } from "./smtp";
 
@@ -109,5 +110,15 @@ export function requestNotifyEvent(
 }
 
 export function queueNotification(db: DatabaseSync, event: NotifyEvent) {
-  void dispatchNotification(db, event).catch(() => undefined);
+  // Fire-and-forget: dispatch failures must not break the request that queued
+  // the notification, but they must not vanish either — operators only find
+  // out notifications are silently broken if the failure is auditable.
+  void dispatchNotification(db, event).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      appendAudit(db, "system", "notify.failed", event.kind, { error: message, title: event.title });
+    } catch {
+      // Even the audit write failing (e.g. locked DB) must not raise here.
+    }
+  });
 }

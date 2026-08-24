@@ -11,7 +11,9 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const db = getDb();
   const decided = decideRequest(db, id, "approved", auth.session.email);
-  if (!decided) return NextResponse.json({ error: "not pending" }, { status: 409 });
+  if (!decided) {
+    return NextResponse.json({ error: "Another admin already decided this request." }, { status: 409 });
+  }
   appendAudit(db, auth.session.email, "request.approve", id, { file: decided.filePath });
   const ticket = approvedTicket(db, id);
   if (ticket) notifyRequestApproved(decided, ticket);
