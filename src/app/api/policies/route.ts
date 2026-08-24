@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getDb, listPolicies, insertPolicy, appendAudit } from "@/lib/db";
 import { assertAllowPolicyInput, type Policy } from "@/lib/policy";
+import { argumentPatternError, effectError } from "@/lib/policy-draft-preview";
 import { isResponse, requireAdmin } from "@/lib/http";
 
 export async function GET() {
@@ -14,6 +15,12 @@ export async function POST(req: Request) {
   const auth = await requireAdmin("policies.manage");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Partial<Policy>;
+  const badEffect = effectError(body.effect);
+  if (badEffect) return NextResponse.json({ error: badEffect }, { status: 400 });
+  // Advanced-mode argument patterns are raw regexes; reject broken ones here
+  // so a rule that could never match never reaches the store.
+  const badPattern = argumentPatternError(body.argumentPattern);
+  if (badPattern) return NextResponse.json({ error: badPattern }, { status: 400 });
   const error = assertAllowPolicyInput({
     effect: (body.effect as Policy["effect"]) || "allow",
     fileHash: body.fileHash || "",

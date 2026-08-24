@@ -1,52 +1,76 @@
 "use client";
 
-import { FormEvent, useState, useTransition } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { Policy } from "@/lib/policy";
+import {
+  argumentPatternError,
+  emptyRuleDraft,
+  ruleDraftToPolicyBody,
+  type PreviewableRequest,
+  type RuleDraft,
+  type UserGroupIds,
+} from "@/lib/policy-draft-preview";
+import { MatchPreview } from "./match-preview";
+import { RuleFormFields, type Group } from "./rule-form-fields";
 
-type Group = { id: string; name: string; memberCount: number };
+/** Long patterns stay scannable in the table; the full one lives in the tooltip. */
+function shortPattern(pattern: string): string {
+  return pattern.length > 28 ? `${pattern.slice(0, 27)}…` : pattern;
+}
 
-export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; groups: Group[]; canManage: boolean }) {
+export function AllowlistsClient({
+  rows,
+  groups,
+  canManage,
+  recentRequests,
+  userGroupIds,
+}: {
+  rows: Policy[];
+  groups: Group[];
+  canManage: boolean;
+  recentRequests: PreviewableRequest[];
+  userGroupIds: UserGroupIds;
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [form, setForm] = useState({
-    name: "",
-    effect: "allow",
-    fileHash: "",
-    publisher: "",
-    fileName: "",
-    bindType: "all",
-    bindId: "",
-  });
+  const [draft, setDraft] = useState<RuleDraft>(emptyRuleDraft);
   const [error, setError] = useState("");
+
+  function patch(p: Partial<RuleDraft>) {
+    setDraft((current) => ({ ...current, ...p }));
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    if (form.bindType === "group" && !form.bindId) {
-      setError("Pick a group for this allow rule.");
+    if (draft.bindType === "group" && !draft.bindId) {
+      setError("Pick a group for this rule.");
+      return;
+    }
+    const body = ruleDraftToPolicyBody(draft);
+    // Same check the API runs — fail fast on broken advanced regexes.
+    const patternError = argumentPatternError(body.argumentPattern);
+    if (patternError) {
+      setError(patternError);
       return;
     }
     const res = await fetch("/api/policies", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        ...form,
-        childProcesses: "deny",
-        bindId: form.bindType === "group" ? form.bindId : "",
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const body = await res.json();
-      setError(body.error || "Could not save policy");
+      const answer = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(answer.error || "Could not save policy");
       return;
     }
-    setForm({ name: "", effect: "allow", fileHash: "", publisher: "", fileName: "", bindType: "all", bindId: "" });
+    setDraft(emptyRuleDraft());
     startTransition(() => router.refresh());
   }
 
   async function remove(id: string, name: string) {
-    if (!confirm(`Remove always-allow rule “${name}”? That program will need approval before it can elevate.`)) return;
+    if (!confirm(`Remove rule “${name}”? That program falls back to needing approval before it can elevate.`)) return;
     const res = await fetch(`/api/policies/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -70,61 +94,18 @@ export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; 
     <>
       <div className="top">
         <div>
-          <h1>Always-allow programs</h1>
-          <p className="lede">These run elevated without an admin password. SHA-256 and publisher are required. Shells cannot be added. You can also create a rule from a device elevation log or a blocked request — that copies the recorded hash, publisher, and arguments.</p>
+          <h1>Program rules</h1>
+          <p className="lede">
+            A rule matches a program by SHA-256 and publisher, then elevates it silently, denies it, or requires
+            approval. Shells and scripting hosts cannot be allowed silently. You can also create a rule from a
+            device elevation log or a blocked request — that copies the recorded hash, publisher, and arguments.
+          </p>
         </div>
       </div>
       {canManage ? (
-      <form className="panel stack" onSubmit={onSubmit} style={{ padding: 18, marginBottom: 16 }}>
-        <div className="grid cards">
-          <div>
-            <label>Name</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-          </div>
-          <div>
-            <label>Publisher</label>
-            <input value={form.publisher} onChange={(e) => setForm({ ...form, publisher: e.target.value })} required placeholder="CN=Contoso Code Signing" />
-          </div>
-          <div>
-            <label>SHA-256</label>
-            <input value={form.fileHash} onChange={(e) => setForm({ ...form, fileHash: e.target.value })} required />
-          </div>
-        </div>
-        <div className="grid cards">
-          <div>
-            <label>File name (optional extra check)</label>
-            <input value={form.fileName} onChange={(e) => setForm({ ...form, fileName: e.target.value })} placeholder="WidgetSetup.msi" />
-          </div>
-          <div>
-            <label>Who can use it</label>
-            <select
-              value={form.bindType}
-              onChange={(e) => setForm({ ...form, bindType: e.target.value, bindId: e.target.value === "all" ? "" : form.bindId })}
-            >
-              <option value="all">Everyone</option>
-              <option value="group">Security group</option>
-            </select>
-          </div>
-          {form.bindType === "group" ? (
-            <div>
-              <label>Group</label>
-              <select value={form.bindId} onChange={(e) => setForm({ ...form, bindId: e.target.value })} required>
-                <option value="">Select a group</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name} ({g.memberCount})
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <div />
-          )}
-        </div>
-        {error ? <p className="err">{error}</p> : null}
-        <button className="primary" type="submit">Add allow rule</button>
-      </form>
+        <RuleFormFields draft={draft} onPatch={patch} groups={groups} error={error} onSubmit={onSubmit} />
       ) : null}
+      {canManage ? <MatchPreview draft={draft} requests={recentRequests} userGroupIds={userGroupIds} /> : null}
       <div className="panel">
         <table>
           <thead>
@@ -142,12 +123,21 @@ export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; 
                 <tr key={row.id}>
                   <td>
                     {row.name}
-                    <div className="mono">{row.effect}</div>
+                    <div>
+                      <span className={`pill ${row.effect === "require_approval" ? "pending" : row.effect}`}>
+                        {row.effect}
+                      </span>
+                    </div>
                   </td>
                   <td>
                     <div>{row.fileName || "any name"}</div>
                     <div className="mono">{row.publisher}</div>
                     <div className="mono">{row.fileHash.slice(0, 20)}…</div>
+                    {row.argumentPattern ? (
+                      <div className="mono" title={row.argumentPattern}>
+                        args: {shortPattern(row.argumentPattern)}
+                      </div>
+                    ) : null}
                   </td>
                   <td>{bindLabel(row)}</td>
                   <td>{row.childProcesses}</td>
@@ -158,7 +148,7 @@ export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; 
               ))
             ) : (
               <tr>
-                <td colSpan={5} className="lede" style={{ padding: 18 }}>No always-allow rules yet.</td>
+                <td colSpan={5} className="lede" style={{ padding: 18 }}>No program rules yet.</td>
               </tr>
             )}
           </tbody>
