@@ -1,7 +1,11 @@
 #!/bin/sh
 set -e
-# Drop leftover console data so a later install is a true first-run.
+# Data survives a plain remove on purpose: /var/lib/privgate holds privgate.db
+# plus console.env (DEVICE_SECRET_KEY / TICKET_SIGNING_KEY). Losing either file
+# forces every enrolled PC to re-enroll. Only an explicit purge deletes it:
+#   sudo apt-get remove privgate-console   -> data kept
+#   sudo dpkg -P privgate-console          -> data removed (clean slate)
 # Do not run on upgrade — postrm also receives "upgrade" for the old package.
-if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+if [ "$1" = "purge" ]; then
   rm -rf /var/lib/privgate
 fi

@@ -201,7 +201,8 @@ jobs:
         with:
           archive: false
           path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-win-x64.msi
-          if-no-files-found: warn
+          # A missing console MSI must fail the build, not publish an EXE-only release.
+          if-no-files-found: error
 
       - name: Upload Linux deb
         if: matrix.target == 'linux'
@@ -248,6 +249,7 @@ jobs:
           shopt -s nullglob
           files=()
           has_win=0
+          has_win_msi=0
           has_mac=0
           has_lin=0
           while IFS= read -r -d '' f; do
@@ -260,6 +262,7 @@ jobs:
                 ;;
               PrivGate-Console-*.msi)
                 files+=("$f")
+                has_win_msi=1
                 ;;
               PrivGate-Client.msi)
                 echo "Skipping standalone client MSI (shipped inside consoles): $base" >&2
@@ -278,8 +281,10 @@ jobs:
                 ;;
             esac
           done < <(find release-files -type f -print0)
-          if [[ ${#files[@]} -eq 0 || "$has_win" -ne 1 || "$has_mac" -ne 1 || "$has_lin" -ne 1 ]]; then
-            echo "Need one Windows, macOS, and Linux installer; found:" >&2
+          # The win-x64 MSI assertion is deliberate: Devices hands that file to
+          # Intune/SCCM, and an EXE-only release silently breaks them.
+          if [[ ${#files[@]} -eq 0 || "$has_win" -ne 1 || "$has_win_msi" -ne 1 || "$has_mac" -ne 1 || "$has_lin" -ne 1 ]]; then
+            echo "Need one Windows EXE, one Windows MSI, one macOS, and one Linux installer; found:" >&2
             ls -la release-files >&2 || true
             exit 1
           fi

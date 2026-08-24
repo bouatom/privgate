@@ -14,6 +14,13 @@
 #   --data-dir <dir>    console.env location (default per-OS, like host.cjs)
 #   --health-url <url>  override health check target
 #   --skip-backup       do not keep ${PRIVGATE_PREFIX}.backup-<stamp>
+# Integrity (both checked BEFORE the running console is stopped):
+#   --sha256 <hex>      expected SHA-256 of the .deb/.pkg file (payload
+#                       directories cannot be pinned by one hash; ship a
+#                       sha256sums.txt inside them instead)
+#   sha256sums.txt      if this file sits next to the .deb/.pkg (or inside a
+#                       --payload dir), every listed file is verified
+#                       automatically; any mismatch aborts with nothing changed
 #
 # This script ships inside every console payload (/opt/privgate on POSIX), so
 # it can also update an installed console from a later download.
@@ -27,6 +34,7 @@ PKG=""
 DATA_DIR=""
 HEALTH_URL=""
 SKIP_BACKUP=0
+EXPECTED_SHA256=""
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OS_NAME="$(uname -s)"
 
@@ -41,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --data-dir) DATA_DIR="$2"; shift 2 ;;
     --health-url) HEALTH_URL="$2"; shift 2 ;;
     --skip-backup) SKIP_BACKUP=1; shift ;;
+    --sha256) EXPECTED_SHA256="$2"; shift 2 ;;
     *) fail "unknown argument: $1 (see header of this script)" ;;
   esac
 done
@@ -51,6 +60,14 @@ done
 [[ -z "$PKG" || -f "$PKG" ]] || fail "--pkg not found: $PKG"
 SOURCES=$(( (${#PAYLOAD} > 0) + (${#DEB} > 0) + (${#PKG} > 0) ))
 [[ "$SOURCES" -eq 1 ]] || fail "give exactly one of --payload, --deb or --pkg"
+
+EXPECTED_SHA256="$(printf '%s' "$EXPECTED_SHA256" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+if [[ -n "$EXPECTED_SHA256" && ! "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+  fail "--sha256 must be a 64-character hex SHA-256 digest"
+fi
+if [[ -n "$EXPECTED_SHA256" && -n "$PAYLOAD" ]]; then
+  fail "--sha256 cannot pin a directory payload; put a sha256sums.txt inside the payload instead"
+fi
 
 if [[ -x "$PREFIX/bin/node" ]]; then NODE_BIN="$PREFIX/bin/node"
 elif command -v node >/dev/null; then NODE_BIN="$(command -v node)"
@@ -116,9 +133,101 @@ backup_current() {
   cp -a "$PREFIX" "$PREFIX.backup-$STAMP"
 }
 
+# Keep the two newest ${PREFIX}.backup-* directories (the fresh one included);
+# everything older is removed after the update has proven healthy.
+prune_old_backups() {
+  local current="$PREFIX.backup-$STAMP"
+  local keep=("$current") d deleted=0
+  while IFS= read -r d; do
+    [[ -d "$d" ]] || continue
+    [[ "$d" == "$current" ]] && continue
+    if [[ ${#keep[@]} -lt 2 ]]; then
+      keep+=("$d")
+    else
+      rm -rf "$d"
+      deleted=$((deleted + 1))
+    fi
+  done < <(ls -1dt "$PREFIX".backup-* 2>/dev/null || true)
+  if ((deleted > 0)); then
+    log "Pruned $deleted old install backup(s), keeping the newest 2"
+  fi
+}
+
+# --- payload integrity (D1): all checks run BEFORE stop/swap; fail closed ---
+
+digest_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
+
+check_digest() { # <file> <expected-hex> <label>
+  local actual
+  actual="$(digest_of "$1")" || fail "no SHA-256 tool found (need sha256sum or shasum) to verify $3"
+  [[ "$actual" == "$2" ]] || fail "checksum mismatch for $3 ($1): expected $2, got $actual"
+}
+
+# Match "<hex>[ *]<name>" where <name> equals the basename of the target file.
+assert_entry_for_file() { # <sums-file> <target-file>
+  local sums="$1" target="$2" base hex
+  base="$(basename "$target")"
+  hex="$(awk -v b="$base" '
+    /^[[:space:]]*(#|$)/ { next }
+    { gsub(/\r$/, "") }
+    {
+      name = $2
+      sub(/^\*/, "", name)
+      if (name == b) { print tolower($1); exit }
+    }' "$sums")"
+  [[ -n "$hex" ]] || fail "$sums has no entry for '$base'"
+  check_digest "$target" "$hex" "'$base' (per $sums)"
+}
+
+# Verify every entry of a sha256sums.txt shipped inside a --payload dir.
+assert_payload_sums() { # <payload-dir>
+  local sums="$1/sha256sums.txt"
+  [[ -f "$sums" ]] || return 0
+  log "Verifying sha256sums.txt inside the payload"
+  local checked=0 line hex name target actual
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "${line//[[:space:]]/}" || "$line" == \#* ]] && continue
+    hex="$(printf '%s' "$line" | tr -d '\r' | awk '{print tolower($1)}')"
+    name="$(printf '%s' "$line" | tr -d '\r' | awk '{ $1=""; sub(/^[[:space:]]*/, ""); print }' | sed 's/^\*//')"
+    [[ "$hex" =~ ^[0-9a-f]{64}$ ]] || fail "malformed line in $sums: $line"
+    [[ "$name" == "sha256sums.txt" ]] && continue
+    target="$1/$name"
+    [[ -f "$target" ]] || fail "sha256sums.txt lists a missing file: $name"
+    actual="$(digest_of "$target")" || fail "no SHA-256 tool found (need sha256sum or shasum)"
+    [[ "$actual" == "$hex" ]] || fail "checksum mismatch for '$name': expected $hex, got $actual"
+    checked=$((checked + 1))
+  done < "$sums"
+  ((checked > 0)) || fail "$sums contains no usable entries"
+}
+
+verify_artifact_integrity() { # for --deb / --pkg file sources
+  local f="" dir
+  [[ -n "$DEB" ]] && f="$DEB"
+  [[ -n "$PKG" ]] && f="$PKG"
+  [[ -z "$f" ]] && return 0
+  if [[ -n "$EXPECTED_SHA256" ]]; then
+    log "Verifying checksum of $(basename "$f") against --sha256"
+    check_digest "$f" "$EXPECTED_SHA256" "$(basename "$f")"
+  fi
+  dir="$(cd "$(dirname "$f")" && pwd)"
+  if [[ -f "$dir/sha256sums.txt" ]]; then
+    log "Verifying $(basename "$f") against $dir/sha256sums.txt"
+    assert_entry_for_file "$dir/sha256sums.txt" "$f"
+  fi
+}
+
 if [[ -n "$PAYLOAD" ]]; then
   log "Verifying new payload"
   artifact_check "$PAYLOAD"
+  assert_payload_sums "$PAYLOAD"
   backup_current
   stop_console
 
@@ -140,6 +249,7 @@ if [[ -n "$PAYLOAD" ]]; then
 else
   # Native package managers stop the service themselves (prerm/preinst,
   # pkg preinstall) and restart it after swapping files.
+  verify_artifact_integrity
   if [[ -n "$DEB" ]]; then
     log "Verifying deb payload before install"
     VERIFY_TMP="$(mktemp -d)"
@@ -159,6 +269,7 @@ fi
 
 log "Waiting for the management web port to answer"
 health_check
+prune_old_backups
 
 log "Update complete."
 cat <<ROLLBACK

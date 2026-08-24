@@ -64,6 +64,26 @@ manifest), keep a backup of the previous version directory, and poll the web
 port afterwards (`health-check.cjs`). If the health check fails they say so
 and print rollback steps instead of pretending success.
 
+### Verifying the download (optional but recommended)
+
+Both updaters accept an expected digest and check it **before** stopping the
+running console — a mismatch aborts with nothing changed:
+
+```bash
+sudo /opt/privgate/update-server.sh --deb privgate-console_*_amd64.deb \
+  --sha256 64-char-hex-digest
+```
+
+```powershell
+& 'C:\Program Files\PrivGate\update-server.ps1' `
+  -Installer .\PrivGate-Console-0-win-x64.exe -Sha256 64-char-hex-digest
+```
+
+If a `sha256sums.txt` sits next to the `.deb`/`.pkg`/installer file — or inside
+a `--payload`/`-Payload` directory — every listed file is verified
+automatically; no flag needed. Compute the digest with `sha256sum` /
+`shasum -a 256` (macOS/Linux) or `Get-FileHash -Algorithm SHA256` (Windows).
+
 ## Safe rollback
 
 Both updaters keep the previous install next to the live one:
@@ -74,6 +94,14 @@ Both updaters keep the previous install next to the live one:
 Roll back by swapping the directories back and restarting the service. The
 SQLite data directory is never modified by an update, so a rollback cannot
 lose approvals, policies, or audit history.
+
+Both updaters prune old `*.backup-*` directories after a healthy update,
+keeping the newest two (the backup this run created is never deleted).
+
+Updates do not touch data — but updates are also not backups. Capture
+`privgate.db` **and** `console.env` together on a schedule; losing
+`console.env` while keeping an old database forces whole-fleet re-enrollment.
+Procedure and helper scripts: [backing up the management console](backing-up.md).
 
 ## Troubleshooting
 

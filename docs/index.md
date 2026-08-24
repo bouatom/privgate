@@ -31,6 +31,8 @@ If a Windows MSI does not start the service, run `install-service.cmd` from `C:\
 
 To upgrade, install the newer EXE, MSI, pkg, or deb over the existing copy. Do not uninstall first. Data and `console.env` stay; the service restarts. The console drains gracefully on SIGTERM (agent WebSockets get a close frame, SQLite is checkpointed), so no manual process juggling is needed. Details: [updating the management console](updating.md) and [packaging/README.md](../packaging/README.md#upgrade-the-management-console).
 
+Uninstalling also leaves the data directory in place (Linux `dpkg -P` is the one exception that deletes it). Back up `privgate.db` **and** `console.env` together — the database's device secrets are encrypted under keys that live only in `console.env`, so losing either file means re-enrolling every PC: [backing up the management console](backing-up.md).
+
 ## 2. Sign in and roles
 
 Portal operators are **local accounts** or **Entra SSO**. Master Admins assign predefined roles (Approver, Policy Admin, JIT Operator, Auditor) or custom roles with granular permissions.
@@ -57,6 +59,7 @@ Do not run PrivGate and Microsoft Endpoint Privilege Management on the same mach
 2. Secrets are generated at install (`SESSION_SECRET`, `TICKET_SIGNING_KEY`, `DEVICE_SECRET_KEY`). The process will not start on placeholders.
 3. Behind a reverse proxy, set `PRIVGATE_PUBLIC_ORIGIN` (and optionally `PRIVGATE_AGENT_ORIGIN`, `PRIVGATE_TRUSTED_HOSTS` / `PRIVGATE_TRUST_PROXY=1`).
 4. After rotating ticket or device keys, **re-download the installer for every enrolled host**.
+5. Schedule backups of the data directory (`privgate.db` + `console.env`, same archive) — [backing-up.md](backing-up.md).
 
 To restrict the console to this machine only, set `PRIVGATE_BIND=127.0.0.1` in `console.env` and restart.
 

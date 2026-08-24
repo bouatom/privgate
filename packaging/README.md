@@ -52,7 +52,7 @@ The stop is graceful: on SIGTERM the console stops accepting requests, closes ag
 
 What does not stay: files you added by hand under the install prefix (`C:\Program Files\PrivGate`, `/opt/privgate`). Change listen settings after upgrade in `console.env` (or `dpkg-reconfigure privgate-console` on Linux), then restart the service.
 
-Uninstall removes the application and service only. Data directories are left in place so a later install is still in-place. Delete the data directory yourself if you want a clean slate.
+Uninstall removes the application and service only. Data directories are left in place so a later install is still in-place — this includes the Windows EXE uninstaller, the Linux deb (`remove`), and the macOS pkg. Delete the data directory yourself if you want a clean slate: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. On Linux only an explicit purge deletes data: `sudo dpkg -P privgate-console`. The data directory holds `privgate.db` **and** `console.env`; losing either forces every enrolled PC to re-enroll (see [docs/backing-up.md](../docs/backing-up.md)), so back both up before deleting anything.
 
 The MSI copies files and stops/starts `PrivGateConsole` when that service already exists. If you installed from MSI and the service was never registered, run `install-service.cmd` in `C:\Program Files\PrivGate` once.
 

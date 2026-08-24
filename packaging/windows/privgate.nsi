@@ -206,7 +206,10 @@ Section "Uninstall"
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" stop'
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" uninstall'
   Call un.InitDataDir
-  RMDir /r "$DataDir\PrivGate"
+  ; Data survives uninstall on purpose: $DataDir\PrivGate holds privgate.db
+  ; plus console.env (DEVICE_SECRET_KEY / TICKET_SIGNING_KEY). Deleting either
+  ; file forces every enrolled PC to re-enroll. Remove it by hand only when a
+  ; clean slate is really wanted.
   RMDir /r "$INSTDIR"
   Delete "$SMPROGRAMS\PrivGate Console.lnk"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\PrivGateConsole"
