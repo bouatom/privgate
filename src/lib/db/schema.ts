@@ -135,6 +135,7 @@ export function migrate(db: DatabaseSync) {
     );
   `);
   ensureColumn(db, "ad_settings", "last_sync_at", "TEXT");
+  ensureColumn(db, "devices", "agent_version", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "requests", "risk_level", "TEXT NOT NULL DEFAULT 'medium'");
   ensureColumn(db, "requests", "risk_reasons", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "oauth_state", "kind", "TEXT NOT NULL DEFAULT 'pkce'");

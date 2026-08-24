@@ -13,10 +13,22 @@ type DeviceSummary = {
   activeJit: number;
   lastEventAt: string | null;
   lastAction: string | null;
+  agentVersion: string;
   online: boolean;
 };
 
 type Method = "msi" | "script";
+
+function isNewer(candidate: string, installed: string): boolean {
+  const parse = (v: string) =>
+    v.replace(/^v/i, "").split(/[-+]/)[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const a = parse(candidate);
+  const b = parse(installed);
+  for (let i = 0; i < 3; i += 1) {
+    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  }
+  return false;
+}
 
 export function DevicesClient({
   devices,
@@ -24,6 +36,8 @@ export function DevicesClient({
   detail,
   canInstall,
   canManageAllowlists,
+  canUpdate,
+  currentVersion,
   policies,
   consoleUrl,
   binariesReady,
@@ -34,6 +48,8 @@ export function DevicesClient({
   detail: DeviceDetailModel | null;
   canInstall: boolean;
   canManageAllowlists: boolean;
+  canUpdate: boolean;
+  currentVersion: string;
   policies: Policy[];
   consoleUrl: string;
   binariesReady: boolean;
@@ -43,11 +59,28 @@ export function DevicesClient({
   const [, startTransition] = useTransition();
   const [method, setMethod] = useState<Method>(msiReady ? "msi" : "script");
   const [error, setError] = useState("");
+  const [updating, setUpdating] = useState("");
 
   const selectedDevice = useMemo(() => devices.find((d) => d.id === selected), [devices, selected]);
 
   function selectDevice(id: string) {
     startTransition(() => router.push(`/devices?id=${encodeURIComponent(id)}`));
+  }
+
+  async function pushUpdate(deviceId: string, hostname: string) {
+    setError("");
+    setUpdating(deviceId);
+    try {
+      const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/update`, { method: "POST" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(`${hostname}: ${body.error || `update failed (${res.status})`}`);
+        return;
+      }
+      startTransition(() => router.refresh());
+    } finally {
+      setUpdating("");
+    }
   }
 
   function download() {
@@ -151,34 +184,64 @@ export function DevicesClient({
             <thead>
               <tr>
                 <th>Hostname</th>
+                <th>Agent</th>
                 <th>Activity</th>
               </tr>
             </thead>
             <tbody>
               {devices.length ? (
-                devices.map((d) => (
-                  <tr
-                    key={d.id}
-                    className={d.id === selected ? "device-row selected" : "device-row"}
-                    onClick={() => selectDevice(d.id)}
-                  >
-                    <td>
-                      <div>
-                        {d.hostname}{" "}
-                        {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}
-                      </div>
-                    </td>
-                    <td>
-                      {d.pendingRequests ? <span className="pill pending">{d.pendingRequests} pending</span> : null}{" "}
-                      {d.activeJit ? <span className="pill active">JIT</span> : null}
-                      <div className="mono">{d.lastAction || "waiting for this PC"}</div>
-                      <div className="mono">{d.lastEventAt ? new Date(d.lastEventAt).toLocaleString() : "—"}</div>
-                    </td>
-                  </tr>
-                ))
+                devices.map((d) => {
+                  const pending = d.agentVersion.includes("+pending");
+                  const stale = !pending && isNewer(currentVersion, d.agentVersion);
+                  return (
+                    <tr
+                      key={d.id}
+                      className={d.id === selected ? "device-row selected" : "device-row"}
+                      onClick={() => selectDevice(d.id)}
+                    >
+                      <td>
+                        <div>
+                          {d.hostname}{" "}
+                          {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}
+                        </div>
+                      </td>
+                      <td>
+                        {d.agentVersion ? (
+                          <>
+                            <span className={`pill ${stale ? "pending" : "active"}`}>
+                              {pending ? "updating…" : stale ? `v${d.agentVersion} → ${currentVersion}` : `v${d.agentVersion}`}
+                            </span>
+                            {canUpdate && d.online && stale ? (
+                              <button
+                                type="button"
+                                className="ghost"
+                                disabled={updating === d.id}
+                                style={{ marginLeft: 6 }}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void pushUpdate(d.id, d.hostname);
+                                }}
+                              >
+                                {updating === d.id ? "Pushing…" : "Update"}
+                              </button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="pill">v unknown</span>
+                        )}
+                      </td>
+                      <td>
+                        {d.pendingRequests ? <span className="pill pending">{d.pendingRequests} pending</span> : null}{" "}
+                        {d.activeJit ? <span className="pill active">JIT</span> : null}
+                        <div className="mono">{d.lastAction || "waiting for this PC"}</div>
+                        <div className="mono">{d.lastEventAt ? new Date(d.lastEventAt).toLocaleString() : "—"}</div>
+                      </td>
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={2} className="lede" style={{ padding: 18 }}>
+                  <td colSpan={3} className="lede" style={{ padding: 18 }}>
                     No clients yet. After you install the MSI or script, the computer appears here as its hostname.
                   </td>
                 </tr>

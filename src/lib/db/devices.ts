@@ -7,15 +7,15 @@ import { listRequests } from "./requests";
 import type { Device, DeviceSummary } from "./types";
 
 export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> & { hostname: string }> {
-  const rows = db.prepare("SELECT id, hostname, join_type, enrolled_at FROM devices ORDER BY hostname").all() as Record<
-    string,
-    unknown
-  >[];
+  const rows = db
+    .prepare("SELECT id, hostname, join_type, enrolled_at, agent_version FROM devices ORDER BY hostname")
+    .all() as Record<string, unknown>[];
   return rows.map((row) => ({
     id: String(row.id),
     hostname: String(row.hostname),
     joinType: String(row.join_type),
     enrolledAt: String(row.enrolled_at),
+    agentVersion: String(row.agent_version ?? ""),
     secretEnc: "",
   }));
 }
@@ -23,7 +23,7 @@ export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> &
 export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
   const rows = db
     .prepare(
-      `SELECT d.id, d.hostname, d.join_type, d.enrolled_at,
+      `SELECT d.id, d.hostname, d.join_type, d.enrolled_at, d.agent_version,
         (SELECT COUNT(*) FROM requests r WHERE r.device_id = d.id AND r.status = 'pending') AS pending_requests,
         (SELECT COUNT(*) FROM jit_grants j WHERE j.device_id = d.id AND j.status = 'active') AS active_jit,
         (SELECT a.at FROM audit_events a
@@ -47,6 +47,7 @@ export function listDeviceSummaries(db: DatabaseSync): DeviceSummary[] {
     activeJit: Number(row.active_jit),
     lastEventAt: row.last_event_at ? String(row.last_event_at) : null,
     lastAction: row.last_action ? String(row.last_action) : null,
+    agentVersion: String(row.agent_version ?? ""),
   }));
 }
 
@@ -58,6 +59,7 @@ export function deviceDetail(db: DatabaseSync, deviceId: string) {
     hostname: device.hostname,
     joinType: device.joinType,
     enrolledAt: device.enrolledAt,
+    agentVersion: device.agentVersion,
     events: listAuditForDevice(db, deviceId).map((e) => ({
       ...e,
       details: JSON.parse(e.details || "{}") as Record<string, unknown>,
@@ -88,6 +90,7 @@ function deviceFromRow(row: Record<string, unknown>): Device {
     joinType: String(row.join_type),
     secretEnc: String(row.secret_enc),
     enrolledAt: String(row.enrolled_at),
+    agentVersion: String(row.agent_version ?? ""),
   };
 }
 
@@ -138,4 +141,8 @@ export function consumeNonce(db: DatabaseSync, nonce: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function setDeviceAgentVersion(db: DatabaseSync, deviceId: string, version: string) {
+  db.prepare("UPDATE devices SET agent_version = ? WHERE id = ?").run(version, deviceId);
 }

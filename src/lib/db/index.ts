@@ -37,6 +37,7 @@ export {
   listDeviceSummaries,
   listDevices,
   registerOrReuseDevice,
+  setDeviceAgentVersion,
 } from "./devices";
 export {
   deleteOauthState,

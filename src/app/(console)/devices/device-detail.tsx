@@ -43,6 +43,7 @@ export type DeviceDetailModel = {
   id: string;
   hostname: string;
   enrolledAt: string;
+  agentVersion: string;
   events: DeviceEventRow[];
   requests: DeviceRequestRow[];
   jit: DeviceJitRow[];
@@ -68,7 +69,10 @@ export function DeviceDetail({
 }) {
   const [logFilter, setLogFilter] = useState<"blocked" | "all">("blocked");
   const blocked = useMemo(
-    () => detail.requests.filter((row) => row.status === "pending" || row.status === "denied"),
+    () =>
+      detail.requests.filter(
+        (row) => row.status === "pending" || row.status === "denied" || row.status === "canceled",
+      ),
     [detail.requests],
   );
   const shown = logFilter === "blocked" ? blocked : detail.requests;
@@ -79,6 +83,12 @@ export function DeviceDetail({
         <strong>{detail.hostname}</strong>
         <p className="lede" style={{ fontSize: 13, marginTop: 6 }}>
           First seen {new Date(detail.enrolledAt).toLocaleString()}
+          {detail.agentVersion ? (
+            <>
+              {" · agent "}
+              <span className="mono">v{detail.agentVersion.replace("+pending", " (updating…)")}</span>
+            </>
+          ) : null}
         </p>
       </div>
       <h2 className="section-title">Could not elevate</h2>

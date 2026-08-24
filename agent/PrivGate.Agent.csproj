@@ -17,6 +17,14 @@
     <RootNamespace>PrivGate.Agent</RootNamespace>
     <AssemblyName>PrivGate.Agent</AssemblyName>
     <!--
+      Keep the assembly version in lockstep with the client MSI ProductVersion.
+      Both read PRIVGATE_VERSION (env); fallback matches package.json.
+      UpdateManager compares this against pushed versions, so a mismatch here
+      would make every update push look stale (or loop).
+    -->
+    <Version Condition="'$(PRIVGATE_VERSION)' != ''">$(PRIVGATE_VERSION)</Version>
+    <Version Condition="'$(PRIVGATE_VERSION)' == ''">0.2.1</Version>
+    <!--
       Cross-compiling net48 on macOS/Linux cannot run Fusion, so automatic
       redirects are off. App.config carries the explicit Unsafe redirect
       System.Text.Json 8.x needs (System.Memory asks for 4.0.4.1; the DLL is 6.0.0.0).

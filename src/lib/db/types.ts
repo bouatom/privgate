@@ -54,6 +54,7 @@ export type Device = {
   joinType: string;
   secretEnc: string;
   enrolledAt: string;
+  agentVersion: string;
 };
 
 export type DeviceSummary = {
@@ -65,6 +66,7 @@ export type DeviceSummary = {
   activeJit: number;
   lastEventAt: string | null;
   lastAction: string | null;
+  agentVersion: string;
 };
 
 export type DirectorySettings = {
