@@ -36,7 +36,7 @@ public static class Authenticode
 
 public static class ElevationHost
 {
-    public static int Launch(string filePath, string arguments, bool denyChildren)
+    public static int Launch(string filePath, string arguments, bool denyChildren, int sessionId = 0)
     {
         if (!File.Exists(filePath)) throw new FileNotFoundException(filePath);
         if (HardBans.IsBanned(filePath) && Environment.GetEnvironmentVariable("PRIVGATE_JIT") != "1")
@@ -46,20 +46,29 @@ public static class ElevationHost
 
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Console.WriteLine($"[dry-run] would elevate {filePath} children={(!denyChildren ? "allow" : "deny")}");
+            Console.WriteLine($"[dry-run] would elevate {filePath} session={sessionId} children={(!denyChildren ? "allow" : "deny")}");
             return 0;
         }
 
-        var start = new ProcessStartInfo(filePath, arguments)
+        Process proc;
+        if (sessionId > 0)
         {
-            UseShellExecute = false,
-        };
-        using var proc = Process.Start(start) ?? throw new InvalidOperationException("CreateProcess failed");
-        if (denyChildren)
-        {
-            AssignSingleProcessJob(proc);
+            proc = SessionLaunch.InSession(sessionId, filePath, arguments)
+                ?? throw new InvalidOperationException("could not start the program on the logged-on desktop");
         }
-        return proc.Id;
+        else
+        {
+            var start = new ProcessStartInfo(filePath, arguments) { UseShellExecute = false };
+            proc = Process.Start(start) ?? throw new InvalidOperationException("CreateProcess failed");
+        }
+        using (proc)
+        {
+            if (denyChildren)
+            {
+                AssignSingleProcessJob(proc);
+            }
+            return proc.Id;
+        }
     }
 
     static void AssignSingleProcessJob(Process proc)

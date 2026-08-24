@@ -24,8 +24,8 @@ export async function POST(req: Request) {
   if (error) return NextResponse.json({ error }, { status: 400 });
   if (!body.name) return NextResponse.json({ error: "name required" }, { status: 400 });
   const bindType = body.bindType || "all";
-  if (bindType === "group" && !body.bindId) {
-    return NextResponse.json({ error: "group bind requires bindId" }, { status: 400 });
+  if ((bindType === "group" || bindType === "device" || bindType === "user") && !body.bindId) {
+    return NextResponse.json({ error: `${bindType} bind requires bindId` }, { status: 400 });
   }
   const policy: Policy = {
     id: randomUUID(),

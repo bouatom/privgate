@@ -17,11 +17,13 @@ Windows SYSTEM service. It does **not** disable UAC, store admin passwords, or i
 
 ## What it does
 
-1. Standard user runs `PrivGate.Helper --elevate <file>`.
+1. Standard user runs `PrivGate.Helper --elevate <file>` or right-clicks the tray shield → **Elevate a program…**. `.msc` snap-ins are launched via `mmc.exe`.
 2. Helper talks to the broker over the `PrivGateElevation` named pipe (not over the network as the user).
 3. Broker hashes the file, reads Authenticode publisher, and evaluates over a persistent WebSocket (`/api/agent/ws`) with device HMAC. HTTP `/api/agent/evaluate` is the fallback if the socket is down.
-4. On an allow ticket it launches **that** file (job object blocks children unless the ticket says otherwise). If the decision is pending, the broker **waits on the socket** for the operator’s approve/deny instead of asking the user to retry.
-5. On a JIT ticket — including a JIT grant pushed from the console — it adds the user SID to local Administrators and registers `PrivGate-JIT-{id}` to remove them at expiry — even if the API is down. A JIT revoke from the console is applied immediately over the same socket.
+4. On an allow ticket it launches **that** file (job object blocks children unless the ticket says otherwise). If the decision is pending, the broker **waits on the socket** for the operator’s approve/deny instead of asking the user to retry. The tray balloons while approval is waiting.
+5. On a JIT ticket — including a JIT grant pushed from the console — it adds the user SID to local Administrators (`net localgroup` with `*SID`) and registers `PrivGate-JIT-{id}` to remove them at expiry — even if the API is down. A JIT revoke from the console is applied immediately over the same socket. A requested program is started on the user's desktop so they do not have to sign out. Start-menu shortcuts still use the old logon token until the next logon.
+
+The service itself has no GUI. HKLM `Software\Microsoft\Windows\CurrentVersion\Run\PrivGateTray` starts `PrivGate.Agent.exe` at logon in the user session. Right-click **Request Disk Management…** to open that snap-in after approval.
 
 ## Runtime target
 

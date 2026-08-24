@@ -90,7 +90,7 @@ sealed class BrokerHost
                 userSid = args[args.Length - 2],
                 filePath = args[args.Length - 1],
             });
-            Console.WriteLine(await host.Handle(once));
+            Console.WriteLine(await host.Handle(once, 0));
             ready?.TrySetResult(true);
             return;
         }
@@ -101,7 +101,7 @@ sealed class BrokerHost
         await pipe.ListenAsync(ct);
     }
 
-    async Task<string> Handle(JsonElement msg)
+    async Task<string> Handle(JsonElement msg, int sessionId)
     {
         var mode = msg.GetProperty("mode").GetString();
         if (mode == "status") return BrokerStatus.Current.ToJson();
@@ -158,16 +158,42 @@ sealed class BrokerHost
             if (parsed.typ == "jit")
             {
                 JitWatchdog.GrantLocalAdmin(parsed.sub);
-                _watchdog.Arm(parsed.nonce, parsed.sub, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
+                var until = DateTimeOffset.FromUnixTimeSeconds(parsed.exp);
+                _watchdog.Arm(parsed.nonce, parsed.sub, until);
+                BrokerStatus.Current.NoteJit(true, until);
+                BrokerStatus.Current.NotePending("");
+                var pid = 0;
+                if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                {
+                    pid = ElevationHost.Launch(filePath, arguments, parsed.child == "deny", sessionId);
+                }
+                BrokerStatus.Current.NoteNotice(
+                    "JIT admin is on",
+                    "You are in local Administrators until " + until.ToLocalTime().ToString("g") +
+                    ". The requested program is opening on this desktop. Start-menu shortcuts still use your old logon token.");
                 return JsonSerializer.Serialize(new
                 {
                     decision = "allow",
                     jit = true,
-                    reason = "JIT window is open. Re-run the application so Windows UAC can prompt; the broker will not launch it as SYSTEM.",
+                    pid,
+                    reason = "JIT is on. The requested program was started on your desktop. You do not need to sign out for this window.",
                 });
             }
-            var pid = ElevationHost.Launch(filePath, arguments, parsed.child == "deny");
-            return JsonSerializer.Serialize(new { decision = "allow", pid });
+            BrokerStatus.Current.NotePending("");
+            var launched = ElevationHost.Launch(filePath, arguments, parsed.child == "deny", sessionId);
+            return JsonSerializer.Serialize(new { decision = "allow", pid = launched });
+        }
+        if (decision == "pending")
+        {
+            BrokerStatus.Current.NotePending($"Waiting for approval: {filePath}");
+            BrokerStatus.Current.NoteNotice(
+                "Waiting for approval",
+                $"An approver must allow {filePath} in the PrivGate console.");
+        }
+        else if (decision == "deny")
+        {
+            BrokerStatus.Current.NotePending("");
+            BrokerStatus.Current.NoteNotice("Elevation denied", "The request was denied.");
         }
         return result.GetRawText();
     }

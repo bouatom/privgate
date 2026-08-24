@@ -124,14 +124,34 @@ export function evaluateForDevice(
   }
 
   if (decision.decision === "deny") {
+    let requestId: string | undefined;
+    if (body.fileHash && body.publisher) {
+      const req = insertRequest(db, {
+        userId: user.id,
+        deviceId,
+        filePath: body.filePath,
+        fileHash: body.fileHash.toLowerCase(),
+        publisher: body.publisher,
+        arguments: body.arguments ?? "",
+        status: "denied",
+        decidedBy: "policy",
+        riskLevel: risk.level,
+        riskReasons: JSON.stringify([decision.reason, ...risk.reasons]),
+      });
+      requestId = req.id;
+    }
     appendAudit(db, `device:${deviceId}`, "evaluate.deny", body.filePath, {
       user: user.userPrincipalName,
       reason: decision.reason,
       risk: risk.level,
+      fileHash: body.fileHash,
+      publisher: body.publisher,
+      requestId,
     });
     return {
       decision: "deny",
       reason: decision.reason,
+      requestId,
       user,
       riskLevel: risk.level,
       riskReasons: risk.reasons,

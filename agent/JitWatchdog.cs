@@ -25,7 +25,7 @@ public sealed class JitWatchdog
         {
             var stamp = expiresAt.ToLocalTime().ToString("HH:mm");
             var date = expiresAt.ToLocalTime().ToString("MM/dd/yyyy");
-            var tr = $"net localgroup Administrators /delete {userSid}";
+            var tr = $"net localgroup Administrators {MemberSpec(userSid)} /delete";
             Process.Start(new ProcessStartInfo("schtasks.exe",
                 $"/Create /F /TN PrivGate-JIT-{grantId} /SC ONCE /ST {stamp} /SD {date} /RU SYSTEM /TR \"{tr}\"")
             {
@@ -67,30 +67,47 @@ public sealed class JitWatchdog
         return true;
     }
 
-    public static void RevokeLocalAdmin(string userSid)
+    public static void RevokeLocalAdmin(string userSid) => RunNet("delete", userSid);
+
+    public static void GrantLocalAdmin(string userSid) => RunNet("add", userSid);
+
+    /// <summary>
+    /// net.exe rejects a bare SID. Prefix with * so the SAM lookup uses the SID.
+    /// </summary>
+    internal static string MemberSpec(string userSid)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            Console.WriteLine($"[dry-run] revoke local Administrators {userSid}");
-            return;
-        }
-        Process.Start(new ProcessStartInfo("net.exe", $"localgroup Administrators /delete {userSid}")
-        {
-            UseShellExecute = false,
-        })?.WaitForExit(15_000);
+        var value = (userSid ?? "").Trim().Trim('"');
+        if (value.StartsWith("S-1-", StringComparison.OrdinalIgnoreCase) && !value.StartsWith("*", StringComparison.Ordinal))
+            value = "*" + value;
+        return "\"" + value.Replace("\"", "") + "\"";
     }
 
-    public static void GrantLocalAdmin(string userSid)
+    static void RunNet(string action, string userSid)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            Console.WriteLine($"[dry-run] grant local Administrators {userSid}");
+            Console.WriteLine($"[dry-run] {action} local Administrators {userSid}");
             return;
         }
-        Process.Start(new ProcessStartInfo("net.exe", $"localgroup Administrators {userSid} /add")
+        var args = action == "add"
+            ? $"localgroup Administrators {MemberSpec(userSid)} /add"
+            : $"localgroup Administrators {MemberSpec(userSid)} /delete";
+        var psi = new ProcessStartInfo("net.exe", args)
         {
             UseShellExecute = false,
-        })?.WaitForExit(15_000);
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        using var proc = Process.Start(psi);
+        if (proc is null)
+        {
+            BrokerLog.Write($"net.exe failed to start ({args})");
+            return;
+        }
+        proc.WaitForExit(15_000);
+        var output = (proc.StandardOutput.ReadToEnd() + " " + proc.StandardError.ReadToEnd()).Trim();
+        BrokerLog.Write($"net.exe {args} exit={proc.ExitCode} {output}");
     }
 
     sealed record JitState(string grantId, string userSid, long exp);

@@ -103,13 +103,18 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(deploy).toContain("Uninstall-PrivGate.ps1");
     expect(deploy).toContain("QuietUninstallString");
     expect(deploy).toContain("sc.exe delete PrivGateBroker");
+    expect(deploy).toContain("CurrentVersion\\Run");
+    expect(deploy).toContain("PrivGateTray");
 
     const zipInstall = installScript();
     expect(zipInstall).toContain("Uninstall\\PrivGateClient");
     expect(zipInstall).toContain("Uninstall-PrivGate.ps1");
+    expect(zipInstall).toContain("PrivGateTray");
 
     const uninstall = uninstallScript();
     expect(uninstall).toContain("PrivGateBroker");
+    expect(uninstall).toContain("PrivGateTray");
+    expect(uninstall).toContain("CurrentVersion\\Run");
     expect(uninstall).toContain("SOFTWARE\\PrivGate");
     expect(uninstall).toContain("Uninstall\\PrivGateClient");
     expect(uninstall).toContain("ProgramFiles");
@@ -181,6 +186,10 @@ describe("client payload discovery and deploy artifacts", () => {
     const cjs = readFileSync(path.resolve(__dirname, "../../packaging/windows/build-client-msi.cjs"), "utf8");
     expect(cjs).toContain("http://privgate-api-base.invalid/");
     expect(cjs).toContain("privgate-enrollment-token.");
+    expect(cjs).toContain("PrivGateTray");
+    const msiTs = readFileSync(path.resolve(__dirname, "./client-msi.ts"), "utf8");
+    expect(msiTs).toContain("PrivGateTray");
+    expect(msiTs).toContain("CurrentVersion\\\\Run");
   });
 
   it("treats MSI as available only when the packaged file exists", () => {

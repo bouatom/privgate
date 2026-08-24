@@ -51,21 +51,27 @@ export function insertRequest(
     "id" | "requestedAt" | "decidedAt" | "decidedBy" | "approvalExpiresAt" | "status" | "riskLevel" | "riskReasons"
   > & {
     status?: string;
+    decidedBy?: string;
     riskLevel?: string;
     riskReasons?: string;
   },
 ): ElevationRequest {
-  const existing = db
-    .prepare(
-      `SELECT * FROM requests WHERE user_id = ? AND device_id = ? AND file_hash = ? AND status = 'pending'`,
-    )
-    .get(req.userId, req.deviceId, req.fileHash) as Record<string, unknown> | undefined;
-  if (existing) return getRequest(db, String(existing.id))!;
+  const status = req.status ?? "pending";
+  if (status === "pending") {
+    const existing = db
+      .prepare(
+        `SELECT * FROM requests WHERE user_id = ? AND device_id = ? AND file_hash = ? AND status = 'pending'`,
+      )
+      .get(req.userId, req.deviceId, req.fileHash) as Record<string, unknown> | undefined;
+    if (existing) return getRequest(db, String(existing.id))!;
+  }
   const id = randomUUID();
   const now = new Date().toISOString();
+  const decidedAt = status === "pending" ? null : now;
+  const decidedBy = status === "pending" ? null : (req.decidedBy ?? "policy");
   db.prepare(
-    `INSERT INTO requests (id, user_id, device_id, file_path, file_hash, publisher, arguments, status, requested_at, risk_level, risk_reasons)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO requests (id, user_id, device_id, file_path, file_hash, publisher, arguments, status, requested_at, decided_at, decided_by, risk_level, risk_reasons)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     req.userId,
@@ -74,8 +80,10 @@ export function insertRequest(
     req.fileHash,
     req.publisher,
     req.arguments,
-    req.status ?? "pending",
+    status,
     now,
+    decidedAt,
+    decidedBy,
     req.riskLevel ?? "medium",
     req.riskReasons ?? "[]",
   );

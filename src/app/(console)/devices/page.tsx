@@ -1,6 +1,6 @@
 import { can, getSession } from "@/lib/auth";
 import { headers } from "next/headers";
-import { deviceDetail, getDb, listDeviceSummaries } from "@/lib/db";
+import { deviceDetail, getDb, listDeviceSummaries, listPolicies } from "@/lib/db";
 import { clientBinariesReady, clientMsiAvailable } from "@/lib/client-package";
 import { connectedDeviceIds } from "@/lib/realtime/bus";
 import { agentOriginFromWebOrigin } from "@/lib/listen";
@@ -31,6 +31,8 @@ export default async function DevicesPage({
       selected={selected}
       detail={detail}
       canInstall={can(session, "devices.enroll")}
+      canManageAllowlists={can(session, "policies.manage")}
+      policies={can(session, "policies.manage") ? listPolicies(db) : []}
       consoleUrl={agentOriginFromWebOrigin(origin)}
       binariesReady={clientBinariesReady()}
       msiReady={clientMsiAvailable()}

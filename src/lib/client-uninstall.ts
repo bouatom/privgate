@@ -28,6 +28,7 @@ if ($svc) {
 
 Remove-Item "HKLM:\\SOFTWARE\\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${CLIENT_ARP_ID}" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "PrivGateTray" -ErrorAction SilentlyContinue
 Remove-Item (Join-Path $env:ProgramData "PrivGate") -Recurse -Force -ErrorAction SilentlyContinue
 
 $InstallDir = Join-Path $env:ProgramFiles "PrivGate"
@@ -64,6 +65,9 @@ if (Test-Path $exe) { Set-ItemProperty -Path $arp -Name DisplayIcon -Value $exe 
 $ps = Join-Path $env:SystemRoot "System32\\WindowsPowerShell\\v1.0\\powershell.exe"
 Set-ItemProperty -Path $arp -Name UninstallString -Value ('"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}"' -f $ps, $uninstFile)
 Set-ItemProperty -Path $arp -Name QuietUninstallString -Value ('"{0}" -NoProfile -ExecutionPolicy Bypass -File "{1}" -Quiet' -f $ps, $uninstFile)
+$run = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run"
+if (-not (Test-Path $run)) { New-Item -Path $run -Force | Out-Null }
+Set-ItemProperty -Path $run -Name PrivGateTray -Value ('"{0}"' -f $exe)
 `;
 }
 

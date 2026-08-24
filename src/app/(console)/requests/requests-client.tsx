@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { displayPath, formatWhenShort } from "@/lib/format";
+import type { Policy } from "@/lib/policy";
+import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 
 export type RequestRow = {
   id: string;
@@ -13,6 +15,7 @@ export type RequestRow = {
   arguments: string;
   userName: string;
   hostname: string;
+  deviceId: string;
   requestedAt: string;
   decidedAt: string | null;
   decidedBy: string | null;
@@ -33,15 +36,19 @@ export function RequestsClient({
   rows,
   canApprove,
   canDeny,
+  canManageAllowlists,
+  policies,
 }: {
   rows: RequestRow[];
   canApprove: boolean;
   canDeny: boolean;
+  canManageAllowlists: boolean;
+  policies: Policy[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"pending" | "all">("pending");
+  const [filter, setFilter] = useState<"pending" | "blocked" | "all">("pending");
   const [, startTransition] = useTransition();
 
   async function act(id: string, action: "approve" | "deny", row: RequestRow) {
@@ -64,7 +71,12 @@ export function RequestsClient({
 
   const pending = rows.filter((r) => r.status === "pending").length;
   const hot = rows.filter((r) => r.status === "pending" && (r.riskLevel === "high" || r.riskLevel === "critical")).length;
-  const shown = filter === "pending" ? rows.filter((r) => r.status === "pending") : rows;
+  const shown =
+    filter === "pending"
+      ? rows.filter((r) => r.status === "pending")
+      : filter === "blocked"
+        ? rows.filter((r) => r.status === "pending" || r.status === "denied")
+        : rows;
 
   return (
     <>
@@ -73,7 +85,8 @@ export function RequestsClient({
           <h1>Elevation requests</h1>
           <p className="lede">
             Standard users asked to run something that is not on the always-allow list. Risk is scored from the
-            binary, path, publisher, and arguments — not the filename alone.
+            binary, path, publisher, and arguments — not the filename alone. Policy admins can turn a row into
+            an always-allow rule using the recorded hash and publisher.
           </p>
         </div>
       </div>
@@ -94,6 +107,9 @@ export function RequestsClient({
       <div className="filters">
         <button className={`ghost ${filter === "pending" ? "active" : ""}`} type="button" onClick={() => setFilter("pending")}>
           Pending queue
+        </button>
+        <button className={`ghost ${filter === "blocked" ? "active" : ""}`} type="button" onClick={() => setFilter("blocked")}>
+          Pending and blocked
         </button>
         <button className={`ghost ${filter === "all" ? "active" : ""}`} type="button" onClick={() => setFilter("all")}>
           All requests
@@ -154,6 +170,18 @@ export function RequestsClient({
                         ) : null}
                       </div>
                     ) : null}
+                    <AllowlistFromRequestButton
+                      canManage={canManageAllowlists}
+                      policies={policies}
+                      source={{
+                        filePath: row.filePath,
+                        fileHash: row.fileHash,
+                        publisher: row.publisher,
+                        arguments: row.arguments,
+                        hostname: row.hostname,
+                        deviceId: row.deviceId,
+                      }}
+                    />
                   </td>
                 </tr>
               ))
@@ -161,8 +189,10 @@ export function RequestsClient({
               <tr>
                 <td colSpan={6} className="lede" style={{ padding: 18 }}>
                   {filter === "pending"
-                    ? "No pending elevations. Switch to all requests to review history."
-                    : "No elevation requests yet."}
+                    ? "No pending elevations. Switch to pending and blocked to review denials, or all requests for history."
+                    : filter === "blocked"
+                      ? "No pending or blocked elevations."
+                      : "No elevation requests yet."}
                 </td>
               </tr>
             )}

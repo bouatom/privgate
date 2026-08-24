@@ -151,13 +151,25 @@ public sealed class RealtimeChannel : IDisposable
             CompleteRpc(msg);
             return;
         }
+        if (type == "request-pending")
+        {
+            var path = msg.TryGetProperty("filePath", out var p) ? p.GetString() ?? "a program" : "a program";
+            BrokerStatus.Current.NotePending($"Waiting for approval: {path}");
+            BrokerStatus.Current.NoteNotice("Waiting for approval",
+                $"An approver must allow {path} in the PrivGate console.");
+            return;
+        }
         if (type == "ticket")
         {
+            BrokerStatus.Current.NotePending("");
+            BrokerStatus.Current.NoteNotice("Elevation approved", "The request was approved.");
             CompleteTicket(msg, allow: true);
             return;
         }
         if (type == "request-denied")
         {
+            BrokerStatus.Current.NotePending("");
+            BrokerStatus.Current.NoteNotice("Elevation denied", "The request was denied.");
             CompleteTicket(msg, allow: false);
             return;
         }
@@ -170,6 +182,8 @@ public sealed class RealtimeChannel : IDisposable
         {
             var sid = msg.TryGetProperty("userSid", out var sidEl) ? sidEl.GetString() ?? "" : "";
             if (sid.Length > 0) watchdog.RevokeNow(sid);
+            BrokerStatus.Current.NoteJit(false);
+            BrokerStatus.Current.NoteNotice("JIT admin ended", "Temporary local Administrators membership was removed.");
         }
     }
 
@@ -209,6 +223,12 @@ public sealed class RealtimeChannel : IDisposable
         if (!parsed.dev.Equals(deviceId, StringComparison.OrdinalIgnoreCase)) return;
         JitWatchdog.GrantLocalAdmin(parsed.sub);
         watchdog.Arm(parsed.nonce, parsed.sub, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
+        BrokerStatus.Current.NoteJit(true, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
+        BrokerStatus.Current.NoteNotice(
+            "JIT admin is on",
+            "You are in local Administrators until " +
+            DateTimeOffset.FromUnixTimeSeconds(parsed.exp).ToLocalTime().ToString("g") +
+            ". Request Disk Management from the tray to open it on this desktop without signing out.");
     }
 
     async Task<JsonElement> RpcAsync(Dictionary<string, object?> payload, CancellationToken ct)

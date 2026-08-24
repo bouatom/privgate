@@ -23,6 +23,12 @@ public sealed class StatusSnapshot
     public int Reconnects { get; set; }
     public string LastError { get; set; } = "";
     public string Source { get; set; } = "";
+    public bool JitActive { get; set; }
+    public string? JitUntil { get; set; }
+    public string Pending { get; set; } = "";
+    public string NoticeTitle { get; set; } = "";
+    public string NoticeBody { get; set; } = "";
+    public int NoticeSeq { get; set; }
     public StatusRequest[] Requests { get; set; } = Array.Empty<StatusRequest>();
 }
 
@@ -46,6 +52,12 @@ public sealed class BrokerStatus
     DateTimeOffset? _connectedAt;
     int _reconnects;
     string _lastError = "";
+    bool _jitActive;
+    string? _jitUntil;
+    string _noticeTitle = "";
+    string _noticeBody = "";
+    int _noticeSeq;
+    string _pending = "";
 
     public void Configure(string deviceId, string apiBase)
     {
@@ -89,6 +101,31 @@ public sealed class BrokerStatus
         while (_requests.Count > 12 && _requests.TryDequeue(out _)) { }
     }
 
+    public void NoteJit(bool active, DateTimeOffset? until = null)
+    {
+        lock (_gate)
+        {
+            _jitActive = active;
+            _jitUntil = until?.ToLocalTime().ToString("g");
+            if (!active) _jitUntil = null;
+        }
+    }
+
+    public void NotePending(string? text)
+    {
+        lock (_gate) { _pending = text ?? ""; }
+    }
+
+    public void NoteNotice(string title, string body)
+    {
+        lock (_gate)
+        {
+            _noticeTitle = title;
+            _noticeBody = body;
+            _noticeSeq++;
+        }
+    }
+
     public StatusSnapshot Snapshot(string source = "in-process")
     {
         lock (_gate)
@@ -104,6 +141,12 @@ public sealed class BrokerStatus
                 Reconnects = _reconnects,
                 LastError = _lastError,
                 Source = source,
+                JitActive = _jitActive,
+                JitUntil = _jitUntil,
+                Pending = _pending,
+                NoticeTitle = _noticeTitle,
+                NoticeBody = _noticeBody,
+                NoticeSeq = _noticeSeq,
                 Requests = _requests.ToArray(),
             };
         }

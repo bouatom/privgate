@@ -5,6 +5,8 @@ using PrivGate.Agent;
 
 internal static class Program
 {
+    const string TrayMutexName = @"Local\PrivGate.Agent.Tray";
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -26,6 +28,9 @@ internal static class Program
             BrokerHost.RunAsync(args, cts.Token).GetAwaiter().GetResult();
             return;
         }
+
+        using var mutex = new Mutex(true, TrayMutexName, out var created);
+        if (!created) return;
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

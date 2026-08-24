@@ -19,4 +19,11 @@ describe("JIT local revoke contract", () => {
     expect(tick(file, 100)).toBe(true);
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it("prefixes Windows SIDs so net localgroup can add the user", () => {
+    const src = readFileSync(join(__dirname, "../../agent/JitWatchdog.cs"), "utf8");
+    expect(src).toContain("MemberSpec");
+    expect(src).toContain('"*" + value');
+    expect(src).toContain("localgroup Administrators");
+  });
 });

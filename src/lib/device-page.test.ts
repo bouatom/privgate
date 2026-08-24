@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   resetDbForTests,
@@ -8,6 +9,7 @@ import {
   registerOrReuseDevice,
 } from "./db";
 import { safeApiBase } from "./device-installer";
+import { evaluateForDevice } from "./evaluate";
 
 describe("device events and installer", () => {
   it("summarizes the seeded lab device with its pending request and enroll event", () => {
@@ -25,6 +27,21 @@ describe("device events and installer", () => {
 
   it("keeps the Windows client project next to the console", () => {
     expect(existsSync(`${process.cwd()}/agent`)).toBe(true);
+  });
+
+  it("records programs this device was not allowed to elevate", () => {
+    const db = resetDbForTests(":memory:");
+    const deny = evaluateForDevice(db, "dev-lab-01", {
+      userSid: "S-1-5-21-1000-1000-1000-1101",
+      filePath: "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe",
+      fileHash: createHash("sha256").update("ps-log").digest("hex"),
+      publisher: "CN=Microsoft Windows",
+    });
+    expect(deny.decision).toBe("deny");
+    const detail = deviceDetail(db, "dev-lab-01");
+    const blocked = detail?.requests.find((row) => row.status === "denied" && row.filePath.toLowerCase().includes("powershell"));
+    expect(blocked?.publisher).toBe("CN=Microsoft Windows");
+    expect(blocked?.fileHash).toHaveLength(64);
   });
 
   it("rejects non-http control plane URLs", () => {

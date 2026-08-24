@@ -44,8 +44,8 @@ The Elevation Broker is a Windows SYSTEM service. This Mac cannot run it.
    Remove-Item "$env:ProgramFiles\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
    Remove-Item "HKLM:\SOFTWARE\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
    ```
-5. As the standard user, run `PrivGate.Helper.exe --elevate "C:\path\app.exe"`.
-6. Double-click `PrivGate.Agent.exe` for a tray status window (connection, last error, recent elevation requests). If the **PrivGateBroker** service is already running, that window attaches to it instead of starting a second broker. `--console` still runs in a terminal.
+5. The **PrivGateBroker** service runs as SYSTEM in Session 0 and cannot show a window. Install registers HKLM Run `PrivGateTray`, so after the **standard user** signs in a shield appears near the clock. Do **not** open Disk Management from the Start menu — that path never talks to PrivGate. Right-click the shield → **Request Disk Management…** (or **Request a program…**). The tray asks for confirmation, waits for an approver, then opens the snap-in on **this** desktop. If Windows UAC appears first, the tray offers the same request. CLI: `PrivGate.Helper.exe --elevate "C:\Windows\System32\diskmgmt.msc"`.
+6. JIT still adds the account to local Administrators (`net localgroup` with a `*SID`). That membership is for a **future** logon token. You do **not** need to sign out to use Disk Management: request it from the tray and, after approval (or while JIT is already on), the broker starts `mmc.exe` in your session. Sign-out is only required if you want Start-menu shortcuts and UAC to treat you as an admin.
 
 The console **Devices** page is live only while the broker’s WebSocket is accepted. Native Windows sockets do not send an `Origin` header; a previous check treated that as `agent.ws.origin-rejected` and left the hostname **offline**. HMAC on the upgrade is the real gate.
 
@@ -70,7 +70,7 @@ Manual extras:
 
 - Allowlisted signed MSI elevates; `powershell.exe` is denied.
 - Unlisted EXE appears on the dashboard; after approve, the helper already waiting on the PC elevates (live WebSocket). If the socket is down, run the helper again.
-- JIT 15 minutes: user is added to Administrators when the grant is pushed (or on the next helper call); after expiry, membership is gone **with the API stopped** (local scheduled task). Console revoke is pushed immediately. During JIT the broker does **not** launch the file as SYSTEM — re-run the app so UAC can prompt.
+- JIT 15 minutes: user is added to Administrators when the grant is pushed (or on the next helper call); `net.exe` uses `*SID` so the SAM add actually succeeds. After expiry, membership is gone **with the API stopped** (local scheduled task). Console revoke is pushed immediately. Request Disk Management from the tray to open it on this desktop without signing out. The tray balloons when JIT starts or an approval is waiting.
 
 
 Do not install Microsoft EPM on the same VM.

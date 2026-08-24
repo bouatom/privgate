@@ -104,6 +104,7 @@ try {
 
 Write-Host "PrivGate client installed. This PC will appear on the console as $env:COMPUTERNAME."
 Write-Host "Uninstall from Apps & Features (PrivGate Client) or C:\\Program Files\\PrivGate\\Uninstall-PrivGate.ps1."
+Write-Host "After the next sign-in, a PrivGate shield appears near the clock. Right-click it to elevate a program. JIT and pending approvals show as notifications."
 $helper = Join-Path $InstallDir ${psQuote(HELPER_EXE)}
 if (Test-Path $helper) {
   Write-Host "Standard user elevate: & '$helper' --elevate <path-to-file>"

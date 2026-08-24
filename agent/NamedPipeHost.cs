@@ -1,12 +1,15 @@
+using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 using System.Text;
 using System.Text.Json;
 
 namespace PrivGate.Agent;
 
-public sealed class NamedPipeHost(Func<JsonElement, Task<string>> handler)
+public sealed class NamedPipeHost(Func<JsonElement, int, Task<string>> handler)
 {
     public const string PipeName = "PrivGateElevation";
 
@@ -58,7 +61,13 @@ public sealed class NamedPipeHost(Func<JsonElement, Task<string>> handler)
             try
             {
                 var json = JsonSerializer.Deserialize<JsonElement>(line);
-                var reply = await handler(json);
+                var session = ClientSession(server);
+                if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("sessionId", out var sidEl)
+                    && sidEl.TryGetInt32(out var fromMsg) && fromMsg > 0)
+                {
+                    session = fromMsg;
+                }
+                var reply = await handler(json, session);
                 await writer.WriteLineAsync(reply);
             }
             catch (Exception ex)
@@ -67,4 +76,23 @@ public sealed class NamedPipeHost(Func<JsonElement, Task<string>> handler)
             }
         }
     }
+
+    static int ClientSession(NamedPipeServerStream server)
+    {
+        try
+        {
+            if (!GetNamedPipeClientProcessId(server.SafePipeHandle, out var pid)) return 0;
+            return ProcessIdToSessionId(pid, out var session) ? (int)session : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint clientProcessId);
+
+    [DllImport("kernel32.dll")]
+    static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
 }

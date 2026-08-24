@@ -33,6 +33,8 @@ describe("evaluate + approval + JIT", () => {
     });
     expect(deny.decision).toBe("deny");
     expect(deny.riskLevel).toBe("critical");
+    expect(deny.requestId).toBeTruthy();
+    expect(getRequest(db, deny.requestId!)?.status).toBe("denied");
   });
 
   it("creates a pending request then issues a one-shot ticket on approve", () => {

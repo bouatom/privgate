@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { displayPath } from "@/lib/format";
+import type { Policy } from "@/lib/policy";
+import { DeviceDetail, type DeviceDetailModel } from "./device-detail";
 
 type DeviceSummary = {
   id: string;
@@ -15,68 +16,25 @@ type DeviceSummary = {
   online: boolean;
 };
 
-type EventRow = {
-  id: string;
-  at: string;
-  actor: string;
-  action: string;
-  target: string;
-  details: Record<string, unknown>;
-};
-
-type RequestRow = {
-  id: string;
-  status: string;
-  filePath: string;
-  publisher: string;
-  userName: string;
-  requestedAt: string;
-  riskLevel: string;
-  riskReasons: string;
-};
-
-type JitRow = {
-  id: string;
-  status: string;
-  durationMinutes: number;
-  reason: string;
-  expiresAt: string;
-  userName: string;
-};
-
-type Detail = {
-  id: string;
-  hostname: string;
-  enrolledAt: string;
-  events: EventRow[];
-  requests: RequestRow[];
-  jit: JitRow[];
-};
-
 type Method = "msi" | "script";
-
-function reasonsOf(raw: string): string[] {
-  try {
-    const parsed = JSON.parse(raw || "[]") as unknown;
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
 
 export function DevicesClient({
   devices,
   selected,
   detail,
   canInstall,
+  canManageAllowlists,
+  policies,
   consoleUrl,
   binariesReady,
   msiReady,
 }: {
   devices: DeviceSummary[];
   selected: string;
-  detail: Detail | null;
+  detail: DeviceDetailModel | null;
   canInstall: boolean;
+  canManageAllowlists: boolean;
+  policies: Policy[];
   consoleUrl: string;
   binariesReady: boolean;
   msiReady: boolean;
@@ -231,119 +189,11 @@ export function DevicesClient({
 
         <div>
           {detail ? (
-            <>
-              <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
-                <strong>{detail.hostname}</strong>
-                <p className="lede" style={{ fontSize: 13, marginTop: 6 }}>
-                  First seen {new Date(detail.enrolledAt).toLocaleString()}
-                </p>
-              </div>
-              <h2 className="section-title">Events</h2>
-              <div className="panel" style={{ marginBottom: 16 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Action</th>
-                      <th>Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.events.length ? (
-                      detail.events.map((row) => (
-                        <tr key={row.id}>
-                          <td className="mono">{new Date(row.at).toLocaleString()}</td>
-                          <td>{row.action}</td>
-                          <td>
-                            <div className="mono">{row.actor}</div>
-                            <div className="mono">{row.target}</div>
-                            <div className="mono">{JSON.stringify(row.details)}</div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={3} className="lede" style={{ padding: 18 }}>
-                          No audit events for this device yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <h2 className="section-title">Elevation requests</h2>
-              <div className="panel" style={{ marginBottom: 16 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>Risk</th>
-                      <th>Program</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.requests.length ? (
-                      detail.requests.map((row) => (
-                        <tr key={row.id}>
-                          <td><span className={`pill ${row.status}`}>{row.status}</span></td>
-                          <td>
-                            <span className={`pill risk-${row.riskLevel}`}>{row.riskLevel}</span>
-                            <ul className="risk-reasons">
-                              {reasonsOf(row.riskReasons).map((reason) => (
-                                <li key={reason}>{reason}</li>
-                              ))}
-                            </ul>
-                          </td>
-                          <td>
-                            <div>{displayPath(row.filePath)}</div>
-                            <div className="mono">{row.userName}</div>
-                            <div className="mono">{row.publisher}</div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={3} className="lede" style={{ padding: 18 }}>
-                          No elevation requests on this host.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <h2 className="section-title">JIT windows</h2>
-              <div className="panel">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Status</th>
-                      <th>User</th>
-                      <th>Window</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detail.jit.length ? (
-                      detail.jit.map((row) => (
-                        <tr key={row.id}>
-                          <td><span className={`pill ${row.status}`}>{row.status}</span></td>
-                          <td>{row.userName}</td>
-                          <td>
-                            <div>{row.durationMinutes} min · {row.reason}</div>
-                            <div className="mono">until {new Date(row.expiresAt).toLocaleString()}</div>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={3} className="lede" style={{ padding: 18 }}>
-                          No JIT grants on this host.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
+            <DeviceDetail
+              detail={detail}
+              policies={policies}
+              canManageAllowlists={canManageAllowlists}
+            />
           ) : (
             <div className="panel" style={{ padding: 18 }}>
               <p className="lede">

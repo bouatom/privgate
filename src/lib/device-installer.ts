@@ -109,6 +109,7 @@ ${registerArpSnippet()}
 Write-Host "PrivGate is installed."
 Write-Host "Broker service: PrivGateBroker"
 Write-Host "Uninstall from Apps & Features (PrivGate Client) or Uninstall-PrivGate.ps1."
+Write-Host "After the next sign-in, a PrivGate shield appears near the clock. Right-click it to elevate a program."
 if (Test-Path $helper) {
   Write-Host "Standard user elevate: & '$helper' --elevate <path-to-file>"
 }
@@ -153,9 +154,13 @@ must also be installed so the script can compile and publish the agent.
 Pre-built zips (downloaded from Devices → Download installer) include
 the compiled binaries and do not require the SDK on the target machine.
 
-Standard users elevate with:
+After the next sign-in a PrivGate shield appears near the clock. Right-click
+it to elevate a program, or:
 
   & "C:\\Program Files\\PrivGate\\PrivGate.Helper.exe" --elevate "C:\\path\\app.exe"
+
+JIT does not intercept Start-menu tools. Sign out and back in after a JIT
+grant, or elevate diskmgmt.msc from the tray.
 
 Uninstall: Apps & Features (PrivGate Client), or Uninstall-PrivGate.ps1 (elevated).
 `;

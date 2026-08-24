@@ -11,13 +11,33 @@ if (args.Length < 2 || args[0] != "--elevate")
 }
 
 var file = args[1];
+var extra = "";
 var sid = CurrentUserSid();
-for (var i = 2; i < args.Length - 1; i++)
+for (var i = 2; i < args.Length; i++)
 {
-    if (args[i] == "--user-sid") sid = args[i + 1];
+    if (args[i] == "--user-sid" && i + 1 < args.Length)
+    {
+        sid = args[i + 1];
+        i++;
+        continue;
+    }
+    extra = extra.Length == 0 ? args[i] : extra + " " + args[i];
 }
 
-var payload = JsonSerializer.Serialize(new { mode = "elevate", userSid = sid, filePath = file });
+if (file.EndsWith(".msc", StringComparison.OrdinalIgnoreCase))
+{
+    extra = extra.Length == 0 ? "\"" + file + "\"" : "\"" + file + "\" " + extra;
+    file = Path.Combine(Environment.SystemDirectory, "mmc.exe");
+}
+
+var payload = JsonSerializer.Serialize(new
+{
+    mode = "elevate",
+    userSid = sid,
+    filePath = file,
+    arguments = extra,
+    sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId,
+});
 using var pipe = new NamedPipeClientStream(".", "PrivGateElevation", PipeDirection.InOut);
 pipe.Connect(5000);
 using var writer = new StreamWriter(pipe, Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true };

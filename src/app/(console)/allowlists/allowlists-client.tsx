@@ -71,7 +71,7 @@ export function AllowlistsClient({ rows, groups, canManage }: { rows: Policy[]; 
       <div className="top">
         <div>
           <h1>Always-allow programs</h1>
-          <p className="lede">These run elevated without an admin password. SHA-256 and publisher are required. Shells cannot be added. Scope a rule to an Entra / AD group after directory sync.</p>
+          <p className="lede">These run elevated without an admin password. SHA-256 and publisher are required. Shells cannot be added. You can also create a rule from a device elevation log or a blocked request — that copies the recorded hash, publisher, and arguments.</p>
         </div>
       </div>
       {canManage ? (

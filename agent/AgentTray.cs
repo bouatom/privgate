@@ -12,6 +12,7 @@ sealed class AgentTrayContext : ApplicationContext
     readonly string[] _args;
     readonly CancellationTokenSource _cts = new();
     readonly bool _ownsBroker;
+    int _seenNotice;
 
     public AgentTrayContext(string[] args)
     {
@@ -36,13 +37,21 @@ sealed class AgentTrayContext : ApplicationContext
         _timer.Tick += (_, _) => Refresh();
         _timer.Start();
         Refresh();
-        ShowStatus();
+        if (_seenNotice == 0)
+        {
+            Balloon(
+                "PrivGate is running",
+                "Look for the shield near the clock. Right-click it to elevate a program or see JIT and approval status.");
+        }
     }
 
     ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Status", null, (_, _) => ShowStatus());
+        menu.Items.Add("Request Disk Management…", null, (_, _) =>
+            ElevationPrompt.Request(Path.Combine(Environment.SystemDirectory, "diskmgmt.msc")));
+        menu.Items.Add("Request a program…", null, (_, _) => RequestProgram());
         menu.Items.Add("Open log", null, (_, _) => OpenLog());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => ExitThread());
@@ -54,6 +63,26 @@ sealed class AgentTrayContext : ApplicationContext
         _form.Show();
         _form.WindowState = FormWindowState.Normal;
         _form.Activate();
+    }
+
+    void RequestProgram()
+    {
+        using var dlg = new OpenFileDialog
+        {
+            Title = "Choose a program to request through PrivGate",
+            Filter = "Programs and snap-ins (*.exe;*.msc;*.msi)|*.exe;*.msc;*.msi|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dlg.ShowDialog() != DialogResult.OK) return;
+        ElevationPrompt.Request(dlg.FileName);
+    }
+
+    void Balloon(string title, string body)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body)) return;
+        _icon.BalloonTipTitle = title.Length > 63 ? title.Substring(0, 63) : title;
+        _icon.BalloonTipText = body.Length > 255 ? body.Substring(0, 255) : body;
+        _icon.ShowBalloonTip(10000);
     }
 
     static void OpenLog()
@@ -88,10 +117,18 @@ sealed class AgentTrayContext : ApplicationContext
             };
         }
         _form.Bind(snap);
+        ElevationPrompt.TickConsent();
         var state = snap.Realtime ? "connected" : "offline";
+        if (snap.JitActive) state = "JIT on";
+        else if (!string.IsNullOrEmpty(snap.Pending)) state = "waiting";
         var text = $"PrivGate Agent ({state})";
         _icon.Text = text.Length <= 63 ? text : text.Substring(0, 63);
         _icon.Icon = snap.Realtime ? SystemIcons.Shield : SystemIcons.Warning;
+        if (snap.NoticeSeq > _seenNotice && snap.NoticeSeq > 0)
+        {
+            _seenNotice = snap.NoticeSeq;
+            Balloon(snap.NoticeTitle, snap.NoticeBody);
+        }
     }
 
     static bool ServiceIsRunning()
@@ -126,6 +163,8 @@ sealed class AgentStatusForm : Form
     readonly Label _host = Field();
     readonly Label _api = Field();
     readonly Label _source = Field();
+    readonly Label _jit = Field();
+    readonly Label _pending = Field();
     readonly Label _error = Field();
     readonly ListBox _requests = new() { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
 
@@ -149,7 +188,7 @@ sealed class AgentStatusForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(16),
             ColumnCount = 2,
-            RowCount = 8,
+            RowCount = 10,
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -158,11 +197,13 @@ sealed class AgentStatusForm : Form
         AddRow(grid, 2, "Hostname", _host);
         AddRow(grid, 3, "Console", _api);
         AddRow(grid, 4, "Source", _source);
-        AddRow(grid, 5, "Last error", _error);
+        AddRow(grid, 5, "JIT admin", _jit);
+        AddRow(grid, 6, "Approval", _pending);
+        AddRow(grid, 7, "Last error", _error);
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        grid.Controls.Add(new Label { Text = "Requests", AutoSize = true, Padding = new Padding(0, 8, 0, 0) }, 0, 6);
+        grid.Controls.Add(new Label { Text = "Requests", AutoSize = true, Padding = new Padding(0, 8, 0, 0) }, 0, 8);
         grid.SetColumnSpan(_requests, 2);
-        grid.Controls.Add(_requests, 0, 7);
+        grid.Controls.Add(_requests, 0, 9);
         Controls.Add(grid);
     }
 
@@ -176,6 +217,11 @@ sealed class AgentStatusForm : Form
         _host.Text = snap.Hostname;
         _api.Text = string.IsNullOrEmpty(snap.ApiBase) ? "—" : snap.ApiBase;
         _source.Text = string.IsNullOrEmpty(snap.Source) ? "—" : snap.Source;
+        _jit.Text = snap.JitActive
+            ? "On until " + (snap.JitUntil ?? "expiry") +
+              ". Request Disk Management from the tray to open it on this desktop without signing out."
+            : "Off";
+        _pending.Text = string.IsNullOrEmpty(snap.Pending) ? "—" : snap.Pending;
         _error.Text = string.IsNullOrEmpty(snap.LastError) ? "—" : snap.LastError;
         _requests.BeginUpdate();
         _requests.Items.Clear();

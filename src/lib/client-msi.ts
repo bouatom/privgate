@@ -63,12 +63,16 @@ ${components.join("\n")}
               <RegistryValue Name="EnrollmentToken" Type="string" Value="[ENROLLMENTTOKEN]" />
             </RegistryKey>
           </Component>
+          <Component Id="cmpTray" Guid="c8f3e2a1-9b4d-4e17-8c5a-6d7e8f9a0b1c">
+            <RegistryValue Root="HKLM" Key="SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" Name="PrivGateTray" Type="string" Value="&quot;[INSTALLDIR]PrivGate.Agent.exe&quot;" KeyPath="yes" />
+          </Component>
         </Directory>
       </Directory>
     </Directory>
     <Feature Id="Main" Title="PrivGate Client" Level="1">
 ${refs}
         <ComponentRef Id="cmpReg" />
+        <ComponentRef Id="cmpTray" />
     </Feature>
   </Product>
 </Wix>
