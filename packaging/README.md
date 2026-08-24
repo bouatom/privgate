@@ -37,7 +37,7 @@ The installer prompts for **bind address**, **management web port**, and **clien
 
 ## Upgrade the management console
 
-Install the newer package over the old one. Do not uninstall first.
+Install the newer package over the old one. Do not uninstall first. One command, no manual steps — see [docs/updating.md](../docs/updating.md) for the full procedure, the shipped updater scripts (`update-server.sh` / `.ps1`), and rollback.
 
 | OS | Command |
 | --- | --- |
@@ -47,6 +47,8 @@ Install the newer package over the old one. Do not uninstall first.
 | Linux | `sudo dpkg -i privgate-console_*_amd64.deb` |
 
 What stays: SQLite and `console.env` (secrets, bind, ports) under the platform data directory. The service is stopped, app files and the bundled Node runtime are replaced, then the service starts again.
+
+The stop is graceful: on SIGTERM the console stops accepting requests, closes agent WebSockets with code 1001, and checkpoints/closes SQLite before exit. Installers also stop consoles started by hand — Windows runs `service-ctl.cmd stop-all`, and the macOS preinstall / Linux preinst drain stray `/opt/privgate/bin/node` processes — which is what used to fail updates with "the PrivGate management process is running and cannot be updated". The MSI schedules that stop before file costing, so silent `/qn` updates no longer hit a files-in-use dialog.
 
 What does not stay: files you added by hand under the install prefix (`C:\Program Files\PrivGate`, `/opt/privgate`). Change listen settings after upgrade in `console.env` (or `dpkg-reconfigure privgate-console` on Linux), then restart the service.
 

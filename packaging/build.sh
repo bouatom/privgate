@@ -79,8 +79,15 @@ assemble_app() {
   fi
   copy_if "$ROOT/packaging/listen.cjs" "$dest/listen.cjs"
   copy_if "$ROOT/packaging/listen-config.cjs" "$dest/listen-config.cjs"
+  copy_if "$ROOT/packaging/graceful-shutdown.cjs" "$dest/graceful-shutdown.cjs"
   copy_if "$ROOT/packaging/write-env.cjs" "$dest/write-env.cjs"
   copy_if "$ROOT/packaging/startup-validation.cjs" "$dest/startup-validation.cjs"
+  copy_if "$ROOT/packaging/artifact-check.cjs" "$dest/artifact-check.cjs"
+  copy_if "$ROOT/packaging/health-check.cjs" "$dest/health-check.cjs"
+  if [[ -f "$ROOT/scripts/update-server.sh" ]]; then
+    cp "$ROOT/scripts/update-server.sh" "$dest/update-server.sh"
+    chmod +x "$dest/update-server.sh"
+  fi
 }
 
 smoke_packaged_host() {
@@ -190,6 +197,7 @@ if want windows; then
   cp "$ROOT/packaging/windows/privgate-console.xml" "$STAGE/win/PrivGateConsole.xml"
   copy_if "$ROOT/packaging/windows/service-ctl.cmd" "$STAGE/win/service-ctl.cmd"
   copy_if "$ROOT/packaging/windows/install-service.cmd" "$STAGE/win/install-service.cmd"
+  copy_if "$ROOT/scripts/update-server.ps1" "$STAGE/win/update-server.ps1"
 
   if command -v makensis >/dev/null; then
     log "NSIS EXE"

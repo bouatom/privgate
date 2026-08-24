@@ -8,10 +8,14 @@ import { registerDeviceSocket, publishConsole } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
 import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
+import { registerShutdownHook } from "../lifecycle/shutdown";
 
 const WS_PATH = "/api/agent/ws";
 const patched = globalThis as unknown as { __privgateWsPatched?: boolean };
 const wss = new WebSocketServer({ noServer: true });
+// Live agent sockets so shutdown can send a proper close frame (1001) instead
+// of letting SIGTERM drop the TCP connection mid-flight.
+const openSockets = new Set<WebSocket>();
 
 function pathnameOf(url: string | undefined): string {
   try {
@@ -30,6 +34,15 @@ function header(req: IncomingMessage, name: string): string | null {
 export function attachAgentWebSocket() {
   if (patched.__privgateWsPatched) return;
   patched.__privgateWsPatched = true;
+  registerShutdownHook("agent-websockets", () => {
+    for (const ws of openSockets) {
+      try {
+        ws.close(1001, "server restarting");
+      } catch {
+        // socket already closing
+      }
+    }
+  });
   const orig = http.Server.prototype.emit;
   http.Server.prototype.emit = function patchedEmit(event: string, ...args: unknown[]) {
     if (event === "upgrade") {
@@ -71,6 +84,11 @@ function accept(req: IncomingMessage, ws: WebSocket) {
     ws.close(1008, "origin mismatch");
     return;
   }
+
+  openSockets.add(ws);
+  const forgetSocket = () => openSockets.delete(ws);
+  ws.on("close", forgetSocket);
+  ws.on("error", forgetSocket);
 
   const unregister = registerDeviceSocket(auth.deviceId, {
     send: (data) => {

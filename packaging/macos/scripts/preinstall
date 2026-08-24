@@ -4,6 +4,22 @@ set -euo pipefail
 if [[ -f /Library/LaunchDaemons/com.privgate.console.plist ]]; then
   launchctl bootout system/com.privgate.console 2>/dev/null || true
 fi
+
+# A console started by hand (node host.cjs) is not managed by launchd. Ask it
+# to drain gracefully (SIGTERM) and wait briefly; force only as a last resort.
+PIDS="$(pgrep -f '/opt/privgate/bin/node /opt/privgate/host.cjs' 2>/dev/null || true)"
+if [[ -n "$PIDS" ]]; then
+  kill -TERM $PIDS 2>/dev/null || true
+  for _ in $(seq 1 16); do
+    pgrep -f '/opt/privgate/bin/node /opt/privgate/host.cjs' >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  if pgrep -f '/opt/privgate/bin/node /opt/privgate/host.cjs' >/dev/null 2>&1; then
+    kill -KILL $PIDS 2>/dev/null || true
+    sleep 1
+  fi
+fi
+
 # Fresh install (no previous binaries): drop leftover Application Support data.
 if [[ ! -f /opt/privgate/host.cjs ]]; then
   rm -rf "/Library/Application Support/PrivGate"

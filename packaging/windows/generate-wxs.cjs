@@ -78,8 +78,10 @@ const refs = componentRefs.map((id) => `        <ComponentRef Id="${id}" />`).jo
 
 const startAction = serviceCtlFileId
   ? `
+    <CustomAction Id="StopPrivGateStray" FileKey="${serviceCtlFileId}" ExeCommand="stop-all" Execute="immediate" Impersonate="no" Return="ignore" />
     <CustomAction Id="StartPrivGate" FileKey="${serviceCtlFileId}" ExeCommand="start" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
+      <Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE</Custom>
       <Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE</Custom>
     </InstallExecuteSequence>`
   : "";

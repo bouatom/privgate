@@ -149,6 +149,14 @@ Function StopExistingService
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" stop'
   Sleep 1500
 stop_done:
+  ; A console started by hand (node.exe host.cjs) locks node.exe and the
+  ; .next payload, which is what produces "the management process is running
+  ; and cannot be updated". service-ctl.cmd stop-all also stops the service,
+  ; then terminates any node.exe running from $INSTDIR.
+  IfFileExists "$INSTDIR\service-ctl.cmd" 0 stop_done2
+    nsExec::ExecToLog '"$INSTDIR\service-ctl.cmd" stop-all'
+    Sleep 1500
+stop_done2:
 FunctionEnd
 
 Section "Install"

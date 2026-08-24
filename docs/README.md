@@ -24,7 +24,7 @@ The process binds **all interfaces** by default (`PRIVGATE_BIND=0.0.0.0`): manag
 
 If a Windows MSI does not start the service, run `install-service.cmd` from `C:\Program Files\PrivGate`.
 
-To upgrade, install the newer EXE, MSI, pkg, or deb over the existing copy. Do not uninstall first. Data and `console.env` stay; the service restarts. Details: [packaging/README.md](../packaging/README.md#upgrade-the-management-console).
+To upgrade, install the newer EXE, MSI, pkg, or deb over the existing copy. Do not uninstall first. Data and `console.env` stay; the service restarts. The console drains gracefully on SIGTERM (agent WebSockets get a close frame, SQLite is checkpointed), so no manual process juggling is needed. Details: [updating the management console](updating.md) and [packaging/README.md](../packaging/README.md#upgrade-the-management-console).
 
 ## 2. Sign in and roles
 

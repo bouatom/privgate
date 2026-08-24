@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { consumeBootstrap } from "../bootstrap";
 import { applyFactoryResetIfNeeded } from "../first-run";
+import { registerShutdownHook } from "../lifecycle/shutdown";
 import { migrate } from "./schema";
 import { purgeDemoFixtures, seedDemo } from "./seed";
 
@@ -39,6 +40,16 @@ export function getDb(): DatabaseSync {
   purgeDemoFixtures(db);
   applyFactoryResetIfNeeded(db);
   consumeBootstrap(db);
+  // SIGTERM path: checkpoint + close the WAL before package managers swap files.
+  registerShutdownHook("database", () => {
+    try {
+      db.close();
+    } catch {
+      // already closed
+    }
+    globalDb.__privgateDb = undefined;
+    globalDb.__privgateDbPath = undefined;
+  });
   globalDb.__privgateDb = db;
   globalDb.__privgateDbPath = target;
   return db;

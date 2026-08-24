@@ -5,6 +5,7 @@ const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { displayHost, isLoopbackBind, parseListen } = require("./listen-config.cjs");
+const { installGracefulShutdown } = require("./graceful-shutdown.cjs");
 
 function appDir() {
   if (process.env.PRIVGATE_APP_DIR) return process.env.PRIVGATE_APP_DIR;
@@ -104,39 +105,50 @@ async function main() {
   }
 
   const web = http.createServer(attach("web"));
-  await listen(web, cfg.webPort, cfg.bind);
+  try {
+    await listen(web, cfg.webPort, cfg.bind);
 
-  const handlers = await getRequestHandlers({
-    dir,
-    port: cfg.webPort,
-    isDev: false,
-    server: web,
-    hostname: cfg.bind,
-  });
-  requestHandler = handlers.requestHandler;
-  if (typeof handlers.upgradeHandler === "function") {
-    web.on("upgrade", (req, socket, head) => {
-      void handlers.upgradeHandler(req, socket, head);
+    const handlers = await getRequestHandlers({
+      dir,
+      port: cfg.webPort,
+      isDev: false,
+      server: web,
+      hostname: cfg.bind,
     });
-  }
-
-  console.log(`PrivGate console  http://${displayHost(cfg.bind)}:${cfg.webPort}/`);
-
-  if (cfg.splitPorts) {
-    const agent = http.createServer(attach("agent"));
-    await listen(agent, cfg.agentPort, cfg.bind);
+    requestHandler = handlers.requestHandler;
     if (typeof handlers.upgradeHandler === "function") {
-      agent.on("upgrade", (req, socket, head) => {
-        if (!agentOnly(req)) {
-          socket.destroy();
-          return;
-        }
+      web.on("upgrade", (req, socket, head) => {
         void handlers.upgradeHandler(req, socket, head);
       });
     }
-    console.log(`PrivGate agents   http://${displayHost(cfg.bind)}:${cfg.agentPort}/api/agent/`);
-  } else {
-    console.log("PrivGate agents share the console port");
+
+    console.log(`PrivGate console  http://${displayHost(cfg.bind)}:${cfg.webPort}/`);
+
+    const servers = [web];
+    if (cfg.splitPorts) {
+      const agent = http.createServer(attach("agent"));
+      await listen(agent, cfg.agentPort, cfg.bind);
+      if (typeof handlers.upgradeHandler === "function") {
+        agent.on("upgrade", (req, socket, head) => {
+          if (!agentOnly(req)) {
+            socket.destroy();
+            return;
+          }
+          void handlers.upgradeHandler(req, socket, head);
+        });
+      }
+      console.log(`PrivGate agents   http://${displayHost(cfg.bind)}:${cfg.agentPort}/api/agent/`);
+      servers.push(agent);
+    } else {
+      console.log("PrivGate agents share the console port");
+    }
+
+    // SIGTERM/SIGINT (launchd, systemd, updaters): stop accepting, close agent
+    // WebSockets and the database, drain in-flight responses, then exit.
+    installGracefulShutdown({ serverList: servers, log: console });
+  } catch (err) {
+    web.close();
+    throw err;
   }
 
   if (!isLoopbackBind(cfg.bind)) {

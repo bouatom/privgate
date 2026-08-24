@@ -33,6 +33,10 @@ describe("generate-wxs upgrade metadata", () => {
     expect(xml).toContain('Name="PrivGateConsole"');
     expect(xml).toContain('Stop="both"');
     expect(xml).toContain('Id="StartPrivGate"');
+    // Stray hand-started consoles must be stopped before MSI costs files, or
+    // msiexec raises FilesInUse and silent updates fail.
+    expect(xml).toContain('Id="StopPrivGateStray"');
+    expect(xml).toMatch(/<Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE<\/Custom>/);
     expect(xml).toContain("MajorUpgrade");
   });
 });
