@@ -22,16 +22,16 @@ afterEach(() => {
 });
 
 describe("requestAgentUpdate", () => {
-  it("rejects unknown devices and offline devices", () => {
+  it("rejects unknown devices and queues offline ones", () => {
     const db = resetDbForTests(":memory:");
     expect(requestAgentUpdate(db, "no-such-device", "ada@contoso.test")).toMatchObject({
       ok: false,
       status: 404,
     });
+    // Offline devices no longer 409 — the update is queued for their next check-in.
     expect(requestAgentUpdate(db, device, "ada@contoso.test")).toMatchObject({
-      ok: false,
-      status: 409,
-      error: "device offline",
+      ok: true,
+      queued: true,
     });
   });
 

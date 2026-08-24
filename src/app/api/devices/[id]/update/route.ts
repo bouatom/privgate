@@ -11,5 +11,5 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  return NextResponse.json({ ok: true, version: result.version });
+  return NextResponse.json({ ok: true, version: result.version, queued: Boolean(result.queued) });
 }

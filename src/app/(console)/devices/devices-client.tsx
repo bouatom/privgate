@@ -3,7 +3,10 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Policy } from "@/lib/policy";
+import { formatWhenShort } from "@/lib/format";
 import { DeviceDetail, type DeviceDetailModel } from "./device-detail";
+import { DeployPanel } from "./deploy-panel";
+import type { Method } from "./device-methods";
 
 type DeviceSummary = {
   id: string;
@@ -14,10 +17,16 @@ type DeviceSummary = {
   lastEventAt: string | null;
   lastAction: string | null;
   agentVersion: string;
+  lastSeenAt: string | null;
+  updateRequestedAt: string | null;
   online: boolean;
 };
 
-type Method = "msi" | "script";
+type BulkSummary = {
+  pushed: number;
+  queued?: Array<{ deviceId: string; version: string }>;
+  skipped?: Array<{ deviceId: string; reason: string }>;
+};
 
 function isNewer(candidate: string, installed: string): boolean {
   const parse = (v: string) =>
@@ -28,6 +37,12 @@ function isNewer(candidate: string, installed: string): boolean {
     if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
   }
   return false;
+}
+
+function lastSeenLabel(device: DeviceSummary): string {
+  if (device.online) return "connected now";
+  if (!device.lastSeenAt) return "never seen";
+  return `last seen ${formatWhenShort(device.lastSeenAt)}`;
 }
 
 export function DevicesClient({
@@ -59,6 +74,8 @@ export function DevicesClient({
   const [, startTransition] = useTransition();
   const [method, setMethod] = useState<Method>(msiReady ? "msi" : "script");
   const [error, setError] = useState("");
+  const [bulkMessage, setBulkMessage] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [updating, setUpdating] = useState("");
 
   const selectedDevice = useMemo(() => devices.find((d) => d.id === selected), [devices, selected]);
@@ -69,6 +86,7 @@ export function DevicesClient({
 
   async function pushUpdate(deviceId: string, hostname: string) {
     setError("");
+    setBulkMessage("");
     setUpdating(deviceId);
     try {
       const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/update`, { method: "POST" });
@@ -77,9 +95,37 @@ export function DevicesClient({
         setError(`${hostname}: ${body.error || `update failed (${res.status})`}`);
         return;
       }
+      const body = (await res.json().catch(() => ({}))) as { queued?: boolean };
+      if (body.queued) setBulkMessage(`${hostname} is offline — update queued for its next check-in.`);
       startTransition(() => router.refresh());
     } finally {
       setUpdating("");
+    }
+  }
+
+  async function pushAllStale() {
+    setError("");
+    setBulkMessage("");
+    setBulkBusy(true);
+    try {
+      const res = await fetch("/api/devices/update-bulk", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ allStale: true }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(body.error || `bulk update failed (${res.status})`);
+        return;
+      }
+      const body = (await res.json()) as BulkSummary;
+      const parts = [`${body.pushed} pushed`];
+      if (body.queued?.length) parts.push(`${body.queued.length} queued`);
+      if (body.skipped?.length) parts.push(`${body.skipped.length} skipped`);
+      setBulkMessage(parts.join(", "));
+      startTransition(() => router.refresh());
+    } finally {
+      setBulkBusy(false);
     }
   }
 
@@ -109,77 +155,26 @@ export function DevicesClient({
         </div>
       </div>
 
-      <section className="panel stack" style={{ padding: 18, marginBottom: 16 }}>
-        <strong>Deploy the Windows client</strong>
-        <p className="lede" style={{ fontSize: 13 }}>
-          Choose one file. The management console address is already in it. You do not enroll names in advance,
-          and you do not pick a join type.
-        </p>
-        <div className="choice-grid">
-          <button
-            type="button"
-            className={method === "msi" ? "choice selected" : "choice"}
-            aria-pressed={method === "msi"}
-            disabled={!canInstall || !msiReady}
-            onClick={() => setMethod("msi")}
-          >
-            <span className="k">Windows Installer</span>
-            <h2>MSI</h2>
-            <p>
-              {msiReady
-                ? "Intune, SCCM, NinjaOne, Group Policy, or a double-click on the PC. One branded .msi — not a zip."
-                : "Not on this console. Reinstall the management console from GitHub Releases so the client MSI is included, or use the deployment script."}
-            </p>
-          </button>
-          <button
-            type="button"
-            className={method === "script" ? "choice selected" : "choice"}
-            aria-pressed={method === "script"}
-            disabled={!canInstall}
-            onClick={() => setMethod("script")}
-          >
-            <span className="k">PowerShell</span>
-            <h2>Deployment script</h2>
-            <p>
-              Imaging, psexec, or a scheduled task. One <span className="mono">.ps1</span> file — not a zip.
-              After install, <strong>PrivGate Client</strong> appears in Apps &amp; Features.
-            </p>
-          </button>
-        </div>
-        <p className="lede deploy-url">
-          This installer will call <span className="mono">{consoleUrl}</span>
-          {" "}(Configuration → Network). Download it from the same console you will enroll against.
-        </p>
-        {method === "msi" && msiReady ? (
-          <p className="lede" style={{ fontSize: 13 }}>
-            Silent install for Intune / SCCM / NinjaOne:{" "}
-            <span className="mono">msiexec /i PrivGate-Client.msi /qn /norestart</span>
-            . Uninstall from Apps &amp; Features or{" "}
-            <span className="mono">msiexec /x {"{ProductCode}"} /qn</span>.
-          </p>
-        ) : null}
-        {method === "script" ? (
-          <p className="lede" style={{ fontSize: 13 }}>
-            After install, uninstall from Apps &amp; Features (<span className="mono">PrivGate Client</span>
-            ) or elevated{" "}
-            <span className="mono">C:\Program Files\PrivGate\Uninstall-PrivGate.ps1</span>. Scripts
-            downloaded before this change have no Apps entry — use the commands in the Windows VM lab doc.
-          </p>
-        ) : null}
-        {error ? <p className="err">{error}</p> : null}
-        <div className="row-actions">
-          {canInstall ? (
-            <button className="primary" type="button" onClick={download}>
-              {method === "msi" ? "Download MSI" : "Download deployment script"}
-            </button>
-          ) : (
-            <p className="lede" style={{ fontSize: 12 }}>Policy admins can download the Windows client.</p>
-          )}
-        </div>
-      </section>
+      <DeployPanel
+        method={method}
+        onMethod={setMethod}
+        canInstall={canInstall}
+        msiReady={msiReady}
+        consoleUrl={consoleUrl}
+        error={error}
+        onDownload={download}
+      />
 
       <div className="device-layout">
         <div className="panel" style={{ padding: 0 }}>
+          {canUpdate ? (
+            <div className="row-actions" style={{ padding: 12 }}>
+              <button className="ghost" type="button" disabled={bulkBusy} onClick={() => void pushAllStale()}>
+                {bulkBusy ? "Pushing…" : "Update all stale"}
+              </button>
+              {bulkMessage ? <span className="lede">{bulkMessage}</span> : null}
+            </div>
+          ) : null}
           <table>
             <thead>
               <tr>
@@ -192,7 +187,9 @@ export function DevicesClient({
               {devices.length ? (
                 devices.map((d) => {
                   const pending = d.agentVersion.includes("+pending");
-                  const stale = !pending && isNewer(currentVersion, d.agentVersion);
+                  const failed = !pending && d.agentVersion.includes("+stale");
+                  const queued = !pending && Boolean(d.updateRequestedAt);
+                  const stale = !pending && !failed && isNewer(currentVersion, d.agentVersion);
                   return (
                     <tr
                       key={d.id}
@@ -204,14 +201,23 @@ export function DevicesClient({
                           {d.hostname}{" "}
                           {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}
                         </div>
+                        <div className="mono">{lastSeenLabel(d)}</div>
                       </td>
                       <td>
                         {d.agentVersion ? (
                           <>
-                            <span className={`pill ${stale ? "pending" : "active"}`}>
-                              {pending ? "updating…" : stale ? `v${d.agentVersion} → ${currentVersion}` : `v${d.agentVersion}`}
+                            <span className={`pill ${stale || failed ? "pending" : "active"}`}>
+                              {pending
+                                ? "updating…"
+                                : failed
+                                  ? "update failed?"
+                                  : queued
+                                    ? "update queued"
+                                    : stale
+                                      ? `v${d.agentVersion} → ${currentVersion}`
+                                      : `v${d.agentVersion}`}
                             </span>
-                            {canUpdate && d.online && stale ? (
+                            {canUpdate && stale ? (
                               <button
                                 type="button"
                                 className="ghost"

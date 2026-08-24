@@ -1,7 +1,7 @@
 import "server-only";
 import { getDb, getJit, findUserBySid, activeJit, revokeJit } from "../db";
 import { evaluateForDevice, type EvaluateBody } from "../evaluate";
-import { setDeviceAgentVersion } from "../db/devices";
+import { reconcileReportedVersion } from "../agent-update";
 import { insertRequest } from "../db/requests";
 import { appendAudit } from "../db/audit";
 import { expireDueGrants } from "../db/jit";
@@ -65,7 +65,7 @@ export function handleAgentRpc(
     if (!version || !/^[\w.\-+]{1,64}$/.test(version)) {
       return { id: message.id, type: "result", ok: false, error: "invalid version" };
     }
-    setDeviceAgentVersion(getDb(), deviceId, version);
+    reconcileReportedVersion(getDb(), deviceId, version);
     return { id: message.id, type: "result", ok: true, payload: { version } };
   }
   if (message.type === "uac-canceled") {
