@@ -98,6 +98,29 @@ static class Ui
 
     static Color Hex(string html)
     {
-        return ColorTranslator.FromHtml(html);
+        // Manual parse instead of ColorTranslator.FromHtml: a throwing static
+        // initializer would poison every later Ui.* call for the life of the
+        // process (TypeInitializationException), which reads as "no GUI".
+        var value = html.TrimStart('#');
+        if (value.Length == 6 && TryParseHex(value, out var rgb))
+        {
+            return Color.FromArgb((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+        }
+        return SystemColors.Control;
+    }
+
+    static bool TryParseHex(string text, out int rgb)
+    {
+        rgb = 0;
+        foreach (var c in text)
+        {
+            var digit = c >= '0' && c <= '9' ? c - '0'
+                : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                : c >= 'A' && c <= 'F' ? c - 'A' + 10
+                : -1;
+            if (digit < 0) return false;
+            rgb = (rgb << 4) | digit;
+        }
+        return true;
     }
 }

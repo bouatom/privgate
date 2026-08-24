@@ -18,6 +18,23 @@ static class ElevationPrompt
     internal static void TickConsent()
     {
         if (_busy || _promptOpen) return;
+        try
+        {
+            RunTick();
+        }
+        catch (Exception ex)
+        {
+            // One bad tick (process enumeration hiccup, dialog construction,
+            // themed-paint failure) must not end consent watching: log, reset
+            // the open-dialog guard, let the next tick retry.
+            _promptOpen = false;
+            _pendingTarget = "";
+            BrokerLog.Write("uac watch tick failed: " + ex);
+        }
+    }
+
+    static void RunTick()
+    {
         ForegroundTracker.Start();
         var mine = Process.GetCurrentProcess().SessionId;
         var pids = new List<int>();

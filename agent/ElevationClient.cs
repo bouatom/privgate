@@ -10,7 +10,8 @@ static class ElevationClient
 {
     /// <summary>
     /// Best-effort report that the stock UAC prompt closed without approving.
-    /// Fire-and-forget: never blocks the UI and silently ignores an offline broker.
+    /// Fire-and-forget: never blocks the UI. Failures are logged (they used to
+    /// be swallowed whole, which left zero evidence when the broker was down).
     /// </summary>
     internal static void ReportCanceled(string filePath)
     {
@@ -24,19 +25,50 @@ static class ElevationClient
                     filePath = filePath ?? "",
                     userSid = WindowsIdentity.GetCurrent().User?.Value ?? "",
                 });
-                using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
-                pipe.Connect(2000);
-                using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
-                using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-                writer.WriteLine(payload);
-                pipe.ReadTimeout = 5000;
-                reader.ReadLine();
+                PostOneWay(payload);
             }
-            catch
+            catch (Exception ex)
             {
-                // Telemetry only; nothing to recover.
+                BrokerLog.Write("uac-canceled report failed: " + ex.Message);
             }
         });
+    }
+
+    /// <summary>
+    /// Periodic proof of life from the interactive GUI over the broker pipe.
+    /// Fire-and-forget like ReportCanceled; while the broker is offline beats
+    /// simply fail and the console's last beat ages out naturally.
+    /// </summary>
+    internal static void SendHeartbeat(int uptimeSec)
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                var payload = JsonSerializer.Serialize(new
+                {
+                    mode = "ui-heartbeat",
+                    uptimeSec,
+                    pid = Process.GetCurrentProcess().Id,
+                });
+                PostOneWay(payload);
+            }
+            catch (Exception ex)
+            {
+                BrokerLog.Write("ui-heartbeat failed: " + ex.Message);
+            }
+        });
+    }
+
+    static void PostOneWay(string payload)
+    {
+        using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
+        pipe.Connect(2000);
+        using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
+        writer.WriteLine(payload);
+        pipe.ReadTimeout = 5000;
+        reader.ReadLine();
     }
 
     internal static string Request(string path, int timeoutMs = 16 * 60 * 1000)

@@ -37,6 +37,7 @@ sealed class AgentTrayContext : ApplicationContext
         _timer.Tick += (_, _) => Refresh();
         _timer.Start();
         Refresh();
+        Heartbeat.Start();
         if (_seenNotice == 0)
         {
             Balloon(
@@ -103,6 +104,20 @@ sealed class AgentTrayContext : ApplicationContext
 
     void Refresh()
     {
+        // Runs every 1.5s on the UI thread. Any throw here used to escape into
+        // the message loop and could end the tray (no icon, no consent watch).
+        try
+        {
+            RefreshBody();
+        }
+        catch (Exception ex)
+        {
+            BrokerLog.Write("tray refresh failed: " + ex);
+        }
+    }
+
+    void RefreshBody()
+    {
         StatusSnapshot snap;
         if (_ownsBroker)
         {
@@ -136,10 +151,16 @@ sealed class AgentTrayContext : ApplicationContext
         try
         {
             using var sc = new ServiceController(BrokerService.Name);
-            return sc.Status == ServiceControllerStatus.Running;
+            // Anything not clearly stopped (including StartPending during the
+            // logon race) may own the pipe within seconds. Deciding "not
+            // running" then hosting a second in-process broker makes both lose:
+            // the second NamedPipeServerStream collides on the pipe name and
+            // dies inside an unobserved task. Prefer deferring to the service.
+            return sc.Status != ServiceControllerStatus.Stopped;
         }
         catch
         {
+            // Not installed (or SCM unreachable): the tray hosts the broker.
             return false;
         }
     }
@@ -150,6 +171,7 @@ sealed class AgentTrayContext : ApplicationContext
         _icon.Visible = false;
         _icon.Dispose();
         _form.Dispose();
+        Heartbeat.Stop();
         if (_ownsBroker) _cts.Cancel();
         _cts.Dispose();
         base.ExitThreadCore();

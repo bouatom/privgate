@@ -8,6 +8,11 @@ static class BrokerLog
     const long MaxBytes = 10 * 1024 * 1024;
     const int KeepBackups = 8;
 
+    // Write is called from the UI thread, named-pipe handlers, realtime tasks
+    // and crash handlers. Rotation plus append must not interleave or two
+    // threads can both rotate (File.Move races) while a third appends.
+    static readonly object Gate = new object();
+
     internal static string Path { get; } = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "PrivGate",
@@ -18,10 +23,13 @@ static class BrokerLog
         var line = $"{DateTimeOffset.Now:o} {message}";
         try
         {
-            var dir = System.IO.Path.GetDirectoryName(Path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            RotateIfNeeded();
-            File.AppendAllText(Path, line + Environment.NewLine);
+            lock (Gate)
+            {
+                var dir = System.IO.Path.GetDirectoryName(Path);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                RotateIfNeeded();
+                File.AppendAllText(Path, line + Environment.NewLine);
+            }
         }
         catch
         {
@@ -155,6 +163,33 @@ sealed class BrokerHost
                 userSid,
                 _ct);
             return JsonSerializer.Serialize(new { ok = true });
+        }
+        if (mode == "ui-heartbeat")
+        {
+            // Interactive-GUI liveness from the tray. Validate before it ever
+            // reaches the websocket; a bad beat is rejected, never forwarded.
+            var uptime = msg.TryGetProperty("uptimeSec", out var upEl) && upEl.TryGetInt32(out var up)
+                ? up
+                : -1;
+            var pid = msg.TryGetProperty("pid", out var pidEl) && pidEl.TryGetInt32(out var parsedPid)
+                ? parsedPid
+                : 0;
+            if (uptime < 0 || pid <= 0)
+            {
+                return JsonSerializer.Serialize(new { ok = false, error = "uptimeSec/pid invalid" });
+            }
+            var delivered = true;
+            try
+            {
+                await _api.ReportClientStatusAsync(uptime, pid, _ct);
+            }
+            catch (Exception)
+            {
+                // Offline console: stay quiet per-beat so broker.log does not
+                // fill with one line a minute, but tell the tray it did not land.
+                delivered = false;
+            }
+            return JsonSerializer.Serialize(new { ok = true, delivered });
         }
 
         var filePath = msg.GetProperty("filePath").GetString() ?? "";

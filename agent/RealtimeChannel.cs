@@ -118,6 +118,19 @@ public sealed class RealtimeChannel : IDisposable
         return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-expired", ["grantId"] = grantId }, ct);
     }
 
+    /// <summary>Forwards the interactive GUI liveness beat to the control plane.</summary>
+    public Task<JsonElement> ClientStatusAsync(int uptimeSec, int pid, CancellationToken ct)
+    {
+        return RpcAsync(
+            new Dictionary<string, object?>
+            {
+                ["type"] = "client-status",
+                ["uptimeSec"] = uptimeSec,
+                ["pid"] = pid,
+            },
+            ct);
+    }
+
     async Task ConnectAsync(CancellationToken ct)
     {
         var ws = new ClientWebSocket();

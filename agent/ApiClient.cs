@@ -64,6 +64,23 @@ public sealed class ApiClient
     }
 
     /// <summary>
+    /// Forwards the interactive GUI heartbeat. Realtime only: when the
+    /// websocket is down the beat is dropped (the next one lands in ≤60s).
+    /// </summary>
+    public async Task<JsonElement> ReportClientStatusAsync(int uptimeSec, int pid, CancellationToken ct = default)
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try
+            {
+                return await realtime.ClientStatusAsync(uptimeSec, pid, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime client-status: {ex.Message}"); }
+        }
+        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+    }
+
+    /// <summary>
     /// Reports that the local JIT watchdog revoked an elapsed window. Realtime
     /// only: if offline, the server's expiry sweep reconciles the row instead.
     /// </summary>
