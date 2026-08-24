@@ -52,6 +52,18 @@ html[data-theme="light"] {
 
 * { box-sizing: border-box; }
 
+/* Keyboard focus ring — tokenized so it tracks the amber accent in both themes. */
+:root {
+  --focus-ring-color: var(--amber);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 html, body {
   margin: 0;
   min-height: 100%;
@@ -374,6 +386,7 @@ button.choice.selected {
 .deploy-url { font-size: 13px; }
 tr.device-row { cursor: pointer; }
 tr.device-row.selected td { background: var(--nav-active); }
+tr.queue-row.focused td { background: var(--nav-active); }
 .section-title {
   margin: 0 0 8px;
   font-size: 16px;

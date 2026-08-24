@@ -1,9 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { displayPath, formatWhenShort } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
+import { isEditableTarget, queueKeyAction } from "@/lib/keymap";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 
 export type RequestRow = {
@@ -49,7 +50,9 @@ export function RequestsClient({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"pending" | "blocked" | "all">("pending");
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
 
   async function act(id: string, action: "approve" | "deny", row: RequestRow) {
     if (action === "approve" && (row.riskLevel === "high" || row.riskLevel === "critical")) {
@@ -81,6 +84,37 @@ export function RequestsClient({
       : filter === "blocked"
         ? rows.filter((r) => r.status === "pending" || r.status === "denied" || r.status === "canceled")
         : rows;
+
+  // Focused row: sticky while visible, otherwise defaults to the first pending row (or first row).
+  const fallbackId = shown.find((r) => r.status === "pending")?.id ?? shown[0]?.id ?? null;
+  const focusedRowId = focusedId && shown.some((r) => r.id === focusedId) ? focusedId : fallbackId;
+  const focusedIndex = Math.max(0, shown.findIndex((r) => r.id === focusedRowId));
+
+  function moveFocus(delta: number) {
+    if (!shown.length) return;
+    const next = shown[Math.min(shown.length - 1, Math.max(0, focusedIndex + delta))];
+    if (!next) return;
+    setFocusedId(next.id);
+    rowRefs.current.get(next.id)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function decideFocused(action: "approve" | "deny") {
+    const row = shown[focusedIndex];
+    if (!row || row.status !== "pending") return;
+    if (action === "approve" && !canApprove) return;
+    if (action === "deny" && !canDeny) return;
+    void act(row.id, action, row);
+  }
+
+  function onQueueKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (isEditableTarget(event.target)) return;
+    const action = queueKeyAction(event);
+    if (!action) return;
+    event.preventDefault();
+    if (action === "next") moveFocus(1);
+    else if (action === "prev") moveFocus(-1);
+    else decideFocused(action);
+  }
 
   return (
     <>
@@ -121,7 +155,10 @@ export function RequestsClient({
         </button>
       </div>
       {error ? <p className="err" style={{ marginBottom: 12 }}>{error}</p> : null}
-      <div className="panel">
+      <p className="lede" style={{ fontSize: 12, margin: "0 0 12px" }}>
+        Keyboard: j/k navigate · a approve · d deny
+      </p>
+      <div className="panel" role="region" aria-label="Elevation request queue" tabIndex={0} onKeyDown={onQueueKeyDown}>
         <table>
           <thead>
             <tr>
@@ -136,7 +173,14 @@ export function RequestsClient({
           <tbody>
             {shown.length ? (
               shown.map((row) => (
-                <tr key={row.id}>
+                <tr
+                  key={row.id}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(row.id, el);
+                    else rowRefs.current.delete(row.id);
+                  }}
+                  className={`queue-row ${row.id === focusedRowId ? "focused" : ""}`}
+                >
                   <td><span className={`pill ${row.status}`}>{row.status}</span></td>
                   <td>
                     <div>{formatWhenShort(row.requestedAt)}</div>
