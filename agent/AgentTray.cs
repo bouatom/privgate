@@ -41,7 +41,7 @@ sealed class AgentTrayContext : ApplicationContext
         {
             Balloon(
                 "PrivGate is running",
-                "Look for the shield near the clock. Right-click it to elevate a program or see JIT and approval status.");
+                "Look for the shield near the clock. Right-click it to submit a request or see JIT and approval status.");
         }
     }
 
@@ -198,7 +198,7 @@ sealed class AgentStatusForm : Form
         AddRow(grid, 3, "Console", _api);
         AddRow(grid, 4, "Source", _source);
         AddRow(grid, 5, "JIT admin", _jit);
-        AddRow(grid, 6, "Approval", _pending);
+        AddRow(grid, 6, "Pending request", _pending);
         AddRow(grid, 7, "Last error", _error);
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         grid.Controls.Add(new Label { Text = "Requests", AutoSize = true, Padding = new Padding(0, 8, 0, 0) }, 0, 8);
@@ -229,7 +229,7 @@ sealed class AgentStatusForm : Form
         {
             _requests.Items.Add($"{row.At}  {row.Decision,-8}  {row.Path}");
         }
-        if (_requests.Items.Count == 0) _requests.Items.Add("No elevation requests yet.");
+        if (_requests.Items.Count == 0) _requests.Items.Add("No requests yet.");
         _requests.EndUpdate();
     }
 

@@ -184,14 +184,14 @@ public sealed class RealtimeChannel : IDisposable
         if (type == "ticket")
         {
             BrokerStatus.Current.NotePending("");
-            BrokerStatus.Current.NoteNotice("Elevation approved", "The request was approved.");
+            BrokerStatus.Current.NoteNotice("Request approved", "The request was approved.");
             CompleteTicket(msg, allow: true);
             return;
         }
         if (type == "request-denied")
         {
             BrokerStatus.Current.NotePending("");
-            BrokerStatus.Current.NoteNotice("Elevation denied", "The request was denied.");
+            BrokerStatus.Current.NoteNotice("Request denied", "The request was denied.");
             CompleteTicket(msg, allow: false);
             return;
         }

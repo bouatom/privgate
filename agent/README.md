@@ -63,6 +63,36 @@ the device it is running on and the file it was asked to launch. `appsettings.js
 still holds secrets that a local admin can read — see the residual-risk section of
 [docs/threat-model.md](../docs/threat-model.md).
 
+## Logs and status (troubleshooting runbook)
+
+**Log file:** `%ProgramData%\PrivGate\broker.log` — one line per event, ISO-8601
+timestamp first. The broker rotates it at 10 MB into `broker.log.1` …
+`broker.log.8` (oldest dropped), so the live file plus `.1` covers roughly the
+recent past; go deeper for older incidents.
+
+Ways to open it:
+
+* Tray shield (near the clock) → right-click → **Open log**.
+* Or directly: `notepad %ProgramData%\PrivGate\broker.log`.
+* The same menu's **Status** entry shows the live pipe state, last evaluate,
+  JIT window, and service status without reading the file at all.
+
+Reading tips:
+
+* Filter by the device or user first: lines carry the requesting user and the
+  program path verbatim.
+* An elevation attempt produces a hash/publisher line, then an
+  allow / deny / pending line. **Pending** means the console was reachable and
+  an operator still has to decide — if nothing happens, look at the console's
+  request queue, not this log.
+* `socket` / reconnect lines: repeated reconnects usually mean the console is
+  down, the port (default 3001) is blocked, or HMAC verification is failing
+  after a key rotation — re-download the installer in that case.
+* JIT entries log both the `net localgroup` add and the expiry task
+  registration; a revoke pushed from the console appears immediately.
+* UAC-cancel offers appear only after `consent.exe` exits — a missing offer
+  right after cancel is normal; wait a second.
+
 ## Build
 
 ```bat

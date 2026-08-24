@@ -4,6 +4,10 @@ namespace PrivGate.Agent;
 
 static class BrokerLog
 {
+    // Mirrors the console service config spirit: 10 MB files, keep 8 rotated copies.
+    const long MaxBytes = 10 * 1024 * 1024;
+    const int KeepBackups = 8;
+
     internal static string Path { get; } = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         "PrivGate",
@@ -16,6 +20,7 @@ static class BrokerLog
         {
             var dir = System.IO.Path.GetDirectoryName(Path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            RotateIfNeeded();
             File.AppendAllText(Path, line + Environment.NewLine);
         }
         catch
@@ -23,6 +28,33 @@ static class BrokerLog
             // Never fail the broker because the log file is locked.
         }
         Console.Error.WriteLine(line);
+    }
+
+    /// <summary>
+    /// Shift broker.log → .1 → … → .8 once the live file passes MaxBytes,
+    /// dropping the oldest copy. Best-effort: any failure just means the
+    /// append below continues into an oversized file.
+    /// </summary>
+    static void RotateIfNeeded()
+    {
+        try
+        {
+            if (!File.Exists(Path)) return;
+            if (new FileInfo(Path).Length < MaxBytes) return;
+            var oldest = Path + "." + KeepBackups;
+            if (File.Exists(oldest)) File.Delete(oldest);
+            for (var i = KeepBackups - 1; i >= 1; i--)
+            {
+                var src = Path + "." + i;
+                if (!File.Exists(src)) continue;
+                File.Move(src, Path + "." + (i + 1));
+            }
+            File.Move(Path, Path + ".1");
+        }
+        catch
+        {
+            // Rotation must never break logging or the caller.
+        }
     }
 }
 
@@ -151,7 +183,11 @@ sealed class BrokerHost
         }, _ct);
 
         var decision = result.GetProperty("decision").GetString();
+        var requestId = result.TryGetProperty("requestId", out var reqIdEl) && reqIdEl.ValueKind == JsonValueKind.String
+            ? reqIdEl.GetString()
+            : null;
         BrokerStatus.Current.NoteRequest(filePath, decision ?? "unknown");
+        BrokerLog.Write($"decision={decision} requestId={requestId ?? "-"} file={filePath}");
         if (decision == "allow")
         {
             var ticket = result.GetProperty("ticket").GetString() ?? "";
@@ -206,7 +242,7 @@ sealed class BrokerHost
         else if (decision == "deny")
         {
             BrokerStatus.Current.NotePending("");
-            BrokerStatus.Current.NoteNotice("Elevation denied", "The request was denied.");
+            BrokerStatus.Current.NoteNotice("Request denied", "The request was denied.");
         }
         return result.GetRawText();
     }

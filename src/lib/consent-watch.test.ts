@@ -38,6 +38,6 @@ describe("UAC consent watch", () => {
     const prompt = readFileSync(join(__dirname, "../../agent/ElevationPrompt.cs"), "utf8");
     expect(prompt).toContain("TickConsent");
     expect(prompt).toContain("Watch.ShouldPrompt");
-    expect(prompt).toContain("If you cancelled it");
+    expect(prompt).toContain("Which program did you try to open?");
   });
 });

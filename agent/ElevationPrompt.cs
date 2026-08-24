@@ -84,17 +84,40 @@ static class ElevationPrompt
             return;
         }
 
-        var choice = MessageBox.Show(
-            "The Windows administrator prompt has closed. If you cancelled it, PrivGate can request that program for you. An approver can allow it without an admin password, and it will open on this desktop.\n\nWindows does not tell PrivGate which file you tried. Request Disk Management now? Choose No to pick the program yourself.",
-            "PrivGate",
-            MessageBoxButtons.YesNoCancel,
-            MessageBoxIcon.Information);
-        if (choice == DialogResult.Cancel) return;
+        using var ask = Ui.Dialog("PrivGate", new Size(480, 210));
+        var askBody = Ui.Body(
+            "Windows asked for administrator approval and the prompt was closed.\n\n" +
+            "Which program did you try to open?");
+        ask.Controls.Add(askBody);
+        ask.Controls.Add(Ui.Note("An approver can allow it without an admin password."));
+        var askButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 44,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(12),
+            BackColor = Color.Transparent,
+        };
+        var disk = Ui.Primary("Request Disk Management");
+        var browse = Ui.Ghost("Browse for the program…");
+        var later = Ui.Ghost("Not now");
+        disk.AutoSize = true;
+        browse.AutoSize = true;
+        later.AutoSize = true;
+        disk.Click += (_, _) => { ask.DialogResult = DialogResult.Yes; ask.Close(); };
+        browse.Click += (_, _) => { ask.DialogResult = DialogResult.No; ask.Close(); };
+        later.Click += (_, _) => { ask.DialogResult = DialogResult.Cancel; ask.Close(); };
+        askButtons.Controls.Add(disk);
+        askButtons.Controls.Add(browse);
+        askButtons.Controls.Add(later);
+        ask.Controls.Add(askButtons);
+        var choice = ask.ShowDialog();
         if (choice == DialogResult.Yes)
         {
             Request(Path.Combine(Environment.SystemDirectory, "diskmgmt.msc"));
             return;
         }
+        if (choice != DialogResult.No) return;
         using var picker = new OpenFileDialog
         {
             Title = "Choose the program Windows just blocked",
@@ -112,11 +135,24 @@ static class ElevationPrompt
             return;
         }
         _busy = true;
-        var wait = Ui.Dialog("PrivGate request", new Size(460, 170));
+        var wait = Ui.Dialog("PrivGate request", new Size(460, 190));
         var label = Ui.Body(
-            "Requesting " + path + "\n\nKeep this window open. If an approver allows it, the program opens here without signing out.");
+            "Requesting " + path + "\n\nIf an approver allows it, the program opens here without signing out." +
+            "\n\nYou can close this window — we will notify you when a decision arrives.");
         wait.Controls.Add(label);
-        wait.FormClosed += (_, _) => { _busy = false; };
+        var elapsed = Ui.Note("Waiting 0:00…");
+        wait.Controls.Add(elapsed);
+        var started = Stopwatch.StartNew();
+        const int timeoutSeconds = 16 * 60;
+        var ticker = new System.Windows.Forms.Timer { Interval = 1000 };
+        ticker.Tick += (_, _) =>
+        {
+            var secs = (int)Math.Min(started.Elapsed.TotalSeconds, timeoutSeconds);
+            elapsed.Text = $"Waiting {secs / 60}:{secs % 60:D2}…";
+        };
+        ticker.Start();
+        var open = true;
+        wait.FormClosed += (_, _) => { open = false; ticker.Stop(); ticker.Dispose(); _busy = false; };
         wait.Show();
         Task.Run(() =>
         {
@@ -127,6 +163,8 @@ static class ElevationPrompt
             {
                 wait.BeginInvoke(new Action(() =>
                 {
+                    if (!open) return;
+                    ticker.Stop();
                     label.Text = Summarize(reply);
                     wait.Text = "PrivGate request";
                 }));

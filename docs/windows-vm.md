@@ -75,6 +75,19 @@ Manual extras:
 
 Do not install Microsoft EPM on the same VM.
 
+## Troubleshooting
+
+The broker writes everything to `%ProgramData%\PrivGate\broker.log`
+(10 MB rotation into `broker.log.1`–`.8`). Open it from the tray shield
+right-click → **Open log**, or check live state via right-click → **Status**
+(pipe state, last evaluate, JIT window, service status). Reading tips — what
+pending/reconnect/JIT lines mean and when a missing UAC-cancel offer is normal —
+are in the [agent runbook](../agent/README.md#logs-and-status-troubleshooting-runbook).
+
+Quick triage order: tray **Status** first (is the pipe up? is the service
+running?), then `broker.log` for the last evaluate, then the console's
+**Devices** page (host offline usually means WebSocket/HMAC, not the log).
+
 ## What cannot be verified on macOS
 
 Building with `dotnet build` produces the `.exe` cross-platform (SDK is cross-platform), but end-to-end
