@@ -175,6 +175,21 @@ nav a {
   border-left: 2px solid transparent;
 }
 
+/* Side-nav rows: inline stroke icon + label; icon dims until active/hover (amber state). */
+nav a.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+nav a.nav-link svg {
+  flex: none;
+  opacity: 0.85;
+}
+nav a.nav-link.active svg,
+nav a.nav-link:hover svg {
+  opacity: 1;
+}
+
 nav a.active, nav a:hover {
   color: var(--ink);
   background: var(--nav-active);
