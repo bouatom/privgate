@@ -1,5 +1,7 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
+import type { UpdateChannel } from "./self-update";
+import { normalizeChannel } from "./self-update";
 
 export function migrateSetupState(db: DatabaseSync) {
   db.exec(`
@@ -13,6 +15,9 @@ export function migrateSetupState(db: DatabaseSync) {
   const cols = (db.prepare("PRAGMA table_info(setup_state)").all() as { name: string }[]).map((row) => row.name);
   if (!cols.includes("factory_reset")) {
     db.exec("ALTER TABLE setup_state ADD COLUMN factory_reset INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.includes("update_channel")) {
+    db.exec("ALTER TABLE setup_state ADD COLUMN update_channel TEXT NOT NULL DEFAULT 'official'");
   }
 }
 
@@ -41,4 +46,20 @@ export function completeWizard(db: DatabaseSync) {
 
 export function wizardPending(db: DatabaseSync, portalNeedsSetup: boolean): boolean {
   return portalNeedsSetup || !isWizardCompleted(db);
+}
+
+/** Update channel for the console itself. Singleton row; official is default. */
+export function getUpdateChannel(db: DatabaseSync): UpdateChannel {
+  const row = db.prepare("SELECT update_channel FROM setup_state WHERE id = 'default'").get() as
+    | { update_channel?: unknown }
+    | undefined;
+  return normalizeChannel(row?.update_channel);
+}
+
+export function setUpdateChannel(db: DatabaseSync, channel: UpdateChannel): void {
+  db.prepare(
+    `INSERT INTO setup_state (id, wizard_completed, completed_at, factory_reset, update_channel)
+     VALUES ('default', 0, NULL, 1, ?)
+     ON CONFLICT(id) DO UPDATE SET update_channel = excluded.update_channel`,
+  ).run(normalizeChannel(channel));
 }

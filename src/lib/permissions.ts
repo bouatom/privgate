@@ -17,6 +17,7 @@ export const PERMISSIONS = [
   { id: "integrations.manage", group: "Configuration", label: "Connect, sync, and test directory integrations" },
   { id: "notifications.view", group: "Configuration", label: "View notification settings" },
   { id: "notifications.manage", group: "Configuration", label: "Change notification settings" },
+  { id: "configuration.update", group: "Configuration", label: "Check for and install management-console updates" },
   { id: "audit.view", group: "Configuration", label: "View the audit log" },
   { id: "portal.users.manage", group: "Portal access", label: "Create portal users and assign roles" },
   { id: "portal.roles.manage", group: "Portal access", label: "Create and edit roles" },
@@ -58,6 +59,7 @@ export const PREDEFINED_ROLES: PredefinedRole[] = [
       "devices.enroll",
       "devices.update",
       "directory.users.view",
+      "configuration.update",
     ],
   },
   {
@@ -114,6 +116,7 @@ export const CONFIG_TABS: Array<{ label: string; href: string; anyOf: Permission
   { label: "Network", href: "/configuration/network", anyOf: ["portal.users.manage", "integrations.view", "integrations.manage", "devices.enroll"] },
   { label: "Integrations", href: "/configuration/integrations", anyOf: ["integrations.view", "integrations.manage"] },
   { label: "Notifications", href: "/configuration/notifications", anyOf: ["notifications.view", "notifications.manage"] },
+  { label: "Updates", href: "/configuration/updates", anyOf: ["dashboard.view", "configuration.update"] },
   { label: "Audit", href: "/configuration/audit", anyOf: ["audit.view"] },
 ];
 

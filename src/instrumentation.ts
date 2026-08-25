@@ -8,5 +8,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { attachAgentWebSocket } = await import("./lib/realtime/agent-hub");
     attachAgentWebSocket();
+    // Periodic self-update sweep (6h + delayed boot tick). Injectable and
+    // env-disabled for tests; registers its own shutdown hook.
+    const { startUpdateSweep } = await import("./lib/self-update-service");
+    startUpdateSweep();
   }
 }

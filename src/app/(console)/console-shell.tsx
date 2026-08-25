@@ -43,9 +43,11 @@ function applyRail(hidden: boolean) {
 export function ConsoleShell({
   children,
   session,
+  updateBadge,
 }: {
   children: React.ReactNode;
   session: AdminSession | null;
+  updateBadge?: { version: string; channel: "official" | "nightly" } | null;
 }) {
   const path = usePathname();
   const [theme, setTheme] = useState<Theme>("dark");
@@ -89,6 +91,17 @@ export function ConsoleShell({
           </button>
         </div>
         <nav>
+          {updateBadge ? (
+            <Link
+              href="/configuration/updates"
+              prefetch
+              className="update-pill"
+              title={`Console update available on the ${updateBadge.channel} channel`}
+            >
+              Update v{updateBadge.version}
+              {updateBadge.channel === "nightly" ? " (nightly)" : ""}
+            </Link>
+          ) : null}
           {nav
             .filter((item) => {
               if (item.href === "/configuration") {
@@ -99,6 +112,7 @@ export function ConsoleShell({
                   "integrations.manage",
                   "notifications.view",
                   "notifications.manage",
+                  "configuration.update",
                   "audit.view",
                 ]);
               }

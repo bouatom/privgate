@@ -23,6 +23,7 @@ function makePayload(files: Record<string, string | Buffer | null> = {}) {
   dirs.push(dir);
   const defaults: Record<string, string> = {
     "host.cjs": "x",
+    "version.json": '{"version":"0.2.1"}',
     "listen.cjs": "x",
     "listen-config.cjs": "x",
     "graceful-shutdown.cjs": "x",
@@ -71,6 +72,19 @@ describe("artifact validation (packaging/artifact-check.cjs)", () => {
     const result = artifactCheck.checkArtifact(dir);
     expect(result.ok).toBe(false);
     expect(result.problems.join("\n")).toContain("no config object");
+  });
+
+  it("rejects a payload whose version.json is missing, malformed, or not x.y.z", () => {
+    const missing = makePayload({ "version.json": null });
+    const missingResult = artifactCheck.checkArtifact(missing);
+    expect(missingResult.ok).toBe(false);
+    expect(missingResult.problems.join("\n")).toContain("version.json is missing");
+
+    const garbage = makePayload({ "version.json": "{not json" });
+    expect(artifactCheck.checkArtifact(garbage).problems.join("\n")).toContain("version.json is not valid JSON");
+
+    const wrongShape = makePayload({ "version.json": '{"version":"beta-nine"}' });
+    expect(artifactCheck.checkArtifact(wrongShape).problems.join("\n")).toContain("no x.y.z version");
   });
 
   it("requires the platform node runtime (node.exe on Windows, bin/node elsewhere)", () => {

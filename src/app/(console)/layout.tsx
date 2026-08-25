@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { portalNeedsSetup } from "@/lib/portal";
 import { wizardPending } from "@/lib/setup-state";
+import { updateBadge } from "@/lib/self-update-service";
 import { ConsoleShell } from "./console-shell";
 import { LiveRefresh } from "./live-refresh";
 
@@ -20,7 +21,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   return (
     <>
       <LiveRefresh />
-      <ConsoleShell session={session}>{children}</ConsoleShell>
+      <ConsoleShell session={session} updateBadge={updateBadge()}>
+        {children}
+      </ConsoleShell>
     </>
   );
 }

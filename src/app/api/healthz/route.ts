@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { currentClientVersion } from "@/lib/client-version";
+import { installedConsoleVersion } from "@/lib/console-version";
 import { getDb } from "@/lib/db";
 import { connectedDeviceIds } from "@/lib/realtime/bus";
 
@@ -20,7 +20,7 @@ export async function GET() {
     ok: db,
     db,
     agentsOnline: connectedDeviceIds().length,
-    version: currentClientVersion(),
+    version: installedConsoleVersion(),
   };
   return NextResponse.json(body, { status: db ? 200 : 503 });
 }

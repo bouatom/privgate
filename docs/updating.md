@@ -64,6 +64,49 @@ manifest), keep a backup of the previous version directory, and poll the web
 port afterwards (`health-check.cjs`). If the health check fails they say so
 and print rollback steps instead of pretending success.
 
+## In-console updates (one click)
+
+Once versioning discipline is in place (every payload carries a build-stamped
+`version.json` next to `host.cjs`; releases ship a `sha256sums.txt` covering
+their artifacts — both produced by `packaging/build.sh` and enforced by
+`artifact-check.cjs`), the console can update itself:
+
+1. **Scheduled check** — shortly after boot and then every six hours
+   (`PRIVGATE_UPDATE_SWEEP_INTERVAL_MS`, disable with
+   `PRIVGATE_DISABLE_SELFUPDATE_SWEEP=1`) the console queries GitHub
+   (`repos/bouatom/privgate/releases`, unauthenticated). When a newer release
+   exists, a **badge pill appears in the side pane** above Dashboard and an
+   audit event `console.update.available` is recorded once per new version.
+   Open consoles update their badge live over SSE. A GitHub rate limit (403)
+   puts checking into a 10-minute backoff instead of retry-looping.
+2. **Channels** — Configuration → Updates → *Release channel*:
+   * **Official**: non-prerelease GitHub releases only. Recommended.
+   * **Nightly**: three-segment versions (`0.2.13`) published as GitHub
+     *prereleases*, seen first by this channel. Switching channels re-checks
+     immediately; saving requires the `configuration.update` permission and is
+     audited (`console.update.channel`).
+3. **Apply** — the *Update to x.y.z* button downloads the platform asset to
+   `<data dir>/updates/` **and verifies its SHA-256 against the release's
+   `sha256sums.txt` entry before anything else happens**; on mismatch the
+   update aborts with nothing changed. It then answers `202 {started:true}`,
+   spawns the shipped updater detached
+   (`update-server.ps1 -Installer … -Sha256 …` /
+   `update-server.sh --deb|--pkg … --sha256 …`), logs to
+   `<data dir>/updates/apply.log`, and stops tracking state in memory — the
+   updater's job includes stopping this very web process, so progress is
+   parsed back from disk by GET `/api/configuration/update/status`
+   (`running` / `succeeded` / `failed` / `stale`). The console comes back
+   healthy on the new version via the normal stop → swap → start → health
+   check sequence above.
+
+Platform notes: Windows (WinSW LocalSystem) and macOS (launchd root daemon)
+can run the whole flow from the browser. The Linux systemd unit is sandboxed
+to the unprivileged `privgate` user on purpose, so in-console apply there is
+refused; use `sudo /opt/privgate/update-server.sh --deb <file>`. Any admin
+sees the badge and the Updates panel, but changing the channel or applying an
+update requires the `configuration.update` permission (Master Admin and
+Policy Admin have it).
+
 ### Verifying the download (optional but recommended)
 
 Both updaters accept an expected digest and check it **before** stopping the

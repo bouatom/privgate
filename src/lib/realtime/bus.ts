@@ -1,6 +1,6 @@
 import "server-only";
 
-export type ConsoleTopic = "requests" | "devices" | "jit" | "audit";
+export type ConsoleTopic = "requests" | "devices" | "jit" | "audit" | "updates";
 
 export type ConsoleEvent = {
   type: "mutate";

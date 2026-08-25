@@ -181,6 +181,21 @@ nav a.active, nav a:hover {
   border-left-color: var(--amber);
 }
 
+/* Update-available pill above the Dashboard item (self-update badge). */
+nav .update-pill {
+  padding: 9px 12px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--amber-2);
+  border: 1px solid var(--pill-pending-line);
+  background: var(--panel);
+}
+nav .update-pill:hover {
+  color: var(--ink);
+  border-color: var(--amber);
+}
+
 .config-tabs {
   display: flex;
   gap: 4px;

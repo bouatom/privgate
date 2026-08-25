@@ -69,6 +69,10 @@ assemble_app() {
     cp -R "$ROOT/public" "$dest/public"
   fi
   cp "$ROOT/packaging/host.cjs" "$dest/host.cjs"
+  # Installed-version manifest (single source of truth). The runtime resolves
+  # manifest -> PRIVGATE_VERSION env -> package.json; artifact-check.cjs and
+  # the self-update flow treat this file as authoritative for what is on disk.
+  printf '{"version":"%s"}\n' "$VERSION" > "$dest/version.json"
   mkdir -p "$dest/agent/dist"
   cp -a "$ROOT/agent/dist/." "$dest/agent/dist/"
   if [[ ! -f "$dest/agent/dist/PrivGate.Agent.exe" ]]; then
@@ -320,6 +324,26 @@ if want linux; then
     fi
     echo "No dpkg-deb or docker; Linux tar.gz is still in $OUT" >&2
   fi
+fi
+
+# Integrity manifest for the release artifacts. The console self-updater
+# downloads this alongside the chosen installer and refuses to spawn anything
+# unless the artifact matches its entry (and the shipped update-server scripts
+# re-verify it as a sibling file before touching the running install).
+if [[ -d "$OUT" ]] && find "$OUT" -maxdepth 1 -type f ! -name sha256sums.txt | grep -q .; then
+  log "Writing sha256sums.txt"
+  (
+    cd "$OUT"
+    : > sha256sums.txt
+    for f in *; do
+      [[ -f "$f" && "$f" != "sha256sums.txt" ]] || continue
+      if command -v sha256sum >/dev/null; then
+        sha256sum "$f" >> sha256sums.txt
+      else
+        shasum -a 256 "$f" >> sha256sums.txt
+      fi
+    done
+  )
 fi
 
 log "Artifacts"

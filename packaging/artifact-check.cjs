@@ -14,6 +14,7 @@ const path = require("node:path");
 
 const REQUIRED_FILES = [
   "host.cjs",
+  "version.json",
   "listen.cjs",
   "listen-config.cjs",
   "graceful-shutdown.cjs",
@@ -71,6 +72,26 @@ function checkArtifact(appDir, options = {}) {
       }
     } catch (err) {
       problems.push(`required-server-files.json is not valid JSON (${err.message})`);
+    }
+  }
+
+  // The installed-version manifest is the runtime's single source of truth for
+  // what is on disk (self-update compares it against GitHub releases). A
+  // missing or malformed manifest would make a swapped install lie about its
+  // version, so reject the payload outright.
+  const versionManifest = path.join(appDir, "version.json");
+  checked += 1;
+  if (!fs.existsSync(versionManifest)) {
+    problems.push("version.json is missing (build must stamp the payload version)");
+  } else {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(versionManifest, "utf8"));
+      const raw = typeof parsed?.version === "string" ? parsed.version.trim() : "";
+      if (!/^v?\d+\.\d+\.\d+$/.test(raw)) {
+        problems.push(`version.json has no x.y.z version (got "${raw}")`);
+      }
+    } catch (err) {
+      problems.push(`version.json is not valid JSON (${err.message})`);
     }
   }
 
