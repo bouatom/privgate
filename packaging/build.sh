@@ -6,7 +6,15 @@ if [[ -f "$ROOT/scripts/dotnet-env.sh" ]]; then
   source "$ROOT/scripts/dotnet-env.sh"
 fi
 
-VERSION="${PRIVGATE_VERSION:-0.2.1}"
+# CI always passes PRIVGATE_VERSION (dotnet-desktop.yml / nightly.yml). For
+# local builds the default follows package.json so the stamp can never drift
+# from the source tree — a hardcoded literal here once kept hand-built
+# payloads reporting an old version after package.json had moved on.
+VERSION="${PRIVGATE_VERSION:-}"
+if [[ -z "$VERSION" ]]; then
+  command -v node >/dev/null || { echo "missing tool: node (needed to read package.json version)" >&2; exit 1; }
+  VERSION="$(node -p "require('$ROOT/package.json').version")"
+fi
 NODE_VERSION="${PRIVGATE_NODE_VERSION:-22.15.1}"
 CACHE="$ROOT/.tools/cache"
 STAGE="$ROOT/dist/stage"

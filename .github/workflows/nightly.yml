@@ -316,6 +316,10 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # This job never checks out the repo, so gh cannot discover it from a
+      # git remote — without GH_REPO every gh release call dies with
+      # "failed to run git: fatal: not a git repository".
+      GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -465,6 +469,9 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Same reason as the release job: no checkout, so gh release delete
+      # needs GH_REPO instead of git-remote discovery.
+      GH_REPO: ${{ github.repository }}
     steps:
       # Best-effort retention sweep: delete nightly PRERELEASES older than 30
       # days plus orphan nightly tags left by crashed runs. Never touches

@@ -117,6 +117,43 @@ describe("availability comparison", () => {
     expect(isUpdateAvailable("0.2.1", INSTALLED)).toBe(false);
     expect(isUpdateAvailable("0.2.0", INSTALLED)).toBe(false);
   });
+
+  it("fires for installed 0.2.1 once a 0.2.2 nightly tag exists (post-bump scenario)", () => {
+    expect(tagVersion("v0.2.2-n.202608250429")).toBe("0.2.2");
+    expect(isUpdateAvailable("0.2.2", INSTALLED)).toBe(true);
+  });
+});
+
+describe("nightly-shaped prerelease tags (vX.Y.Z-n.TS)", () => {
+  const NIGHTLY = release({
+    tag: "v0.2.2-n.202608250429",
+    prerelease: true,
+    // Asset names read the PLAIN version — matchPlatformAsset only accepts
+    // strict x.y.z filenames, so the -n.TS suffix must never reach them.
+    assets: [asset("PrivGate-Console-0.2.2-win-x64.msi"), asset("PrivGate-Console-0.2.2-win-x64.exe"), SUMS_ASSET],
+  });
+  const OFFICIAL_0_2_1 = release({ tag: "v0.2.1", assets: [asset("PrivGate-Console-0.2.1-win-x64.msi"), SUMS_ASSET] });
+
+  it("official channel ignores the nightly and stays on the last official build", () => {
+    const picked = pickLatestForPlatform([NIGHTLY, OFFICIAL_0_2_1], { channel: "official", platform: "windows" });
+    expect(picked?.candidate.version).toBe("0.2.1");
+    expect(picked?.candidate.prerelease).toBe(false);
+  });
+
+  it("nightly channel prefers the prerelease and reports the plain core version", () => {
+    const picked = pickLatestForPlatform([NIGHTLY, OFFICIAL_0_2_1], { channel: "nightly", platform: "windows" });
+    expect(picked?.candidate.version).toBe("0.2.2");
+    expect(picked?.candidate.prerelease).toBe(true);
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.msi");
+    expect(picked?.candidate.sumsUrl).toContain("sha256sums.txt");
+    expect(isUpdateAvailable(picked!.candidate.version, INSTALLED)).toBe(true);
+  });
+
+  it("nightly rebuild of the same base version beats the official release at equal numbers", () => {
+    const officialSameBase = release({ tag: "v0.2.2", assets: [asset("PrivGate-Console-0.2.2-win-x64.msi")] });
+    const picked = pickLatestForPlatform([officialSameBase, NIGHTLY], { channel: "nightly", platform: "windows" });
+    expect(picked?.release.tag_name).toBe("v0.2.2-n.202608250429");
+  });
 });
 
 describe("tag + helpers", () => {

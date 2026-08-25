@@ -19,6 +19,12 @@ describe("sanitizeClientVersion", () => {
     expect(sanitizeClientVersion("not-a-version")).toBe("0.2.1");
     expect(sanitizeClientVersion(undefined)).toBe("0.2.1");
   });
+
+  it("reduces nightly tags (v-prefix + -n.TS suffix) to the plain x.y.z", () => {
+    expect(sanitizeClientVersion("v0.2.2-n.202608250429")).toBe("0.2.2");
+    expect(sanitizeClientVersion("V0.2.10-N.199912312359")).toBe("0.2.10");
+    expect(sanitizeClientVersion("v0.2.2-nightly")).toBe("0.2.2");
+  });
 });
 
 describe("compareVersions", () => {
@@ -33,6 +39,15 @@ describe("compareVersions", () => {
     expect(updateAvailable("0.2.0", "0.2.1")).toBe(true);
     expect(updateAvailable("0.2.1", "0.2.1")).toBe(false);
     expect(updateAvailable("0.2.2", "0.2.1")).toBe(false);
+  });
+
+  it("compares nightly tags by numeric core, so tag vs plain of one build is equal", () => {
+    expect(compareVersions("v0.2.2-n.202608250429", "0.2.2")).toBe(0);
+    // The post-bump self-update moment: installed prod 0.2.1 sees a 0.2.2
+    // candidate whether it arrived as an official tag or a nightly.
+    for (const candidate of ["0.2.2", "v0.2.2", "v0.2.2-n.202608250429"]) {
+      expect(updateAvailable("0.2.1", candidate)).toBe(true);
+    }
   });
 
   it("never flags devices that have not reported a version yet", () => {

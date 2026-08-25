@@ -63,3 +63,54 @@ describe("resolveInstalledVersion (manifest → env → package.json)", () => {
     expect(result.source).toBe("fallback");
   });
 });
+
+describe("stamping parity: branch builds vs official tags vs nightlies", () => {
+  // What each CI flow feeds PRIVGATE_VERSION:
+  //   branch push → package.json version, plain ("0.2.2")
+  //   refs/tags/vX.Y.Z → tag name minus "v" ("0.2.3")
+  //   nightly.yml → plain X.Y.Z even though its TAG carries -n.TS
+  // All three must land in version.json as the same shape and resolve
+  // identically at runtime.
+  it.each([
+    ["branch build (package.json)", "0.2.2"],
+    ["official tag build (refs/tags/v0.2.3)", "0.2.3"],
+    ["nightly build (plain despite vX.Y.Z-n.TS tag)", "0.2.2"],
+  ])("%s stamps %s and resolves to exactly that", (_label, stamped) => {
+    expect(resolveInstalledVersion({ PRIVGATE_VERSION: stamped }, { packageJsonPath: "/nonexistent/package.json" })).toEqual({
+      version: stamped,
+      source: "env",
+    });
+  });
+
+  it("resolves every stamping flavor through a build.sh-written manifest", () => {
+    for (const stamped of ["0.2.2", "0.2.3"]) {
+      const manifest = fixture(`version-${stamped.replace(/\./g, "-")}`, `{"version":"${stamped}"}`);
+      const result = resolveInstalledVersion({ PRIVGATE_VERSION: "9.9.9-stale-env" }, { manifestPath: manifest });
+      expect(result).toEqual({ version: stamped, source: "manifest" });
+    }
+  });
+
+  it("reduces a prerelease-suffixed manifest entry to its numeric core", () => {
+    // Defensive: a future build.sh that stamps the full nightly tag must not
+    // make /api/healthz or self-update compare against "0.2.2-n.20260825...".
+    const manifest = fixture("version-nightly", '{"version":"0.2.2-n.202608250429"}');
+    const result = resolveInstalledVersion(EMPTY_ENV, { manifestPath: manifest });
+    expect(result).toEqual({ version: "0.2.2", source: "manifest" });
+  });
+
+  it("sanitizes a leaked nightly tag passed via PRIVGATE_VERSION", () => {
+    const result = resolveInstalledVersion(
+      { PRIVGATE_VERSION: "v0.2.2-n.202608250429" },
+      { packageJsonPath: "/nonexistent/package.json" },
+    );
+    expect(result).toEqual({ version: "0.2.2", source: "env" });
+  });
+
+  it("keeps dev mode (no env) pinned to the source-tree version", () => {
+    const pkg = fixture("package.json", '{"name":"privgate","version":"0.2.2"}');
+    expect(resolveInstalledVersion(EMPTY_ENV, { packageJsonPath: pkg })).toEqual({
+      version: "0.2.2",
+      source: "package.json",
+    });
+  });
+});
