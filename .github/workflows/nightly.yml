@@ -1,0 +1,522 @@
+# Nightly console installers — scheduled sibling of dotnet-desktop.yml.
+#
+# Publishes an automated NIGHTLY as a GitHub PRERELEASE so the official
+# update channel (which ignores prereleases) stays untouched. Differences
+# from the release flow:
+#   * Version = PATCH increment of the highest exact x.y.z found across all
+#     remote tags AND releases (prereleases included). Our own previous
+#     vX.Y.Z-n.TIMESTAMP nightlies are deliberately NOT counted, so the base
+#     only moves when a new official vX.Y.Z appears.
+#   * Tag is vX.Y.Z-n.YYYYMMDDHHMM for uniqueness, but every user-visible
+#     string (installer filenames, release title) reads the plain X.Y.Z.
+#   * packaging/build.sh (WIP) may drop its own per-leg sha256sums.txt into
+#     dist/installers. Per-leg manifests cover only that leg's files and
+#     merge-multiple collapses same-named files, so the publish job regenerates
+#     a canonical full manifest over exactly what ships — identical behavior
+#     whether or not the artifact set already contains sums.
+
+name: Nightly console installers
+
+on:
+  schedule:
+    # Daily ~03:00 UTC; minute offset dodges GitHub's top-of-hour cron queue.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Serialize nightlies (schedule vs manual dispatch) instead of cancelling a
+  # run that may already be publishing.
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PRIVGATE_NODE_VERSION: "22.15.1"
+  PRIVGATE_SKIP_TARBALL: "1"
+
+jobs:
+  version:
+    name: Resolve next nightly version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+      release_tag: ${{ steps.set.outputs.release_tag }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Compute patch-incremented version and unique tag
+        id: set
+        env:
+          REPO: ${{ github.repository }}
+          # Test seam: fixed timestamp for local stub runs. Empty in CI.
+          PRIVGATE_NIGHTLY_TS: ""
+        run: |
+          set -euo pipefail
+
+          taken() {
+            gh api "repos/${REPO}/git/ref/tags/$1" >/dev/null 2>&1 && return 0
+            gh api "repos/${REPO}/releases/tags/$1" >/dev/null 2>&1 && return 0
+            return 1
+          }
+
+          # Highest EXACT x.y.z across tags and releases (drafts/prereleases
+          # included). Strict ^v?N.N.N$ match rejects vX.Y.Z-n.TS nightlies,
+          # partial versions, and anything non-numeric. Numeric segment
+          # compare (not lexicographic) so v0.2.10 beats v0.2.9.
+          hm=0 hmin=0 hp=-1
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            v="${tag#v}"
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+            IFS=. read -r M m p <<<"$v"
+            M=$((10#$M)); m=$((10#$m)); p=$((10#$p))
+            if (( M > hm )) \
+              || (( M == hm && m > hmin )) \
+              || (( M == hm && m == hmin && p > hp )); then
+              hm=$M; hmin=$m; hp=$p
+            fi
+          done < <(
+            {
+              gh api --paginate "repos/${REPO}/releases" --jq '.[].tag_name' || true
+              gh api --paginate "repos/${REPO}/git/matching-refs/tags/v" \
+                --jq '.[].ref' | sed 's|^refs/tags/||' || true
+            }
+          )
+          if (( hp < 0 )); then
+            echo "No x.y.z tag or release found on ${REPO}; refusing to invent a base version." >&2
+            exit 1
+          fi
+          echo "Highest existing version: ${hm}.${hmin}.${hp}"
+
+          ts="${PRIVGATE_NIGHTLY_TS:-$(date -u +%Y%m%d%H%M)}"
+          patch=$((hp + 1))
+          free=0
+          for _ in $(seq 1 25); do
+            version="${hm}.${hmin}.${patch}"
+            candidate="v${version}-n.${ts}"
+            if taken "$candidate"; then
+              echo "Tag ${candidate} already exists; incrementing patch." >&2
+              patch=$((patch + 1))
+            else
+              free=1
+              break
+            fi
+          done
+          if (( free != 1 )); then
+            echo "Exhausted 25 patch candidates for timestamp ${ts}; aborting." >&2
+            exit 1
+          fi
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=v${version}-n.${ts}" >> "$GITHUB_OUTPUT"
+          echo "Nightly version: ${version}, tag: v${version}-n.${ts}"
+
+      # No checkout needed above: everything is answered from the remote API,
+      # which also sees tags pushed after this workflow's commit was cut.
+
+  verify:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Test, typecheck, lint
+        run: npm test && npm run typecheck && npm run lint
+
+  pwsh-syntax:
+    name: PowerShell syntax gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Parser-only gate, identical to the official flow: every .ps1 under
+      # scripts/ and packaging/ is parsed, never executed.
+      - name: Parse every .ps1 (never execute)
+        run: |
+          set -euo pipefail
+          scripts=()
+          while IFS= read -r script; do
+            scripts+=("$script")
+          done < <(find scripts packaging -type f -name '*.ps1' | LC_ALL=C sort)
+          echo "Found ${#scripts[@]} PowerShell script(s) to parse:"
+          printf '  %s\n' "${scripts[@]}"
+          status=0
+          for script in "${scripts[@]}"; do
+            echo "::group::Parser::ParseFile ${script}"
+            pwsh -NoProfile -Command '
+              & {
+                param([string]$Path)
+                $tokens = $null
+                $errors = $null
+                [System.Management.Automation.Language.Parser]::ParseFile(
+                  $Path, [ref]$tokens, [ref]$errors) | Out-Null
+                if ($errors -and $errors.Count -gt 0) {
+                  foreach ($e in $errors) {
+                    Write-Output ("::error file={0},line={1},col={2}::{3}" -f $Path, $e.Extent.StartLineNumber, $e.Extent.StartColumnNumber, $e.Message)
+                  }
+                  exit 1
+                }
+                Write-Output "parse OK: $Path"
+              }' "$script" || status=1
+            echo "::endgroup::"
+          done
+          if [[ "$status" -ne 0 ]]; then
+            echo "PowerShell parse errors found; failing the build." >&2
+          fi
+          exit "$status"
+
+  client-msi:
+    name: Client MSI
+    needs: [version]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install msitools and wixl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends msitools wixl
+          command -v wixl
+          wixl --version
+
+      - name: Publish Windows client
+        run: bash scripts/smoke-agent-build.sh
+
+      - name: Build PrivGate-Client.msi
+        run: |
+          set -euo pipefail
+          node packaging/windows/build-client-msi.cjs \
+            agent/dist \
+            agent/dist/PrivGate-Client.msi \
+            "${PRIVGATE_VERSION}"
+          test -f agent/dist/PrivGate-Client.msi
+
+      - name: Upload client MSI
+        uses: actions/upload-artifact@v7
+        with:
+          name: client-msi
+          path: agent/dist/PrivGate-Client.msi
+          if-no-files-found: error
+
+  installers:
+    name: ${{ matrix.name }} installer
+    needs: [version, verify, client-msi, pwsh-syntax]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            runner: ubuntu-latest
+            target: windows
+          - name: Linux
+            runner: ubuntu-latest
+            target: linux
+          - name: macOS
+            runner: macos-latest
+            target: macos
+    env:
+      PRIVGATE_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Windows packaging tools
+        if: matrix.target == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends nsis msitools wixl
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Download client MSI
+        uses: actions/download-artifact@v8
+        with:
+          name: client-msi
+          path: dist/client-msi
+
+      - name: Build ${{ matrix.name }} installer
+        env:
+          PRIVGATE_TARGETS: ${{ matrix.target }}
+        run: |
+          test -f dist/client-msi/PrivGate-Client.msi
+          bash packaging/build.sh
+
+      - name: Upload Windows EXE
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-win-x64.exe
+          if-no-files-found: error
+
+      - name: Upload Windows MSI
+        if: matrix.target == 'windows'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-win-x64.msi
+          if-no-files-found: error
+
+      - name: Upload Linux deb
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/installers/privgate-console_${{ env.PRIVGATE_VERSION }}_amd64.deb
+          if-no-files-found: error
+
+      - name: Upload macOS pkg
+        if: matrix.target == 'macos'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/installers/PrivGate-Console-${{ env.PRIVGATE_VERSION }}-macos-*.pkg
+          if-no-files-found: error
+
+  release:
+    name: Publish nightly prerelease
+    needs: [version, installers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ needs.version.outputs.release_tag }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          path: release-files
+          merge-multiple: true
+
+      # Same discipline as the official release: coreutils two-space format,
+      # LC_ALL=C sorted, completeness-asserted, round-trip verified. Works
+      # either way regarding build.sh emitting its own sha256sums.txt: any
+      # artifact-supplied manifest is reported and replaced by a canonical
+      # superset covering every platform that ships.
+      - name: Generate sha256sums.txt
+        run: |
+          set -euo pipefail
+          mkdir -p checksums
+          if find release-files -type f -name sha256sums.txt | grep -q .; then
+            echo "Artifact-supplied sha256sums.txt present; replacing with full manifest:" >&2
+            find release-files -type f -name sha256sums.txt -print -delete >&2
+          fi
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          found=0
+          has_exe=0 has_msi=0 has_pkg=0 has_deb=0
+          while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            case "$base" in
+              PrivGate-Console-*.exe|PrivGate-Console-*-win-x64.msi|PrivGate-Console-*-macos-*.pkg|privgate-console_*_amd64.deb|PrivGate-Console-*-linux-x64.tar.gz)
+                (cd release-files && sha256sum -- "$base") >> "$tmp"
+                case "$base" in
+                  *.exe) has_exe=1 ;;
+                  *.msi) has_msi=1 ;;
+                  *.pkg) has_pkg=1 ;;
+                  *.deb) has_deb=1 ;;
+                esac
+                found=$((found + 1))
+                ;;
+              *)
+                echo "Not part of the checksum manifest: $base" >&2
+                ;;
+            esac
+          done < <(find release-files -type f -print0)
+          if [[ ${found} -eq 0 ]]; then
+            echo "No installer artifacts found under release-files/" >&2
+            exit 1
+          fi
+          if [[ "$has_exe" -ne 1 || "$has_msi" -ne 1 || "$has_pkg" -ne 1 || "$has_deb" -ne 1 ]]; then
+            echo "Manifest must cover Windows EXE+MSI, macOS pkg, and Linux deb; matched only ${found} file(s):" >&2
+            ls -la release-files >&2 || true
+            exit 1
+          fi
+          LC_ALL=C sort -o checksums/sha256sums.txt "$tmp"
+          echo "== checksums/sha256sums.txt =="
+          cat checksums/sha256sums.txt
+          (cd release-files && sha256sum --check --strict ../checksums/sha256sums.txt)
+
+      - name: Upload sha256sums.txt artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sha256sums
+          path: checksums/sha256sums.txt
+          if-no-files-found: error
+
+      - name: Publish prerelease
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=()
+          has_win=0 has_win_msi=0 has_mac=0 has_lin=0
+          while IFS= read -r -d '' f; do
+            [[ -f "$f" ]] || continue
+            base="$(basename "$f")"
+            case "$base" in
+              PrivGate-Console-*.exe)
+                files+=("$f")
+                has_win=1
+                ;;
+              PrivGate-Console-*.msi)
+                files+=("$f")
+                has_win_msi=1
+                ;;
+              PrivGate-Client.msi)
+                echo "Skipping standalone client MSI (shipped inside consoles): $base" >&2
+                ;;
+              PrivGate-Console-*.pkg)
+                files+=("$f")
+                has_mac=1
+                ;;
+              privgate-console_*.deb)
+                files+=("$f")
+                has_lin=1
+                ;;
+              sha256sums.txt)
+                echo "Skipping checksum manifest (published separately): $base" >&2
+                ;;
+              *)
+                echo "Refusing to publish archive or client binary: $base" >&2
+                exit 1
+                ;;
+            esac
+          done < <(find release-files -type f -print0)
+          if [[ ${#files[@]} -eq 0 || "$has_win" -ne 1 || "$has_win_msi" -ne 1 || "$has_mac" -ne 1 || "$has_lin" -ne 1 ]]; then
+            echo "Need one Windows EXE, one Windows MSI, one macOS, and one Linux installer; found:" >&2
+            ls -la release-files >&2 || true
+            exit 1
+          fi
+          ls -lh "${files[@]}"
+          files+=("checksums/sha256sums.txt")
+
+          # User-visible strings read the PLAIN version; only the tag carries
+          # the -n.TIMESTAMP suffix. --latest=false keeps official-channel
+          # logic unaffected on top of prerelease filtering.
+          notes="Automated nightly build of the management console from ${GITHUB_SHA}.
+
+          Nightlies may be unstable and are ignored by the official update channel.
+
+          | OS | Installer |
+          | --- | --- |
+          | Windows | \`PrivGate-Console-${VERSION}-win-x64.exe\` (recommended) or \`.msi\` |
+          | macOS | \`PrivGate-Console-${VERSION}-macos-*.pkg\` |
+          | Linux amd64 | \`privgate-console_${VERSION}_amd64.deb\` |
+          | Checksums | \`sha256sums.txt\` (SHA-256; verify with \`sha256sum -c\`) |
+
+          Open http://127.0.0.1:3000/ after install. Enroll each PC from **Devices**."
+
+          title="PrivGate Console ${VERSION} (nightly)"
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} appeared mid-run (concurrent nightly?); re-run to pick the next free patch." >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" "${files[@]}" \
+            --title "$title" \
+            --notes "$notes" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --latest=false
+
+  cleanup:
+    name: Prune stale nightlies (>30d)
+    needs: [release]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      # Best-effort retention sweep: delete nightly PRERELEASES older than 30
+      # days plus orphan nightly tags left by crashed runs. Never touches
+      # official releases (they are not prereleases and don't match the tag
+      # shape). continue-on-error keeps hygiene failures non-fatal.
+      - name: Delete expired nightly releases and orphan tags
+        continue-on-error: true
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cutoff="$(date -u -d '30 days ago' +%Y%m%d%H%M)"
+          pattern='^v[0-9]+\.[0-9]+\.[0-9]+-n\.[0-9]{12}$'
+          echo "Pruning nightly artifacts tagged before ${cutoff} UTC."
+          failures=0
+
+          live="$(gh api --paginate "repos/${REPO}/releases" --jq '.[].tag_name' | LC_ALL=C sort || true)"
+          while IFS= read -r tag; do
+            [[ "$tag" =~ $pattern ]] || continue
+            ts="${tag##*-n.}"
+            # Fixed-width digit strings order correctly lexicographically.
+            if [[ ! "$ts" < "$cutoff" ]]; then
+              continue
+            fi
+            echo "Deleting expired nightly release+tag: ${tag}"
+            if ! gh release delete "$tag" --yes --cleanup-tag; then
+              echo "Could not delete release ${tag}; continuing." >&2
+              failures=$((failures + 1))
+            fi
+          done <<<"${live}"
+
+          # Orphan tags: nightly-shaped refs with no live release, older than
+          # the cutoff (fresh refs may belong to the run currently publishing).
+          while IFS= read -r ref; do
+            tag="${ref#refs/tags/}"
+            [[ "$tag" =~ $pattern ]] || continue
+            if grep -Fxq "$tag" <<<"${live}"; then
+              continue
+            fi
+            ts="${tag##*-n.}"
+            if [[ ! "$ts" < "$cutoff" ]]; then
+              continue
+            fi
+            echo "Deleting orphan nightly tag: ${tag}"
+            if ! gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}"; then
+              echo "Could not delete tag ${tag}; continuing." >&2
+              failures=$((failures + 1))
+            fi
+          done < <(gh api --paginate "repos/${REPO}/git/matching-refs/tags/v" --jq '.[].ref')
+
+          if (( failures > 0 )); then
+            echo "Retention sweep finished with ${failures} failure(s)." >&2
+            exit 1
+          fi
+          echo "Retention sweep clean."
