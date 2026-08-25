@@ -156,6 +156,75 @@ describe("nightly-shaped prerelease tags (vX.Y.Z-n.TS)", () => {
   });
 });
 
+describe("rolling 'nightly' tag releases (no number in the git ref)", () => {
+  // Mirrors the LIVE bouatom/privgate state that broke updates on 2026-08-25:
+  // the 0.2.2 nightly was published under the rolling tag "nightly", so
+  // tag-only resolution filtered it out and installed 0.2.1 saw no update.
+  const ROLLING_0_2_2 = release({
+    tag: "nightly",
+    prerelease: true,
+    assets: [asset("PrivGate-Console-0.2.2-win-x64.msi"), asset("PrivGate-Console-0.2.2-win-x64.exe"), SUMS_ASSET],
+  });
+  const NIGHTLY_0_2_1 = release({
+    tag: "v0.2.1-n.202608251215",
+    prerelease: true,
+    assets: [asset("PrivGate-Console-0.2.1-win-x64.msi"), SUMS_ASSET],
+  });
+
+  it("resolves the version from the stamped assets and offers the update", () => {
+    expect(tagVersion("nightly")).toBeNull(); // the ref alone is not enough…
+    const picked = pickLatestForPlatform([ROLLING_0_2_2, NIGHTLY_0_2_1], {
+      channel: "nightly",
+      platform: "windows",
+      arch: "x64",
+    });
+    expect(picked?.release.tag_name).toBe("nightly");
+    expect(picked?.candidate.version).toBe("0.2.2"); // …the assets say otherwise
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.msi");
+    expect(picked?.candidate.sumsUrl).toContain("sha256sums.txt");
+    expect(isUpdateAvailable(picked!.candidate.version, INSTALLED)).toBe(true);
+  });
+
+  it("official channel still ignores the rolling nightly prerelease", () => {
+    const official = release({ tag: "v0.2.0", assets: [asset("PrivGate-Console-0.2.0-win-x64.msi"), SUMS_ASSET] });
+    const picked = pickLatestForPlatform([ROLLING_0_2_2, NIGHTLY_0_2_1, official], {
+      channel: "official",
+      platform: "windows",
+    });
+    expect(picked?.candidate.version).toBe("0.2.0");
+    expect(picked?.candidate.prerelease).toBe(false);
+  });
+
+  it("stays invisible when neither the tag nor any asset carries a version", () => {
+    const labelOnly = release({ tag: "nightly", prerelease: true, assets: [asset("notes.txt")] });
+    expect(pickLatestForPlatform([labelOnly], { channel: "nightly", platform: "windows" })).toBeNull();
+    const picked = pickLatestForPlatform([labelOnly, NIGHTLY_0_2_1], { channel: "nightly", platform: "windows" });
+    expect(picked?.candidate.version).toBe("0.2.1"); // falls through to the tagged release
+  });
+
+  it("matches macOS pkg per architecture under a rolling tag", () => {
+    const macRolling = release({
+      tag: "nightly",
+      prerelease: true,
+      assets: [asset("PrivGate-Console-0.2.2-macos-arm64.pkg"), SUMS_ASSET],
+    });
+    const picked = pickLatestForPlatform([macRolling], { channel: "nightly", platform: "macos", arch: "arm64" });
+    expect(picked?.candidate.version).toBe("0.2.2");
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-macos-arm64.pkg");
+  });
+
+  it("matches the Linux deb naming under a rolling tag", () => {
+    const debRolling = release({
+      tag: "nightly",
+      prerelease: true,
+      assets: [asset("privgate-console_0.2.2_amd64.deb"), SUMS_ASSET],
+    });
+    const picked = pickLatestForPlatform([debRolling], { channel: "nightly", platform: "linux" });
+    expect(picked?.candidate.version).toBe("0.2.2");
+    expect(picked?.candidate.assetName).toBe("privgate-console_0.2.2_amd64.deb");
+  });
+});
+
 describe("tag + helpers", () => {
   it("parses numeric tags and rejects label-only ones", () => {
     expect(tagVersion("v1.2.3")).toBe("1.2.3");

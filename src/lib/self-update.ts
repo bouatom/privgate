@@ -8,6 +8,9 @@ import { compareVersions, sanitizeClientVersion } from "./client-version";
  *  - OFFICIAL channel: GitHub releases with prerelease = false.
  *  - NIGHTLY channel: every release including prereleases; nightlies are
  *    published as PRERELEASES, so this channel sees them first.
+ *  - A nightly may be published under a ROLLING tag (the git ref is literally
+ *    "nightly"). Such releases carry no number in the tag, so their version
+ *    comes from the x.y.z stamped into their asset filenames instead.
  *  - Release assets follow packaging/build.sh naming:
  *      PrivGate-Console-<v>-win-x64.msi / .exe
  *      PrivGate-Console-<v>-macos-{x64|arm64}.pkg
@@ -124,6 +127,11 @@ function matchPlatformAsset(release: GitHubRelease, platform: PlatformKey, arch:
  * Newest release for the channel that carries an installable asset for the
  * running platform/arch. Drafts are invisible to unauthenticated API calls but
  * are still excluded defensively.
+ *
+ * Per-release version resolution: the tag first ("v0.2.2-n.202608250429");
+ * when the tag is not version-shaped (rolling "nightly" ref), the x.y.z
+ * stamped into the platform asset filename decides. Releases carrying neither
+ * stay invisible, so label-only releases never win a channel pick.
  */
 export function pickLatestForPlatform(
   releases: unknown,
@@ -142,8 +150,15 @@ export function pickLatestForPlatform(
     .filter((release): release is GitHubRelease => Boolean(release))
     .filter((release) => release.draft !== true)
     .filter((release) => opts.channel === "nightly" || release.prerelease !== true)
-    .map((release) => ({ release, version: tagVersion(release.tag_name) }))
-    .filter((row): row is { release: GitHubRelease; version: string } => row.version !== null);
+    .map((release) => {
+      const matched = matchPlatformAsset(release, platform, arch);
+      const version = tagVersion(release.tag_name) ?? matched?.version ?? null;
+      return { release, matched, version };
+    })
+    .filter(
+      (row): row is { release: GitHubRelease; matched: AssetMatch; version: string } =>
+        row.version !== null && row.matched !== null,
+    );
 
   // Highest version first; on equal numbers the prerelease wins for nightly
   // (the nightly rebuild of the same base version is the fresher artifact).
@@ -153,25 +168,23 @@ export function pickLatestForPlatform(
     return Number(b.release.prerelease === true) - Number(a.release.prerelease === true);
   });
 
-  for (const row of rows) {
-    const matched = matchPlatformAsset(row.release, platform, arch);
-    if (!matched) continue;
-    const assets = Array.isArray(row.release.assets) ? row.release.assets.map(asAsset).filter(Boolean) : [];
-    const sums = assets.find((asset) => String(asset!.name) === "sha256sums.txt");
-    return {
-      release: row.release,
-      candidate: {
-        version: row.version,
-        channel: opts.channel,
-        assetName: String(matched.asset.name),
-        url: String(matched.asset.browser_download_url),
-        sumsUrl: sums ? String(sums.browser_download_url) : null,
-        releaseUrl: typeof row.release.html_url === "string" ? row.release.html_url : "",
-        prerelease: row.release.prerelease === true,
-      },
-    };
-  }
-  return null;
+  const best = rows[0];
+  if (!best || !best.matched) return null;
+
+  const assets = Array.isArray(best.release.assets) ? best.release.assets.map(asAsset).filter(Boolean) : [];
+  const sums = assets.find((asset) => String(asset!.name) === "sha256sums.txt");
+  return {
+    release: best.release,
+    candidate: {
+      version: best.version,
+      channel: opts.channel,
+      assetName: String(best.matched.asset.name),
+      url: String(best.matched.asset.browser_download_url),
+      sumsUrl: sums ? String(sums.browser_download_url) : null,
+      releaseUrl: typeof best.release.html_url === "string" ? best.release.html_url : "",
+      prerelease: best.release.prerelease === true,
+    },
+  };
 }
 
 /** True when the candidate is strictly newer than the installed console. */
