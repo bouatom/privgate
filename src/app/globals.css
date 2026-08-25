@@ -386,6 +386,71 @@ button.choice.selected {
 .deploy-url { font-size: 13px; }
 tr.device-row { cursor: pointer; }
 tr.device-row.selected td { background: var(--nav-active); }
+
+/* Dense fleet table (Devices page) — tighter cells than the default table. */
+table.fleet th, table.fleet td { padding: 8px 12px; }
+.fleet-host {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.fleet-host:hover { color: var(--amber-2); }
+
+/* Compact deploy bar: method chips + download, details behind a disclosure. */
+.deploy-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.deploy-chip {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 4px 10px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.deploy-chip.selected {
+  color: var(--ink);
+  border-color: var(--amber);
+  background: var(--nav-active);
+}
+
+/* Slide-over device drawer (right side), opened by ?id= on the Devices page. */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(8, 10, 14, 0.5);
+}
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 61;
+  width: min(520px, 100%);
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+  padding: 18px;
+  outline: none;
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
 tr.queue-row.focused td { background: var(--nav-active); }
 .section-title {
   margin: 0 0 8px;

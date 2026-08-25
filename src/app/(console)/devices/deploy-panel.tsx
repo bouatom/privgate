@@ -3,9 +3,10 @@
 import type { Method } from "./device-methods";
 
 /**
- * The "Deploy the Windows client" panel: installer choice grid, silent-install
- * hints, and the download action. Split out of devices-client to keep that
- * file on one domain (the fleet table).
+ * The expanded "Deploy the Windows client" details behind the compact deploy
+ * bar: installer choice grid, silent-install hints, and the console address
+ * note. Download and errors live on the bar above; this panel keeps the
+ * guidance secondary so the fleet table gets the space.
  */
 export function DeployPanel({
   method,
@@ -13,20 +14,15 @@ export function DeployPanel({
   canInstall,
   msiReady,
   consoleUrl,
-  error,
-  onDownload,
 }: {
   method: Method;
   onMethod: (method: Method) => void;
   canInstall: boolean;
   msiReady: boolean;
   consoleUrl: string;
-  error: string;
-  onDownload: () => void;
 }) {
   return (
-    <section className="panel stack" style={{ padding: 18, marginBottom: 16 }}>
-      <strong>Deploy the Windows client</strong>
+    <>
       <p className="lede" style={{ fontSize: 13 }}>
         Choose one file. The management console address is already in it. You do not enroll names in advance,
         and you do not pick a join type.
@@ -82,16 +78,6 @@ export function DeployPanel({
           downloaded before this change have no Apps entry — use the commands in the Windows VM lab doc.
         </p>
       ) : null}
-      {error ? <p className="err">{error}</p> : null}
-      <div className="row-actions">
-        {canInstall ? (
-          <button className="primary" type="button" onClick={onDownload}>
-            {method === "msi" ? "Download MSI" : "Download deployment script"}
-          </button>
-        ) : (
-          <p className="lede" style={{ fontSize: 12 }}>Policy admins can download the Windows client.</p>
-        )}
-      </div>
-    </section>
+    </>
   );
 }

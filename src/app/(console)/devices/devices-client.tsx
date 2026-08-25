@@ -1,28 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Policy } from "@/lib/policy";
-import { formatWhenShort } from "@/lib/format";
 import { DeviceDetail, type DeviceDetailModel } from "./device-detail";
-import { DeployPanel } from "./deploy-panel";
-import type { Method } from "./device-methods";
-
-type DeviceSummary = {
-  id: string;
-  hostname: string;
-  enrolledAt: string;
-  pendingRequests: number;
-  activeJit: number;
-  lastEventAt: string | null;
-  lastAction: string | null;
-  agentVersion: string;
-  lastSeenAt: string | null;
-  updateRequestedAt: string | null;
-  online: boolean;
-  uiAlive: boolean | null;
-  uiLastSeenAt: string | null;
-};
+import { DeviceDrawer } from "./device-drawer";
+import { DeployToggle } from "./deploy-toggle";
+import { FleetTable, type FleetDevice } from "./fleet-table";
 
 type BulkSummary = {
   pushed: number;
@@ -30,23 +14,12 @@ type BulkSummary = {
   skipped?: Array<{ deviceId: string; reason: string }>;
 };
 
-function isNewer(candidate: string, installed: string): boolean {
-  const parse = (v: string) =>
-    v.replace(/^v/i, "").split(/[-+]/)[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
-  const a = parse(candidate);
-  const b = parse(installed);
-  for (let i = 0; i < 3; i += 1) {
-    if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
-  }
-  return false;
-}
-
-function lastSeenLabel(device: DeviceSummary): string {
-  if (device.online) return "connected now";
-  if (!device.lastSeenAt) return "never seen";
-  return `last seen ${formatWhenShort(device.lastSeenAt)}`;
-}
-
+/**
+ * Devices page shell: a compact deploy bar, the dense fleet table with inline
+ * status pills, and the URL-driven (?id=) slide-over holding the device
+ * detail. Selection lives in the URL so refresh and deep links re-open the
+ * drawer.
+ */
 export function DevicesClient({
   devices,
   selected,
@@ -61,7 +34,7 @@ export function DevicesClient({
   binariesReady,
   msiReady,
 }: {
-  devices: DeviceSummary[];
+  devices: FleetDevice[];
   selected: string;
   detail: DeviceDetailModel | null;
   canInstall: boolean;
@@ -76,39 +49,40 @@ export function DevicesClient({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [method, setMethod] = useState<Method>(msiReady ? "msi" : "script");
-  const [error, setError] = useState("");
+  const [updateError, setUpdateError] = useState("");
   const [bulkMessage, setBulkMessage] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [updating, setUpdating] = useState("");
-
-  const selectedDevice = useMemo(() => devices.find((d) => d.id === selected), [devices, selected]);
+  const [updatingId, setUpdatingId] = useState("");
 
   function selectDevice(id: string) {
     startTransition(() => router.push(`/devices?id=${encodeURIComponent(id)}`));
   }
 
+  function closeDrawer() {
+    startTransition(() => router.push("/devices"));
+  }
+
   async function pushUpdate(deviceId: string, hostname: string) {
-    setError("");
+    setUpdateError("");
     setBulkMessage("");
-    setUpdating(deviceId);
+    setUpdatingId(deviceId);
     try {
       const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/update`, { method: "POST" });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(`${hostname}: ${body.error || `update failed (${res.status})`}`);
+        setUpdateError(`${hostname}: ${body.error || `update failed (${res.status})`}`);
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { queued?: boolean };
       if (body.queued) setBulkMessage(`${hostname} is offline — update queued for its next check-in.`);
       startTransition(() => router.refresh());
     } finally {
-      setUpdating("");
+      setUpdatingId("");
     }
   }
 
   async function pushAllStale() {
-    setError("");
+    setUpdateError("");
     setBulkMessage("");
     setBulkBusy(true);
     try {
@@ -119,7 +93,7 @@ export function DevicesClient({
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setError(body.error || `bulk update failed (${res.status})`);
+        setUpdateError(body.error || `bulk update failed (${res.status})`);
         return;
       }
       const body = (await res.json()) as BulkSummary;
@@ -133,160 +107,54 @@ export function DevicesClient({
     }
   }
 
-  function download() {
-    setError("");
-    if (method === "msi" && !msiReady) {
-      setError("MSI is not available here. Download the deployment script instead.");
-      return;
-    }
-    if (!binariesReady) {
-      setError(
-        "This console is missing the Windows client. Reinstall from GitHub Releases, or from a source checkout run bash scripts/smoke-agent-build.sh and restart.",
-      );
-      return;
-    }
-    window.location.href = `/api/devices/client?format=${method}&apiBase=${encodeURIComponent(consoleUrl)}`;
-  }
-
   return (
     <>
       <div className="top">
         <div>
           <h1>Devices</h1>
           <p className="lede">
-            Install the Windows client. Each PC registers itself and shows up here as its hostname.
+            Install the Windows client. Each PC registers itself and shows up here as its hostname. Select a row for
+            elevation history, events, and JIT windows.
           </p>
         </div>
       </div>
 
-      <DeployPanel
-        method={method}
-        onMethod={setMethod}
-        canInstall={canInstall}
-        msiReady={msiReady}
-        consoleUrl={consoleUrl}
-        error={error}
-        onDownload={download}
-      />
+      <DeployToggle canInstall={canInstall} msiReady={msiReady} binariesReady={binariesReady} consoleUrl={consoleUrl} />
 
-      <div className="device-layout">
-        <div className="panel" style={{ padding: 0 }}>
-          {canUpdate ? (
-            <div className="row-actions" style={{ padding: 12 }}>
-              <button className="ghost" type="button" disabled={bulkBusy} onClick={() => void pushAllStale()}>
-                {bulkBusy ? "Pushing…" : "Update all stale"}
-              </button>
-              {bulkMessage ? <span className="lede">{bulkMessage}</span> : null}
-            </div>
-          ) : null}
-          <table>
-            <thead>
-              <tr>
-                <th>Hostname</th>
-                <th>Agent</th>
-                <th>Activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {devices.length ? (
-                devices.map((d) => {
-                  const pending = d.agentVersion.includes("+pending");
-                  const failed = !pending && d.agentVersion.includes("+stale");
-                  const queued = !pending && Boolean(d.updateRequestedAt);
-                  const stale = !pending && !failed && isNewer(currentVersion, d.agentVersion);
-                  return (
-                    <tr
-                      key={d.id}
-                      className={d.id === selected ? "device-row selected" : "device-row"}
-                      onClick={() => selectDevice(d.id)}
-                    >
-                      <td>
-                        <div>
-                          {d.hostname}{" "}
-                          {d.online ? <span className="pill active">live</span> : <span className="pill">offline</span>}{" "}
-                          {/* GUI liveness: the service can be connected while
-                              the tray is dead — that is exactly the state where
-                              UAC escapes go unnoticed. */}
-                          {d.uiAlive === true ? (
-                            <span className="pill active">UI running</span>
-                          ) : d.uiAlive === false ? (
-                            <span className="pill pending">UI silent</span>
-                          ) : null}
-                        </div>
-                        <div className="mono">{lastSeenLabel(d)}</div>
-                      </td>
-                      <td>
-                        {d.agentVersion ? (
-                          <>
-                            <span className={`pill ${stale || failed ? "pending" : "active"}`}>
-                              {pending
-                                ? "updating…"
-                                : failed
-                                  ? "update failed?"
-                                  : queued
-                                    ? "update queued"
-                                    : stale
-                                      ? `v${d.agentVersion} → ${currentVersion}`
-                                      : `v${d.agentVersion}`}
-                            </span>
-                            {canUpdate && stale ? (
-                              <button
-                                type="button"
-                                className="ghost"
-                                disabled={updating === d.id}
-                                style={{ marginLeft: 6 }}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void pushUpdate(d.id, d.hostname);
-                                }}
-                              >
-                                {updating === d.id ? "Pushing…" : "Update"}
-                              </button>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span className="pill">v unknown</span>
-                        )}
-                      </td>
-                      <td>
-                        {d.pendingRequests ? <span className="pill pending">{d.pendingRequests} pending</span> : null}{" "}
-                        {d.activeJit ? <span className="pill active">JIT</span> : null}
-                        <div className="mono">{d.lastAction || "waiting for this PC"}</div>
-                        <div className="mono">{d.lastEventAt ? new Date(d.lastEventAt).toLocaleString() : "—"}</div>
-                      </td>
-                    </tr>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={3} className="lede" style={{ padding: 18 }}>
-                    No clients yet. After you install the MSI or script, the computer appears here as its hostname.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {canUpdate ? (
+        <div className="row-actions" style={{ margin: "0 0 8px" }}>
+          <button className="ghost icon-btn" type="button" disabled={bulkBusy} onClick={() => void pushAllStale()}>
+            {bulkBusy ? "Pushing…" : "Update all stale"}
+          </button>
+          {bulkMessage ? <span className="lede">{bulkMessage}</span> : null}
+          {updateError ? <span className="err">{updateError}</span> : null}
         </div>
+      ) : null}
 
-        <div>
-          {detail ? (
-            <DeviceDetail
-              detail={detail}
-              policies={policies}
-              canManageAllowlists={canManageAllowlists}
-              canApproveRequests={canApproveRequests}
-            />
-          ) : (
-            <div className="panel" style={{ padding: 18 }}>
-              <p className="lede">
-                {selectedDevice
-                  ? `Select ${selectedDevice.hostname} again if detail did not load.`
-                  : "Install a client to see that computer here."}
-              </p>
-            </div>
-          )}
-        </div>
+      <div className="panel" style={{ padding: 0 }}>
+        <FleetTable
+          devices={devices}
+          selectedId={selected}
+          onSelect={selectDevice}
+          canUpdate={canUpdate}
+          onUpdateOne={(deviceId, hostname) => void pushUpdate(deviceId, hostname)}
+          updatingId={updatingId}
+          currentVersion={currentVersion}
+        />
       </div>
+
+      <DeviceDrawer open={Boolean(detail)} label={detail?.hostname || ""} onClose={closeDrawer}>
+        {detail ? (
+          <DeviceDetail
+            detail={detail}
+            policies={policies}
+            canManageAllowlists={canManageAllowlists}
+            canApproveRequests={canApproveRequests}
+          />
+        ) : (
+          <p className="lede">Loading this computer&apos;s details…</p>
+        )}
+      </DeviceDrawer>
     </>
   );
 }

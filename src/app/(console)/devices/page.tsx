@@ -26,7 +26,9 @@ export default async function DevicesPage({
     online: online.has(d.id),
     ...uiStatusFor(d.id, online.has(d.id)),
   }));
-  const selected = devices.some((d) => d.id === id) ? id! : devices[0]?.id || "";
+  // Drawer selection is URL-driven: no ?id= means no open drawer, a valid id
+  // deep-links or survives refresh straight into the slide-over.
+  const selected = id && devices.some((d) => d.id === id) ? id : "";
   const detail = selected ? deviceDetail(db, selected) ?? null : null;
   const hdrs = await headers();
   const host = hdrs.get("host") || "localhost:3000";
