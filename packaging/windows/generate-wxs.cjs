@@ -61,6 +61,9 @@ function emitDirectory(abs, indent) {
     const cid = isCtl ? "cmpServiceCtl" : `cmp${fileId}`;
     if (isCtl) serviceCtlFileId = id;
     componentRefs.push(cid);
+    // Stop-only, never Remove: upgrade-in-place must stop -> swap -> start
+    // with a stable service id (WinSW id PrivGateConsole). A Remove attr here
+    // would DELETE and recreate the service on upgrades.
     const serviceXml = isCtl
       ? `${indent}  <ServiceControl Id="scPrivGate" Name="PrivGateConsole" Stop="both" Wait="yes" />\n`
       : "";
@@ -76,13 +79,22 @@ function emitDirectory(abs, indent) {
 const inner = emitDirectory(stage, "            ");
 const refs = componentRefs.map((id) => `        <ComponentRef Id="${id}" />`).join("\n");
 
+// On a MAJOR upgrade Windows Installer sets REMOVE to the upgraded-from
+// product code(s) (only a user-initiated uninstall sets REMOVE="ALL").
+// `NOT REMOVE` therefore skipped both actions on every upgrade: strays were
+// never killed and the service was left STOPPED after the swap. Run both
+// unless this transaction IS an uninstall. wixl supports only FileKey-based
+// custom actions (no property/directory/script forms), so stop-all still
+// resolves to the installed service-ctl.cmd; the ServiceControl entry above
+// natively stops/waits the service itself even when that on-disk script is
+// older than stop-all.
 const startAction = serviceCtlFileId
   ? `
     <CustomAction Id="StopPrivGateStray" FileKey="${serviceCtlFileId}" ExeCommand="stop-all" Execute="immediate" Impersonate="no" Return="ignore" />
     <CustomAction Id="StartPrivGate" FileKey="${serviceCtlFileId}" ExeCommand="start" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE</Custom>
-      <Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE</Custom>
+      <Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>`
   : "";
 

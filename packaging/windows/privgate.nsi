@@ -35,6 +35,25 @@ Var AgentPortCtl
 Var DataDir
 Var IsUpgrade
 
+; Move a file that could not be deleted (still held by a dying process) aside
+; instead of failing the copy: Windows refuses to DELETE a running exe but
+; permits RENAMING it. The .old-* leftovers are purged on the next run.
+!macro MoveAsideIfLocked FILENAME
+  ClearErrors
+  Delete "$INSTDIR\${FILENAME}"
+  ${If} ${FileExists} "$INSTDIR\${FILENAME}"
+    StrCpy $R8 0
+    ${Do}
+      IntOp $R8 $R8 + 1
+      ClearErrors
+      Rename "$INSTDIR\${FILENAME}" "$INSTDIR\${FILENAME}.old-$R8"
+      ${IfNot} ${Errors}
+        ${Break}
+      ${EndIf}
+    ${LoopUntil} $R8 > 8
+  ${EndIf}
+!macroend
+
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipDirOnUpgrade
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
@@ -145,22 +164,29 @@ Function LaunchConsole
 FunctionEnd
 
 Function StopExistingService
-  IfFileExists "$INSTDIR\PrivGateConsole.exe" 0 stop_done
-  nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" stop'
-  Sleep 1500
-stop_done:
-  ; A console started by hand (node.exe host.cjs) locks node.exe and the
-  ; .next payload, which is what produces "the management process is running
-  ; and cannot be updated". service-ctl.cmd stop-all also stops the service,
-  ; then terminates any node.exe running from $INSTDIR.
-  IfFileExists "$INSTDIR\service-ctl.cmd" 0 stop_done2
-    nsExec::ExecToLog '"$INSTDIR\service-ctl.cmd" stop-all'
-    Sleep 1500
-stop_done2:
+  ; Self-sufficient stop: extract THIS build's control script from the
+  ; installer and run it against $INSTDIR. Never trust the on-disk copy -
+  ; upgrading a pre-stop-all install means it lacks the stop-all verb
+  ; entirely, and fire-and-forget stops leave SERVICE_STOP_PENDING wrappers
+  ; locked. The embedded script polls for STOPPED (20s) then escalates to
+  ; taskkill /F on the wrapper PID (10s), so no fixed Sleep guess exists.
+  File /oname=$PLUGINSDIR\service-ctl.cmd "payload\service-ctl.cmd"
+  nsExec::ExecToLog '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
+  Pop $0
+FunctionEnd
+
+Function PrepareLockedTargets
+  ; Aside-copies from a previous upgrade are no longer running: purge first,
+  ; then move any still-locked hot file out of the way of SetOverwrite.
+  Delete "$INSTDIR\*.old-*"
+  !insertmacro MoveAsideIfLocked "PrivGateConsole.exe"
+  !insertmacro MoveAsideIfLocked "node.exe"
+  !insertmacro MoveAsideIfLocked "host.cjs"
 FunctionEnd
 
 Section "Install"
   Call StopExistingService
+  Call PrepareLockedTargets
   SetOverwrite on
   SetOutPath "$INSTDIR"
   File /r "payload\*.*"
@@ -174,6 +200,7 @@ Section "Install"
 
   ${If} $IsUpgrade == "1"
     nsExec::ExecToLog '"$INSTDIR\node.exe" "$INSTDIR\write-env.cjs" --dir "$DataDir\PrivGate" --preserve'
+    Pop $0
   ${Else}
     FileOpen $0 "$PLUGINSDIR\privgate-setup.ini" w
     FileWrite $0 "bind=$Bind$\r$\n"
@@ -181,9 +208,14 @@ Section "Install"
     FileWrite $0 "agentPort=$AgentPort$\r$\n"
     FileClose $0
     nsExec::ExecToLog '"$INSTDIR\node.exe" "$INSTDIR\write-env.cjs" --dir "$DataDir\PrivGate" --ini "$PLUGINSDIR\privgate-setup.ini"'
+    Pop $0
   ${EndIf}
 
+  ; The freshly extracted script is current by construction: start (and its
+  ; WinSW `install`) updates the existing service in place - same service id,
+  ; never a delete/recreate.
   nsExec::ExecToLog '"$INSTDIR\service-ctl.cmd" start'
+  Pop $0
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\PrivGate\Console" "InstallDir" "$INSTDIR"
@@ -203,8 +235,13 @@ Function un.InitDataDir
 FunctionEnd
 
 Section "Uninstall"
-  nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" stop'
+  ; Same self-sufficient stop as the install section, so a hand-started node
+  ; or a STOP_PENDING drain cannot leave files locked under RMDir /r.
+  File /oname=$PLUGINSDIR\service-ctl.cmd "payload\service-ctl.cmd"
+  nsExec::ExecToLog '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
+  Pop $0
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" uninstall'
+  Pop $0
   Call un.InitDataDir
   ; Data survives uninstall on purpose: $DataDir\PrivGate holds privgate.db
   ; plus console.env (DEVICE_SECRET_KEY / TICKET_SIGNING_KEY). Deleting either

@@ -48,6 +48,14 @@ copy_if() {
   fi
 }
 
+copy_crlf() {
+  # cmd.exe label/goto parsing is unreliable with LF-only endings; ship .cmd
+  # files with CRLF regardless of the repo's LF convention.
+  local src="$1" dest="$2"
+  [[ -f "$src" ]] || return 0
+  perl -pe 's/\r?\n/\r\n/' "$src" > "$dest"
+}
+
 assemble_app() {
   local dest="$1"
   rm -rf "$dest"
@@ -195,8 +203,8 @@ if want windows; then
   rm -rf "$STAGE/win-node"
   cp "$CACHE/WinSW-x64.exe" "$STAGE/win/PrivGateConsole.exe"
   cp "$ROOT/packaging/windows/privgate-console.xml" "$STAGE/win/PrivGateConsole.xml"
-  copy_if "$ROOT/packaging/windows/service-ctl.cmd" "$STAGE/win/service-ctl.cmd"
-  copy_if "$ROOT/packaging/windows/install-service.cmd" "$STAGE/win/install-service.cmd"
+  copy_crlf "$ROOT/packaging/windows/service-ctl.cmd" "$STAGE/win/service-ctl.cmd"
+  copy_crlf "$ROOT/packaging/windows/install-service.cmd" "$STAGE/win/install-service.cmd"
   copy_if "$ROOT/scripts/update-server.ps1" "$STAGE/win/update-server.ps1"
 
   if command -v makensis >/dev/null; then

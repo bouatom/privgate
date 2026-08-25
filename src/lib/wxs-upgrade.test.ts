@@ -34,9 +34,18 @@ describe("generate-wxs upgrade metadata", () => {
     expect(xml).toContain('Stop="both"');
     expect(xml).toContain('Id="StartPrivGate"');
     // Stray hand-started consoles must be stopped before MSI costs files, or
-    // msiexec raises FilesInUse and silent updates fail.
+    // msiexec raises FilesInUse and silent updates fail. On a major upgrade
+    // REMOVE holds the upgraded-from product code(s); only an uninstall sets
+    // REMOVE="ALL", so the old `NOT REMOVE` condition skipped stray-kill AND
+    // service start on every upgrade.
     expect(xml).toContain('Id="StopPrivGateStray"');
-    expect(xml).toMatch(/<Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE<\/Custom>/);
+    expect(xml).toMatch(/<Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE~="ALL"<\/Custom>/);
+    expect(xml).toMatch(/<Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE~="ALL"<\/Custom>/);
+    // Upgrade-in-place stops -> swaps -> starts with a stable service id: the
+    // ServiceControl entry must never grow a Remove attribute (that deletes
+    // and recreates the service on upgrades).
+    expect(xml).toMatch(/<ServiceControl Id="scPrivGate" Name="PrivGateConsole" Stop="both" Wait="yes"\s*\/>/);
+    expect(xml).not.toContain("Remove=");
     expect(xml).toContain("MajorUpgrade");
   });
 });

@@ -62,10 +62,46 @@ if ($Sha256) {
 function Stop-Console {
   Step 'Stopping the running console (service + hand-started node.exe)'
   & (Join-Path $installDir 'service-ctl.cmd') stop-all | Out-Null
-  Start-Sleep -Seconds 2
-  # service-ctl.cmd stop-all covers this too; belt and braces for locked files.
+  # stop-all on a current script already polls until SERVICE_STOPPED and
+  # escalates to taskkill /F. Re-check independently below so an OLD on-disk
+  # service-ctl.cmd (pre-stop-all: fire-and-forget stop) still leaves us with
+  # a quiesced box - a service stuck STOP_PENDING keeps PrivGateConsole.exe
+  # locked and the robocopy swap then fails with delete errors.
+  $svc = Get-Service -Name 'PrivGateConsole' -ErrorAction SilentlyContinue
+  if ($svc -and $svc.Status -ne 'Stopped') {
+    $deadline = (Get-Date).AddSeconds(20)
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 500
+      $svc.Refresh()
+      if ($svc.Status -eq 'Stopped') { break }
+    }
+    if ($svc.Status -ne 'Stopped') {
+      $wrapper = Join-Path $installDir 'PrivGateConsole.exe'
+      Get-CimInstance Win32_Process -Filter "Name='PrivGateConsole.exe'" |
+        Where-Object { $_.ExecutablePath -eq $wrapper } |
+        ForEach-Object { taskkill.exe /F /T /PID $_.ProcessId | Out-Null }
+      $deadline = (Get-Date).AddSeconds(10)
+      while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $svc.Refresh()
+        if ($svc.Status -eq 'Stopped') { break }
+      }
+    }
+  }
+  # Hand-started node.exe locks node.exe and the .next payload. Graceful kill
+  # first (SIGTERM parity), bounded drain window, then force.
   $strays = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $nodeExe }
-  if ($strays) { $strays | Stop-Process -Force; Start-Sleep -Seconds 1 }
+  if ($strays) {
+    $strays | ForEach-Object { taskkill.exe /PID $_.Id 2>$null | Out-Null }
+    $deadline = (Get-Date).AddSeconds(5)
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 500
+      $strays = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $nodeExe }
+      if (-not $strays) { break }
+    }
+    $strays = Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $nodeExe }
+    if ($strays) { $strays | Stop-Process -Force }
+  }
 }
 
 function Backup-Current {
@@ -195,8 +231,12 @@ switch ($PSCmdlet.ParameterSetName) {
     Assert-ArtifactIntegrity
 
     Backup-Current
-    # The MSI schedules stop-all before file costing; the NSIS exe stops the
-    # service in its own section. Both restart the service when done.
+    # Both installers are self-sufficient on the stop path: the MSI stops the
+    # service natively (ServiceControl) and runs stray-kill before file
+    # costing; the NSIS exe extracts its own current service-ctl.cmd (never
+    # the older on-disk copy), polls for STOPPED and escalates to taskkill /F.
+    # Neither deletes/recreates the service identity. The health check below
+    # is what actually proves the swap worked.
     if ([IO.Path]::GetExtension($Installer) -eq '.msi') {
       Step "Installing $Installer (msiexec /qn)"
       $proc = Start-Process msiexec.exe -ArgumentList "/i", "`"$Installer`"", '/qn', '/norestart' -Wait -PassThru

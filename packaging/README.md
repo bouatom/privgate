@@ -48,7 +48,17 @@ Install the newer package over the old one. Do not uninstall first. One command,
 
 What stays: SQLite and `console.env` (secrets, bind, ports) under the platform data directory. The service is stopped, app files and the bundled Node runtime are replaced, then the service starts again.
 
-The stop is graceful: on SIGTERM the console stops accepting requests, closes agent WebSockets with code 1001, and checkpoints/closes SQLite before exit. Installers also stop consoles started by hand — Windows runs `service-ctl.cmd stop-all`, and the macOS preinstall / Linux preinst drain stray `/opt/privgate/bin/node` processes — which is what used to fail updates with "the PrivGate management process is running and cannot be updated". The MSI schedules that stop before file costing, so silent `/qn` updates no longer hit a files-in-use dialog.
+The stop is graceful: on SIGTERM the console stops accepting requests, closes agent WebSockets with code 1001, and checkpoints/closes SQLite before exit. Installers also stop consoles started by hand — Windows runs `service-ctl.cmd stop-all`, and the macOS preinstall / Linux preinst drain stray `/opt/privgate/bin/node` processes — which is what used to fail updates with "the management process is running and cannot be updated".
+
+A stop *request* returning is not a stopped service, which is what used to fail Windows upgrades with "service is still running" / "cannot delete the service". The Windows installers therefore never trust a fire-and-forget stop:
+
+- `service-ctl.cmd` polls until the SCM reports `Stopped` (~20s cap), then escalates to `taskkill /F /T` on the `PrivGateConsole.exe` wrapper PID, then polls again; hand-started `node.exe` from the install dir gets graceful taskkill → bounded drain → force. Polling uses `Get-Service` status enums, so it is locale-independent (do not parse localized `sc query` text).
+- Upgrades are **stop → swap files → start** with the same WinSW service id (`PrivGateConsole`). Nothing deletes or recreates the service: the MSI's `ServiceControl` is stop-only (no `Remove=` attribute) and NSIS only ever runs WinSW `install`/`start`, never `uninstall`, outside explicit uninstall.
+- Installers are self-sufficient: the NSIS setup extracts **its own** current copy of `service-ctl.cmd` to `$PLUGINSDIR` and runs it against `$INSTDIR` (an older on-disk copy may lack newer verbs such as `stop-all`). `update-server.ps1` re-verifies quiescence itself after calling the on-disk script for the same reason.
+- If a file is still locked when the swap starts (dying process, wedged drain), the NSIS setup renames it aside (`*.old-N`) instead of failing — Windows refuses to delete a running exe but allows renaming it — and purges the leftovers on the next run.
+- The MSI schedules stray-stop before file costing (`Before="InstallValidate"`), so silent `/qn` updates do not hit a files-in-use dialog.
+
+To exercise the wait loop off-box, shim the toolchain on PATH with fake `sc.exe`/`taskkill.exe` that drive a state machine (Running → StopPending → Stopped, plus a wedged variant that never leaves StopPending), run `service-ctl.cmd stop-all <dir>` against an empty target dir, and assert: quiet inside ~20s in the normal case, exactly one forced kill then quiet in the wedged case, immediate no-op when no service object exists.
 
 What does not stay: files you added by hand under the install prefix (`C:\Program Files\PrivGate`, `/opt/privgate`). Change listen settings after upgrade in `console.env` (or `dpkg-reconfigure privgate-console` on Linux), then restart the service.
 
