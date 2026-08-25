@@ -4,6 +4,7 @@ import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatWhen } from "@/lib/format";
 import type { PresentedUser } from "@/lib/models";
+import { useConfirm } from "../_components/confirm-dialog";
 
 type Device = { id: string; hostname: string };
 type Group = { id: string; name: string; memberCount: number };
@@ -45,6 +46,7 @@ export function JitClient({
     reason: "",
   });
   const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   function clampMinutes(value: number): number {
     if (!Number.isFinite(value)) return 15;
@@ -59,10 +61,16 @@ export function JitClient({
     e.preventDefault();
     setError("");
     const durationMinutes = clampMinutes(form.durationMinutes);
-    const consequence = selectedGroup
-      ? `Open a ${durationMinutes}-minute local Administrators window on this device for every one of the ${selectedGroup.memberCount} members of "${selectedGroup.name}" (membership snapshotted at grant time)? The broker will revoke each member even if the API is down.`
-      : `Open a ${durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`;
-    if (!confirm(consequence)) return;
+    const confirmed = await confirm({
+      title: selectedGroup
+        ? `Open a ${durationMinutes}-minute admin window for group "${selectedGroup.name}"?`
+        : `Open a ${durationMinutes}-minute admin window on this device?`,
+      body: selectedGroup
+        ? `Every one of the ${selectedGroup.memberCount} members of "${selectedGroup.name}" gets local Administrators on this device. The broker will revoke each member even if the API is down.`
+        : "The subject gets local Administrators on this device. The broker will revoke it even if the API is down.",
+      confirmLabel: "Open window",
+    });
+    if (!confirmed) return;
     const res = await fetch("/api/jit", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -78,7 +86,13 @@ export function JitClient({
   }
 
   async function revoke(id: string) {
-    if (!confirm("Revoke this JIT window now? Every covered user loses local Administrators on the next broker tick.")) return;
+    const confirmed = await confirm({
+      title: "Force revoke this JIT window now?",
+      body: "Every covered user loses local Administrators on the next broker tick.",
+      confirmLabel: "Revoke now",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = await fetch(`/api/jit/${id}/revoke`, { method: "POST" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -211,6 +225,7 @@ export function JitClient({
           </tbody>
         </table>
       </div>
+      {dialog}
     </>
   );
 }

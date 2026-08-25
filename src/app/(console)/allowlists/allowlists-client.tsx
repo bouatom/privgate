@@ -3,6 +3,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { Policy } from "@/lib/policy";
+import { useConfirm } from "../_components/confirm-dialog";
 import {
   argumentPatternError,
   emptyRuleDraft,
@@ -36,6 +37,7 @@ export function AllowlistsClient({
   const [, startTransition] = useTransition();
   const [draft, setDraft] = useState<RuleDraft>(emptyRuleDraft);
   const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   function patch(p: Partial<RuleDraft>) {
     setDraft((current) => ({ ...current, ...p }));
@@ -70,7 +72,13 @@ export function AllowlistsClient({
   }
 
   async function remove(id: string, name: string) {
-    if (!confirm(`Remove rule “${name}”? That program falls back to needing approval before it can elevate.`)) return;
+    const confirmed = await confirm({
+      title: `Remove rule “${name}”?`,
+      body: "That program falls back to needing approval before it can elevate.",
+      confirmLabel: "Remove rule",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = await fetch(`/api/policies/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -154,6 +162,7 @@ export function AllowlistsClient({
           </tbody>
         </table>
       </div>
+      {dialog}
     </>
   );
 }

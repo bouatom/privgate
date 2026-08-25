@@ -514,3 +514,57 @@ tr.queue-row.focused td { background: var(--nav-active); }
   .chrome { padding: 16px 20px 0; }
   .main { padding: 12px 20px 48px; }
 }
+
+/* Themed confirm dialog replacing native window.confirm() guards. */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80; /* above the device drawer's top layer content */
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 10, 14, 0.5);
+}
+.confirm-dialog {
+  width: min(440px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--amber);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+}
+.confirm-dialog.danger { border-top-color: var(--bad); }
+.confirm-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.confirm-dialog p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.confirm-dialog ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.confirm-dialog .row-actions { justify-content: flex-end; margin-top: 16px; }
+
+/* Native <dialog> variant of the slide-over drawer: showModal() puts it in the
+   top layer for real focus containment and Esc handling. Overrides the UA
+   dialog centering/margins so the existing fixed right-edge placement holds. */
+dialog.drawer {
+  left: auto; /* UA sheet sets inset-inline-start: 0 + margin auto → centers */
+  margin: 0;
+  max-height: none;
+  max-width: min(520px, 100%);
+  border: none;
+  border-left: 1px solid var(--line);
+}
+dialog.drawer::backdrop {
+  background: rgba(8, 10, 14, 0.5);
+}

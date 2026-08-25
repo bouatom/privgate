@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 
 /**
- * Right-side slide-over used for per-device details. ESC and a backdrop click
- * close it; focus moves into the panel on open and returns to the previously
- * focused element on close. Content is rendered by the parent so the existing
- * DeviceDetail stays the single source of truth.
+ * Right-side slide-over used for per-device details, backed by a native
+ * <dialog>. showModal() lifts it into the top layer, so focus is truly
+ * contained (Tab cannot reach the page behind the drawer) and Esc raises the
+ * `cancel` event, which we route through onClose so parent state stays in
+ * sync. Body scroll stays locked manually and focus returns to the trigger on
+ * close. Content is rendered by the parent so the existing DeviceDetail stays
+ * the single source of truth.
  */
 export function DeviceDrawer({
   open,
@@ -19,7 +22,7 @@ export function DeviceDrawer({
   onClose: () => void;
   children: ReactNode;
 }) {
-  const panelRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef(onClose);
 
   useEffect(() => {
@@ -28,16 +31,14 @@ export function DeviceDrawer({
 
   useEffect(() => {
     if (!open) return;
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    panelRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeRef.current();
-    };
-    document.addEventListener("keydown", onKey);
+    dialog.showModal();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", onKey);
+      if (dialog.open) dialog.close(); // native close also restores focus
       document.body.style.overflow = previousOverflow;
       previous?.focus();
     };
@@ -45,25 +46,39 @@ export function DeviceDrawer({
 
   if (!open) return null;
 
+  function onBackdropClick(event: MouseEvent<HTMLDialogElement>) {
+    // Clicks land on the <dialog> itself when they hit ::backdrop or padding —
+    // only treat them as backdrop dismissals when outside the panel rectangle.
+    const rect = dialogRef.current?.getBoundingClientRect();
+    if (
+      rect &&
+      (event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom)
+    ) {
+      closeRef.current();
+    }
+  }
+
   return (
-    <>
-      <div className="drawer-backdrop" aria-hidden="true" onClick={() => closeRef.current()} />
-      <div
-        ref={panelRef}
-        className="drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label={label || "Device details"}
-        tabIndex={-1}
-      >
-        <div className="drawer-head">
-          <strong>{label}</strong>
-          <button type="button" className="ghost icon-btn" onClick={onClose}>
-            Close ✕
-          </button>
-        </div>
-        {children}
+    <dialog
+      ref={dialogRef}
+      className="drawer"
+      aria-label={label || "Device details"}
+      onCancel={(event) => {
+        event.preventDefault(); // stay mounted until the parent flips `open`
+        closeRef.current();
+      }}
+      onClick={onBackdropClick}
+    >
+      <div className="drawer-head">
+        <strong>{label}</strong>
+        <button type="button" className="ghost icon-btn" onClick={onClose}>
+          Close ✕
+        </button>
       </div>
-    </>
+      {children}
+    </dialog>
   );
 }

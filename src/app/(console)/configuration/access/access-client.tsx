@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { PERMISSIONS, type PermissionId } from "@/lib/permissions";
 import type { PortalRole, PortalUser } from "@/lib/models";
+import { useConfirm } from "../../_components/confirm-dialog";
 
 const groups = [...new Set(PERMISSIONS.map((p) => p.group))];
 
@@ -36,6 +37,7 @@ export function AccessClient({
   const [customDescription, setCustomDescription] = useState("");
   const [customPerms, setCustomPerms] = useState<PermissionId[]>([]);
   const [editPerms, setEditPerms] = useState<PermissionId[]>([]);
+  const { confirm, dialog } = useConfirm();
 
   // Inline role editor for existing users
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -154,7 +156,13 @@ export function AccessClient({
 
   async function removeRole() {
     if (!role || role.system) return;
-    if (!confirm(`Delete role "${role.name}"?`)) return;
+    const confirmed = await confirm({
+      title: `Delete role "${role.name}"?`,
+      body: "Users holding only this role lose its permissions immediately.",
+      confirmLabel: "Delete role",
+      danger: true,
+    });
+    if (!confirmed) return;
     const res = await fetch(`/api/portal/roles/${role.id}`, { method: "DELETE" });
     const body = (await res.json()) as { error?: string };
     if (!res.ok) {
@@ -395,6 +403,7 @@ export function AccessClient({
           ) : null}
         </div>
       </div>
+      {dialog}
     </>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useConfirm } from "../../_components/confirm-dialog";
 
 export type CheckView = {
   available: boolean;
@@ -57,6 +58,7 @@ export function UpdatesClient({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   const check = status?.check ?? initialCheck;
 
@@ -117,7 +119,12 @@ export function UpdatesClient({
   async function applyUpdate() {
     const target = check?.version;
     if (!target) return;
-    if (!window.confirm(`Install PrivGate ${target} now? The console service stops, swaps files, and restarts. Open admin sessions end.`)) return;
+    const confirmed = await confirm({
+      title: `Install PrivGate ${target} now?`,
+      body: "The console service stops, swaps files, and restarts. Open admin sessions end.",
+      confirmLabel: "Install now",
+    });
+    if (!confirmed) return;
     setBusy(true);
     setError("");
     setMessage("Downloading and verifying… the installer starts once checksums pass.");
@@ -248,6 +255,7 @@ export function UpdatesClient({
           ) : null}
         </div>
       ) : null}
+      {dialog}
     </>
   );
 }

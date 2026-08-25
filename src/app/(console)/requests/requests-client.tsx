@@ -5,6 +5,7 @@ import { useRef, useState, useTransition } from "react";
 import { displayPath, formatWhenShort } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
 import { isEditableTarget, queueKeyAction } from "@/lib/keymap";
+import { useConfirm } from "../_components/confirm-dialog";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 
 export type RequestRow = {
@@ -53,11 +54,19 @@ export function RequestsClient({
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const rowRefs = useRef(new Map<string, HTMLTableRowElement>());
+  const { confirm, dialog } = useConfirm();
 
   async function act(id: string, action: "approve" | "deny", row: RequestRow) {
     if (action === "approve" && (row.riskLevel === "high" || row.riskLevel === "critical")) {
-      const why = reasonsOf(row)[0] || "This process looks suspicious.";
-      if (!confirm(`${row.riskLevel.toUpperCase()} risk: ${why}\n\nApprove elevation anyway?`)) return;
+      const reasons = reasonsOf(row);
+      const confirmed = await confirm({
+        title: `${row.riskLevel.toUpperCase()} risk: approve elevation anyway?`,
+        body: reasons.length ? undefined : "This process looks suspicious.",
+        details: reasons.length ? reasons : undefined,
+        confirmLabel: "Approve anyway",
+        danger: true,
+      });
+      if (!confirmed) return;
     }
     setBusy(id);
     setError("");
@@ -251,6 +260,7 @@ export function RequestsClient({
           </tbody>
         </table>
       </div>
+      {dialog}
     </>
   );
 }
