@@ -1,4 +1,6 @@
 :root, html[data-theme="dark"] {
+  /* UA defaults (scrollbars, form controls, dialog CanvasText) follow the theme. */
+  color-scheme: dark;
   --bg: #101218;
   --bg-2: #161b24;
   --panel: #1b212c;
@@ -25,6 +27,7 @@
 }
 
 html[data-theme="light"] {
+  color-scheme: light;
   --bg: #eef1f6;
   --bg-2: #e6eaf1;
   --panel: #f7f8fb;
@@ -271,6 +274,34 @@ a.card { color: inherit; }
 .card .k { color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
 .card .v { font-size: 28px; margin-top: 8px; font-variant-numeric: tabular-nums; }
 
+/* Stat-card head row: muted stroke icon + uppercase label; linked cards light
+   the icon amber on hover. */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+a.card:hover { border-color: var(--amber); }
+a.card:hover .card-icon { color: var(--amber); }
+/* Attention accent without layout shift: inset top line over the usual shadow. */
+.card.accent { box-shadow: inset 0 2px 0 var(--amber), var(--shadow); }
+.card .v.sm { font-size: 22px; }
+.card-note { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
+.dash-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.dash-link:hover { color: var(--amber-2); }
+
 .panel { padding: 8px 0; overflow: auto; }
 
 table { width: 100%; border-collapse: collapse; }
@@ -278,6 +309,10 @@ th, td { text-align: left; padding: 12px 18px; border-bottom: 1px solid var(--li
 th { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
 tr:last-child td { border-bottom: 0; }
 .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; }
+/* Right-aligned tabular figures for count columns (risk table, top programs). */
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* Muted empty-state cell for dashboard tables. */
+td.empty { padding: 18px; color: var(--muted); font-size: 14px; }
 
 .pill {
   display: inline-block;
@@ -328,6 +363,15 @@ button.primary, button.ghost, button.danger {
   cursor: pointer;
 }
 button.primary { background: var(--amber); color: var(--primary-ink); border-color: var(--amber); }
+/* Anchor variant of .primary (dashboard "Review requests" CTA). */
+a.primary {
+  display: inline-block;
+  padding: 8px 12px;
+  background: var(--amber);
+  color: var(--primary-ink);
+  border: 1px solid var(--amber);
+}
+a.primary:hover { border-color: var(--amber-2); }
 button.danger { color: var(--bad); border-color: var(--pill-bad-line); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.icon-btn {
@@ -337,6 +381,8 @@ button.icon-btn {
   text-transform: uppercase;
   flex-shrink: 0;
 }
+/* Icon-only buttons (theme toggle): block svg avoids inline-baseline gap. */
+button.icon-btn svg { display: block; }
 
 form.stack, .stack { display: grid; gap: 10px; }
 label { color: var(--muted); font-size: 12px; }
@@ -468,6 +514,9 @@ table.fleet th, table.fleet td { padding: 8px 12px; }
   z-index: 61;
   width: min(520px, 100%);
   background: var(--panel);
+  /* Explicit ink: native <dialog> UA sheet defaults to CanvasText (black),
+     which is unreadable on --panel in dark mode. dialog.drawer inherits this. */
+  color: var(--ink);
   border-left: 1px solid var(--line);
   box-shadow: var(--shadow);
   overflow-y: auto;
@@ -487,6 +536,11 @@ tr.queue-row.focused td { background: var(--nav-active); }
   font-size: 16px;
   font-weight: 500;
 }
+
+/* Section spacing utilities: consistent rhythm between dashboard sections and
+   stacked headings inside a column. */
+.dash-section { margin-bottom: 20px; }
+.section-title.gap-top { margin-top: 16px; }
 
 .skeleton-line {
   background: var(--nav-active);

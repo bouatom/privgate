@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { AdminSession } from "@/lib/models";
 import { hasAnyPermission, NAV_PERMISSION } from "@/lib/permissions";
 import { SessionContext } from "./session-context";
@@ -68,7 +68,8 @@ const NAV_ICONS: Record<NavHref, React.ReactNode> = {
   ),
 };
 
-function NavIcon({ href }: { href: NavHref }) {
+/** Shared 17px stroke-icon frame; inherits currentColor so amber states apply. */
+function IconSvg({ children }: { children: ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -81,12 +82,28 @@ function NavIcon({ href }: { href: NavHref }) {
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {NAV_ICONS[href]}
+      {children}
     </svg>
   );
 }
 
+function NavIcon({ href }: { href: NavHref }) {
+  return <IconSvg>{NAV_ICONS[href]}</IconSvg>;
+}
+
 type Theme = "light" | "dark";
+
+/* Theme toggle glyphs: sun shows while dark (click switches to light),
+   moon shows while light. Same stroke pattern as the nav icons. */
+const THEME_ICON: Record<Theme, ReactNode> = {
+  dark: (
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </>
+  ),
+  light: <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+};
 
 function currentTheme(): Theme {
   if (typeof document === "undefined") return "dark";
@@ -225,8 +242,9 @@ export function ConsoleShell({
               onClick={toggleTheme}
               type="button"
               aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
             >
-              {theme === "dark" ? "Light mode" : "Dark mode"}
+              <IconSvg>{THEME_ICON[theme]}</IconSvg>
             </button>
           </div>
         </header>
