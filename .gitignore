@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .tools/
+.opencode/
 build/
 .venv/
 venv/
