@@ -173,6 +173,15 @@ Function StopExistingService
   File /oname=$PLUGINSDIR\service-ctl.cmd "payload\service-ctl.cmd"
   nsExec::ExecToLog '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
   Pop $0
+  ; A failure here is silent today and only surfaces later as confusing
+  ; "error writing to file" popups when locked payloads cannot be replaced.
+  ${If} $0 != 0
+    MessageBox MB_ICONEXCLAMATION|MB_OKCANCEL \
+      "Stopping the running console returned code $0. If it is still running, the following file copies may report write errors.$\n$\nContinue anyway? (No aborts the update.)" \
+      IDOK stop_warn_continue
+    Abort
+    stop_warn_continue:
+  ${EndIf}
 FunctionEnd
 
 Function PrepareLockedTargets

@@ -33,16 +33,24 @@ else
   db_get privgate-console/agent_port || true
   AGENT_PORT="${RET:-3001}"
 
-  INI="$(mktemp)"
-  chmod 600 "$INI"
-  {
-    printf 'bind=%s\n' "$BIND"
-    printf 'webPort=%s\n' "$WEB_PORT"
-    printf 'agentPort=%s\n' "$AGENT_PORT"
-  } > "$INI"
-
-  /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir /var/lib/privgate --ini "$INI"
-  rm -f "$INI"
+  # Stage debconf answers in a temp INI for write-env.cjs. Prefer the data
+  # directory (same volume, same owner context) over system /tmp; fall back
+  # to /tmp, then to built-in defaults — a read-only or full temp dir must
+  # warn, not abort configure in the middle of an update.
+  INI="$(mktemp /var/lib/privgate/.setup-ini.XXXXXX 2>/dev/null || mktemp 2>/dev/null || true)"
+  if [ -n "$INI" ]; then
+    chmod 600 "$INI"
+    {
+      printf 'bind=%s\n' "$BIND"
+      printf 'webPort=%s\n' "$WEB_PORT"
+      printf 'agentPort=%s\n' "$AGENT_PORT"
+    } > "$INI"
+    /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir /var/lib/privgate --ini "$INI" || true
+    rm -f "$INI" || true
+  else
+    echo "warning: cannot create a temp file (temp dir full or read-only); using default bind/ports" >&2
+    /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir /var/lib/privgate || true
+  fi
 fi
 
 chown -R privgate:privgate /var/lib/privgate /var/log/privgate

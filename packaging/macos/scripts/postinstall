@@ -20,15 +20,23 @@ else
     AGENT_PORT="$(osascript -e 'text returned of (display dialog "Client / broker port:" default answer "3001")' 2>/dev/null || echo 3001)"
   fi
 
-  INI="$(mktemp)"
-  chmod 600 "$INI"
-  {
-    printf 'bind=%s\n' "$BIND"
-    printf 'webPort=%s\n' "$WEB_PORT"
-    printf 'agentPort=%s\n' "$AGENT_PORT"
-  } > "$INI"
-  /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir "$DATA" --ini "$INI"
-  rm -f "$INI"
+  # Stage settings in a temp INI next to console.env (same volume/owner
+  # context) rather than system /tmp; fall back to built-in defaults with a
+  # warning if no temp dir is writable — never abort the install here.
+  INI="$(mktemp "$DATA/.setup-ini.XXXXXX" 2>/dev/null || mktemp 2>/dev/null || true)"
+  if [[ -n "$INI" ]]; then
+    chmod 600 "$INI"
+    {
+      printf 'bind=%s\n' "$BIND"
+      printf 'webPort=%s\n' "$WEB_PORT"
+      printf 'agentPort=%s\n' "$AGENT_PORT"
+    } > "$INI"
+    /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir "$DATA" --ini "$INI" || true
+    rm -f "$INI" || true
+  else
+    echo "warning: cannot create a temp file (temp dir full or read-only); using default bind/ports" >&2
+    /opt/privgate/bin/node /opt/privgate/write-env.cjs --dir "$DATA" || true
+  fi
 fi
 
 cp /opt/privgate/com.privgate.console.plist /Library/LaunchDaemons/com.privgate.console.plist

@@ -252,9 +252,21 @@ else
   verify_artifact_integrity
   if [[ -n "$DEB" ]]; then
     log "Verifying deb payload before install"
-    VERIFY_TMP="$(mktemp -d)"
-    dpkg-deb -x "$DEB" "$VERIFY_TMP"
-    artifact_check "$VERIFY_TMP/opt/privgate"
+    # Prefer the system temp dir, but fall back to a scratch dir beside the
+    # data directory when $TMPDIR is unwritable or full (read-only /tmp,
+    # small tmpfs) instead of failing the whole update with a cryptic
+    # "cannot write" error before anything has been touched.
+    VERIFY_TMP="$(mktemp -d 2>/dev/null || true)"
+    if [[ -z "$VERIFY_TMP" ]]; then
+      mkdir -p "$(dirname "$DATA_DIR")"
+      VERIFY_TMP="$(mktemp -d "$(dirname "$DATA_DIR")/.privgate-verify.XXXXXXXX")"
+      log "system temp unwritable; verifying the deb under $VERIFY_TMP instead"
+    fi
+    if ! dpkg-deb -x "$DEB" "$VERIFY_TMP" ||
+       ! artifact_check "$VERIFY_TMP/opt/privgate"; then
+      rm -rf "$VERIFY_TMP"
+      fail "new payload failed verification; nothing was changed"
+    fi
     rm -rf "$VERIFY_TMP"
   fi
   backup_current

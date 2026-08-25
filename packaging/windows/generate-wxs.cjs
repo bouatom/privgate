@@ -77,6 +77,24 @@ function emitDirectory(abs, indent) {
 }
 
 const inner = emitDirectory(stage, "            ");
+
+// The service wrapper logs to %PROGRAMDATA%\PrivGate\logs (privgate-console.xml
+// logpath). Create it — plus the data dir — with machine-default ACLs during
+// InstallFiles, before the deferred start action runs write-env.cjs/start, so
+// an upgrade onto a system where those dirs are missing or oddly owned cannot
+// turn into service-start or log-write failures.
+const dataDirsXml = `
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="PrivGateDataDir" Name="PrivGate">
+          <Directory Id="PrivGateLogsDir" Name="logs">
+            <Component Id="cmpDataDirs" Guid="7d1e9f42-8b3c-4d5a-9e2f-1c0b6a7d8e9f">
+              <CreateFolder />
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>`;
+componentRefs.push("cmpDataDirs");
+
 const refs = componentRefs.map((id) => `        <ComponentRef Id="${id}" />`).join("\n");
 
 // On a MAJOR upgrade Windows Installer sets REMOVE to the upgraded-from
@@ -108,7 +126,7 @@ const wxs = `<?xml version="1.0" encoding="utf-8"?>
       <Directory Id="ProgramFiles64Folder">
         <Directory Id="INSTALLDIR" Name="PrivGate">
 ${inner}        </Directory>
-      </Directory>
+      </Directory>${dataDirsXml}
     </Directory>
     <Feature Id="Main" Title="PrivGate Console" Level="1">
 ${refs}

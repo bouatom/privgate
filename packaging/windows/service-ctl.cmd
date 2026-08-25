@@ -38,7 +38,10 @@ call :WAIT_STOPPED
 exit /b 0
 
 :START
-pushd "%CTLDIR%"
+pushd "%CTLDIR%" || (
+  echo service-ctl: cannot enter install dir "%CTLDIR%" 1>&2
+  exit /b 1
+)
 if exist node.exe if exist write-env.cjs (
   node.exe write-env.cjs --dir "%ProgramData%\PrivGate" --preserve
 )

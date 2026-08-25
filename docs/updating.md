@@ -159,3 +159,21 @@ Procedure and helper scripts: [backing up the management console](backing-up.md)
   directory (`bind`, `webPort`) and the service logs
   (`%ProgramData%\PrivGate\logs`, `/Library/Logs/PrivGate`,
   `journalctl -u privgate`).
+
+### "Installer mentions tmp / write errors"
+
+Early-phase messages naming a temp folder map to one of these. None of them
+touch your data directory.
+
+| Warning text (typical) | Cause | Safe? |
+| --- | --- | --- |
+| EXE: `Error writing to file: C:\Users\<you>\AppData\Local\Temp\…` (very first step) | NSIS extracts its self-contained `service-ctl.cmd` into `$PLUGINSDIR` under the admin user's `%TEMP%`; antivirus, AppLocker script rules, or a full disk can block it | **No** — the stop step was skipped; expect follow-on "cannot delete/write" errors. Whitelist the installer or use the MSI |
+| EXE: `Stopping the running console returned code N … file copies may report write errors` (new builds) | The stop-all step itself failed; installer now warns instead of failing silently later | Continue only if you stopped the service manually; otherwise abort |
+| MSI: error 1303/1334 or paths under `C:\Windows\Temp\{GUID}` | Windows Installer stages the embedded cab there as SYSTEM; broken ACLs on `C:\Windows\Temp` or low disk space cause this before any PrivGate code runs | Fix `C:\Windows\Temp` ACLs/free space, then retry — safe to rerun |
+| Linux/macOS updater or maintainer script: `cannot create a temp file` / `mktemp` errors naming `/tmp`, `/var/tmp` | Temp dir read-only or full while staging settings INI / deb verification dir | Now **safe**: scripts fall back to a scratch dir beside the data dir and continue; postinstall may print `using default bind/ports` — re-apply custom ports in `console.env` afterwards |
+| Access-denied on `%ProgramData%\PrivGate` or `/var/lib/privgate` during update | Previous manual ACL/ownership edits on data/log dirs, not the installer | Reset inheritance to machine defaults; installers create these dirs with default ACLs if absent |
+
+Temp files used by installers/updaters live beside their target where
+possible (`mktemp` in the platform data directory for settings staging,
+deb verification under `/var/lib`); nothing is written to the running
+install's prefix before verification passes.
