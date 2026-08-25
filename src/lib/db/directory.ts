@@ -97,6 +97,24 @@ export function listGroups(db: DatabaseSync): DirectoryGroup[] {
   }));
 }
 
+/** Flat user→group rows so callers can classify users by real membership. */
+export function listGroupMemberships(
+  db: DatabaseSync,
+): Array<{ userId: string; groupId: string; groupName: string; objectId: string }> {
+  const rows = db
+    .prepare(
+      `SELECT m.user_id, g.id AS group_id, g.name AS group_name, g.object_id
+       FROM group_members m JOIN groups g ON g.id = m.group_id`,
+    )
+    .all() as Record<string, unknown>[];
+  return rows.map((row) => ({
+    userId: String(row.user_id),
+    groupId: String(row.group_id),
+    groupName: String(row.group_name),
+    objectId: String(row.object_id ?? ""),
+  }));
+}
+
 export function replaceGroups(
   db: DatabaseSync,
   groups: Array<{ id: string; name: string; objectId: string; memberUserIds: string[] }>,

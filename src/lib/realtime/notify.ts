@@ -1,5 +1,5 @@
 import "server-only";
-import { getDb, getUser, type ElevationRequest, type JitGrant } from "../db";
+import { getDb, grantIdentities, type ElevationRequest, type JitGrant } from "../db";
 import { publishConsole, publishDevice } from "./bus";
 
 export function notifyPendingRequest(request: ElevationRequest) {
@@ -25,28 +25,40 @@ export function notifyRequestDenied(request: ElevationRequest) {
   publishDevice(request.deviceId, { type: "request-denied", requestId: request.id });
 }
 
-export function notifyJitGrant(grant: JitGrant, ticket: string) {
-  const user = getUser(getDb(), grant.userId);
+/**
+ * One jit-grant per covered identity: personal grants push a single message,
+ * group grants fan out over the grant-time membership snapshot so every member
+ * gets their own signed ticket addressed to their own SID.
+ */
+export function notifyJitGrant(grant: JitGrant, tickets: Array<{ userSid: string; ticket: string }>) {
   publishConsole("jit");
   publishConsole("devices");
-  publishDevice(grant.deviceId, {
-    type: "jit-grant",
-    grantId: grant.id,
-    ticket,
-    userSid: user?.adSid || "",
-    exp: Math.floor(new Date(grant.expiresAt).getTime() / 1000),
-  });
+  const exp = Math.floor(new Date(grant.expiresAt).getTime() / 1000);
+  for (const entry of tickets) {
+    publishDevice(grant.deviceId, {
+      type: "jit-grant",
+      grantId: grant.id,
+      ticket: entry.ticket,
+      userSid: entry.userSid,
+      exp,
+    });
+  }
 }
 
 export function notifyJitRevoke(grant: JitGrant) {
-  const user = getUser(getDb(), grant.userId);
   publishConsole("jit");
   publishConsole("devices");
-  publishDevice(grant.deviceId, {
-    type: "jit-revoke",
-    grantId: grant.id,
-    userSid: user?.adSid || "",
-  });
+  const sids = grantIdentities(getDb(), grant)
+    .map((identity) => identity.adSid)
+    .filter((sid) => sid !== "");
+  const targets = sids.length > 0 ? sids : [""];
+  for (const userSid of targets) {
+    publishDevice(grant.deviceId, {
+      type: "jit-revoke",
+      grantId: grant.id,
+      userSid,
+    });
+  }
 }
 
 export function notifyDeviceChange() {

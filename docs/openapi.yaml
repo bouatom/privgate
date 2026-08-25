@@ -138,14 +138,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [userId, deviceId, durationMinutes, reason]
+              required: [deviceId, durationMinutes, reason]
+              description: >-
+                Target exactly one of userId (personal grant) or groupId
+                (group grant). Group grants snapshot the membership at grant
+                time; one active grant per group+device pair.
               properties:
                 userId: { type: string }
+                groupId: { type: string }
                 deviceId: { type: string }
                 durationMinutes: { type: integer, minimum: 15, maximum: 60 }
                 reason: { type: string }
       responses:
-        "201": { description: Grant + device revoke payload }
+        "201": { description: Grant + per-identity device revoke payload }
   /api/jit/{id}/revoke:
     post:
       security: [{ session: [] }]
@@ -360,6 +365,13 @@ components:
         durationMinutes: { type: integer }
         reason: { type: string }
         expiresAt: { type: string, format: date-time }
+        groupId:
+          type: string
+          description: Set for group-based grants; '' for personal grants.
+        memberIds:
+          type: array
+          description: Snapshot of group member user ids taken at grant time.
+          items: { type: string }
     DirectoryUser:
       type: object
       properties:
@@ -369,7 +381,14 @@ components:
         adSid: { type: string }
         entraOid: { type: string }
         jitEligible: { type: boolean }
-        disabled: { type: boolean }
+        effectiveRole:
+          type: string
+          enum: [standard, elevated-admin]
+          description: Real elevation derived from high-privilege group membership.
+        accountKind:
+          type: string
+          enum: [human, service]
+          description: Service flags MSOL-style sync/service accounts.
         roles:
           type: array
           items: { type: string }

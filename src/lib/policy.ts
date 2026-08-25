@@ -22,7 +22,6 @@ export type EvaluateSubject = {
   entraOid?: string;
   groupIds: string[];
   deviceId: string;
-  disabled?: boolean;
 };
 
 export type EvaluateFile = {
@@ -96,9 +95,6 @@ export function evaluateElevation(
   policies: Policy[],
   jitActive: boolean,
 ): Decision {
-  if (subject.disabled) {
-    return { decision: "deny", reason: "user disabled" };
-  }
   if (!file.fileHash || !file.publisher) {
     return { decision: "deny", reason: "hash and publisher are required" };
   }

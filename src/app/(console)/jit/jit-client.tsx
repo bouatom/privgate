@@ -6,6 +6,7 @@ import { formatWhen } from "@/lib/format";
 import type { PresentedUser } from "@/lib/models";
 
 type Device = { id: string; hostname: string };
+type Group = { id: string; name: string; memberCount: number };
 type Grant = {
   id: string;
   status: string;
@@ -14,16 +15,21 @@ type Grant = {
   expiresAt: string;
   userName: string;
   hostname: string;
+  kind: "user" | "group";
+  groupName: string;
+  memberCount: number;
 };
 
 export function JitClient({
   users,
+  groups,
   devices,
   grants,
   canGrant,
   canRevoke,
 }: {
   users: PresentedUser[];
+  groups: Group[];
   devices: Device[];
   grants: Grant[];
   canGrant: boolean;
@@ -31,7 +37,13 @@ export function JitClient({
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [form, setForm] = useState({ userId: "", deviceId: "", durationMinutes: 15, reason: "" });
+  const [form, setForm] = useState({
+    userId: "",
+    groupId: "",
+    deviceId: "",
+    durationMinutes: 15,
+    reason: "",
+  });
   const [error, setError] = useState("");
 
   function clampMinutes(value: number): number {
@@ -39,16 +51,18 @@ export function JitClient({
     return Math.min(60, Math.max(15, Math.round(value)));
   }
   const eligible = users.filter(
-    (u) => u.jitEligible && !u.disabled && !u.roles.some((role) => role === "Approver" || role === "PolicyAdmin"),
+    (u) => u.jitEligible && !u.roles.some((role) => role === "Approver" || role === "PolicyAdmin"),
   );
+  const selectedGroup = groups.find((g) => g.id === form.groupId);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
     const durationMinutes = clampMinutes(form.durationMinutes);
-    if (!confirm(`Open a ${durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`)) {
-      return;
-    }
+    const consequence = selectedGroup
+      ? `Open a ${durationMinutes}-minute local Administrators window on this device for every one of the ${selectedGroup.memberCount} members of "${selectedGroup.name}" (membership snapshotted at grant time)? The broker will revoke each member even if the API is down.`
+      : `Open a ${durationMinutes}-minute local Administrators window on this device? The broker will revoke it even if the API is down.`;
+    if (!confirm(consequence)) return;
     const res = await fetch("/api/jit", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -64,7 +78,7 @@ export function JitClient({
   }
 
   async function revoke(id: string) {
-    if (!confirm("Revoke this JIT window now? The user loses local Administrators on the next broker tick.")) return;
+    if (!confirm("Revoke this JIT window now? Every covered user loses local Administrators on the next broker tick.")) return;
     const res = await fetch(`/api/jit/${id}/revoke`, { method: "POST" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -79,7 +93,7 @@ export function JitClient({
       <div className="top">
         <div>
           <h1>JIT admin windows</h1>
-          <p className="lede">Temporary local Administrators membership, 15–60 minutes, one active window per user and device. The broker schedules revoke on the PC at grant time.</p>
+          <p className="lede">Temporary local Administrators membership, 15–60 minutes, one active window per subject and device — target a single user or a whole security group. The broker schedules revoke on the PC at grant time.</p>
         </div>
       </div>
       {canGrant ? (
@@ -87,11 +101,28 @@ export function JitClient({
         <div className="grid cards">
           <div>
             <label>User</label>
-            <select value={form.userId} onChange={(e) => setForm({ ...form, userId: e.target.value })} required>
+            <select
+              value={form.userId}
+              onChange={(e) => setForm({ ...form, userId: e.target.value, groupId: "" })}
+            >
               <option value="">Select…</option>
               {eligible.map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>or Group</label>
+            <select
+              value={form.groupId}
+              onChange={(e) => setForm({ ...form, groupId: e.target.value, userId: "" })}
+            >
+              <option value="">Select…</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.memberCount})
                 </option>
               ))}
             </select>
@@ -122,10 +153,16 @@ export function JitClient({
         <label>Reason</label>
         <input value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
         {error ? <p className="err">{error}</p> : null}
-        {eligible.length === 0 ? (
-          <p className="lede" style={{ fontSize: 13 }}>No JIT-eligible users. Allow JIT on Directory users first.</p>
+        {selectedGroup ? (
+          <p className="lede" style={{ fontSize: 13 }}>
+            Granting to a group covers {selectedGroup.memberCount} member{selectedGroup.memberCount === 1 ? "" : "s"} at
+            grant time; later directory changes do not extend or shrink an open window.
+          </p>
         ) : null}
-        <button className="primary" type="submit" disabled={!eligible.length}>Open window</button>
+        {eligible.length === 0 && groups.length === 0 ? (
+          <p className="lede" style={{ fontSize: 13 }}>No JIT-eligible users or synced groups. Allow JIT on Directory users or connect Entra/AD first.</p>
+        ) : null}
+        <button className="primary" type="submit" disabled={!eligible.length && !groups.length}>Open window</button>
       </form>
       ) : null}
       <div className="panel">
@@ -144,7 +181,14 @@ export function JitClient({
                 <tr key={g.id}>
                   <td><span className={`pill ${g.status}`}>{g.status}</span></td>
                   <td>
-                    {g.userName}
+                    {g.kind === "group" ? (
+                      <>
+                        <span className="pill">{g.groupName}</span>
+                        <div className="mono">group · {g.memberCount} member{g.memberCount === 1 ? "" : "s"} at grant time</div>
+                      </>
+                    ) : (
+                      g.userName
+                    )}
                     <div className="mono">{g.hostname}</div>
                   </td>
                   <td>

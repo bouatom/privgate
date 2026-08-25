@@ -76,16 +76,20 @@ export function upsertUsers(
   }
 }
 
+/**
+ * Directory-user flags the console owns. Disabling directory accounts is out
+ * of product scope — elevation control only manages JIT eligibility; the
+ * legacy `disabled` column is left untouched by every code path.
+ */
 export function patchUser(
   db: DatabaseSync,
   id: string,
-  patch: { jitEligible?: boolean; disabled?: boolean },
+  patch: { jitEligible?: boolean },
 ): DirectoryUser | undefined {
   const current = getUser(db, id);
   if (!current) return undefined;
-  db.prepare("UPDATE users SET jit_eligible = ?, disabled = ? WHERE id = ?").run(
+  db.prepare("UPDATE users SET jit_eligible = ? WHERE id = ?").run(
     patch.jitEligible === undefined ? current.jitEligible : patch.jitEligible ? 1 : 0,
-    patch.disabled === undefined ? current.disabled : patch.disabled ? 1 : 0,
     id,
   );
   return getUser(db, id);

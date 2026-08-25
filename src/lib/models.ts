@@ -42,8 +42,11 @@ export type PresentedUser = {
   adSid: string;
   entraOid: string;
   jitEligible: boolean;
-  disabled: boolean;
   roles: string[];
+  /** Real elevation status derived from high-privilege group membership. */
+  effectiveRole: "standard" | "elevated-admin";
+  /** 'service' flags directory sync/service accounts (e.g. MSOL_ UPNs). */
+  accountKind: "human" | "service";
 };
 
 export type PresentedAudit = {

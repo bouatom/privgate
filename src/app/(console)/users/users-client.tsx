@@ -10,31 +10,24 @@ type Group = { id: string; name: string; directorySource: string; memberCount: n
 export function UsersClient({
   users,
   groups,
-  viewerEmail,
+  elevatedGroupCount,
   canManage,
 }: {
   users: PresentedUser[];
   groups: Group[];
-  viewerEmail: string;
+  elevatedGroupCount: number;
   canManage: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [error, setError] = useState("");
 
-  async function toggle(user: PresentedUser, field: "jitEligible" | "disabled") {
-    if (field === "disabled" && !user.disabled) {
-      if (user.userPrincipalName.toLowerCase() === viewerEmail.toLowerCase()) {
-        setError("You cannot disable the account you are signed in with.");
-        return;
-      }
-      if (!confirm(`Disable ${user.displayName}? They will be denied elevation until you enable them again.`)) return;
-    }
+  async function toggleJit(user: PresentedUser) {
     setError("");
     const res = await fetch(`/api/users/${user.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ [field]: !user[field] }),
+      body: JSON.stringify({ jitEligible: !user.jitEligible }),
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -50,8 +43,9 @@ export function UsersClient({
         <div>
           <h1>Directory users</h1>
           <p className="lede">
-            JIT eligibility and disablement. Connect Entra or Active Directory under{" "}
-            <Link href="/configuration/integrations" prefetch>Configuration → Integrations</Link>.
+            JIT eligibility and real elevation status, straight from the directory. Connect Entra or Active
+            Directory under <Link href="/configuration/integrations" prefetch>Configuration → Integrations</Link>.
+            This console never creates or disables directory accounts.
           </p>
         </div>
       </div>
@@ -63,39 +57,37 @@ export function UsersClient({
             <tr>
               <th>User</th>
               <th>Identities</th>
-              <th>Flags</th>
+              <th>Status</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {users.length ? (
               users.map((u) => {
-                const self = u.userPrincipalName.toLowerCase() === viewerEmail.toLowerCase();
                 return (
                   <tr key={u.id}>
                     <td>
                       {u.displayName}
                       <div className="mono">{u.userPrincipalName}</div>
-                      <div className="mono">{u.roles.join(", ") || "standard"}</div>
                     </td>
                     <td>
                       <div className="mono">AD {u.adSid || "—"}</div>
                       <div className="mono">Entra {u.entraOid || "—"}</div>
                     </td>
                     <td>
-                      {u.jitEligible ? <span className="pill active">JIT</span> : null}{" "}
-                      {u.disabled ? <span className="pill denied">disabled</span> : null}
+                      {u.effectiveRole === "elevated-admin" ? (
+                        <span className="pill denied">elevated admin</span>
+                      ) : (
+                        <span className="pill active">standard</span>
+                      )}{" "}
+                      {u.accountKind === "service" ? <span className="pill">sync/service</span> : null}{" "}
+                      {u.jitEligible ? <span className="pill active">JIT</span> : null}
                     </td>
                     <td className="row-actions">
                       {canManage ? (
-                        <>
-                          <button className="ghost" onClick={() => toggle(u, "jitEligible")}>
-                            {u.jitEligible ? "Disallow JIT" : "Allow JIT"}
-                          </button>
-                          <button className="danger" disabled={self && !u.disabled} onClick={() => toggle(u, "disabled")}>
-                            {u.disabled ? "Enable" : "Disable"}
-                          </button>
-                        </>
+                        <button className="ghost" onClick={() => toggleJit(u)}>
+                          {u.jitEligible ? "Disallow JIT" : "Allow JIT"}
+                        </button>
                       ) : null}
                     </td>
                   </tr>
@@ -113,6 +105,11 @@ export function UsersClient({
       {groups.length ? (
         <>
           <h1 style={{ fontSize: 20, marginTop: 8 }}>Groups</h1>
+          <p className="lede" style={{ fontSize: 13 }}>
+            {elevatedGroupCount > 0
+              ? `${elevatedGroupCount} group${elevatedGroupCount === 1 ? "" : "s"} confer real elevation (badges above follow directory membership).`
+              : "Synced from your directory; membership feeds allowlist binds and elevation badges."}
+          </p>
           <div className="panel">
             <table>
               <thead>

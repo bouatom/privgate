@@ -143,6 +143,8 @@ export function migrate(db: DatabaseSync) {
   ensureColumn(db, "requests", "risk_reasons", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "oauth_state", "kind", "TEXT NOT NULL DEFAULT 'pkce'");
   ensureColumn(db, "oauth_state", "meta", "TEXT NOT NULL DEFAULT '{}'");
+  ensureColumn(db, "jit_grants", "group_id", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "jit_grants", "member_ids_json", "TEXT NOT NULL DEFAULT '[]'");
   migratePortal(db);
   migrateSetupState(db);
   seedSetupState(db);

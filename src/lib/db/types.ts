@@ -28,7 +28,10 @@ export type ElevationRequest = {
 
 export type JitGrant = {
   id: string;
+  /** Directory user id for personal grants; '' for group grants. */
   userId: string;
+  /** Group id for group-based grants; '' for personal grants. */
+  groupId: string;
   deviceId: string;
   durationMinutes: number;
   reason: string;
@@ -37,6 +40,10 @@ export type JitGrant = {
   revokedAt: string | null;
   revokedBy: string | null;
   status: string;
+  /** Snapshot of group member user ids taken at grant time ([] for personal). */
+  memberIds: string[];
+  /** 'group' when groupId is set, else 'user'. */
+  kind: "user" | "group";
 };
 
 export type AuditEvent = {

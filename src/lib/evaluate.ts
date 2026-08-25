@@ -73,7 +73,6 @@ export function evaluateForDevice(
       entraOid: user.entraOid,
       groupIds: groupIdsForUser(db, user.id),
       deviceId,
-      disabled: user.disabled === 1,
     },
     {
       filePath: body.filePath,

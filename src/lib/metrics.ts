@@ -78,7 +78,7 @@ export function dashboardStats(db: DatabaseSync): DashboardStats {
     activeJit: listJit(db).filter((g) => g.status === "active").length,
     devices: listDeviceSummaries(db).length,
     policies: listPolicies(db).length,
-    users: listUsers(db).filter((u) => u.disabled === 0).length,
+    users: listUsers(db).length,
     medianMinutesToDecision: median(decisionMinutes),
     last7Days: {
       pending: countByStatus(last7, "pending"),

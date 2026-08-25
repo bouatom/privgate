@@ -1,5 +1,5 @@
 import { can, getSession } from "@/lib/auth";
-import { getDb, listDeviceSummaries, listJit, listUsers } from "@/lib/db";
+import { getDb, listDeviceSummaries, listGroups, listJit, listUsers } from "@/lib/db";
 import { expireDueJit } from "@/lib/jit-expiry";
 import { presentUsers } from "@/lib/present";
 import { Forbidden } from "../forbidden";
@@ -13,6 +13,7 @@ export default async function JitPage() {
   return (
     <JitClient
       users={presentUsers(listUsers(db))}
+      groups={listGroups(db).filter((g) => g.memberCount > 0)}
       devices={listDeviceSummaries(db)}
       grants={listJit(db)}
       canGrant={can(session, "jit.grant")}

@@ -1,10 +1,19 @@
 import "server-only";
 import type { AuditEvent, DirectoryUser } from "./db";
 import type { PresentedAudit, PresentedUser } from "./models";
+import { accountKindOf, effectiveRoleFor } from "./elevation";
 
 export type { PresentedAudit, PresentedUser } from "./models";
 
-export function presentUsers(users: DirectoryUser[]): PresentedUser[] {
+/**
+ * Present directory users with real classification: effectiveRole comes from
+ * actual membership in high-privilege groups (passed in by the caller), and
+ * MSOL-style sync/service accounts are flagged — never filtered out.
+ */
+export function presentUsers(
+  users: DirectoryUser[],
+  context: { membershipsByUser?: ReadonlyMap<string, Array<{ name: string; objectId?: string }>> } = {},
+): PresentedUser[] {
   return users.map((u) => ({
     id: u.id,
     displayName: u.displayName,
@@ -12,8 +21,9 @@ export function presentUsers(users: DirectoryUser[]): PresentedUser[] {
     adSid: u.adSid,
     entraOid: u.entraOid,
     jitEligible: u.jitEligible === 1,
-    disabled: u.disabled === 1,
     roles: JSON.parse(u.rolesJson) as string[],
+    effectiveRole: effectiveRoleFor(context.membershipsByUser?.get(u.id) ?? []),
+    accountKind: accountKindOf(u.userPrincipalName),
   }));
 }
 
