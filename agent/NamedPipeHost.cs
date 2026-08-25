@@ -9,7 +9,49 @@ using System.Text.Json;
 
 namespace PrivGate.Agent;
 
-public sealed class NamedPipeHost(Func<JsonElement, int, Task<string>> handler)
+/// <summary>
+/// Caller identity derived from the named-pipe client process itself — never
+/// from fields inside the JSON payload. UserSid comes from the client
+/// process's primary token (GetNamedPipeClientProcessId → OpenProcess →
+/// OpenProcessToken(TOKEN_QUERY) → GetTokenInformation(TokenUser) →
+/// ConvertSidToStringSid); Session comes from ProcessIdToSessionId on that
+/// same PID. Handlers must use these values and ignore any "userSid"/
+/// "sessionId" the message carries — a compromised or spoofing client cannot
+/// elevate itself past policy by editing its own JSON.
+/// </summary>
+public sealed class PipeIdentity
+{
+    public static readonly PipeIdentity Anonymous = new("", 0);
+
+    public PipeIdentity(string userSid, int session)
+    {
+        UserSid = userSid ?? "";
+        Session = session;
+    }
+
+    public string UserSid { get; }
+    public int Session { get; }
+
+    /// <summary>
+    /// Identity of the current process, for in-process Handle calls such as
+    /// the --once CLI path. There the caller IS this process, so its own
+    /// token is the honest bound identity.
+    /// </summary>
+    public static PipeIdentity Self()
+    {
+        try
+        {
+            using var id = WindowsIdentity.GetCurrent();
+            return new PipeIdentity(id.User?.Value ?? "", Process.GetCurrentProcess().SessionId);
+        }
+        catch
+        {
+            return Anonymous;
+        }
+    }
+}
+
+public sealed class NamedPipeHost(Func<JsonElement, PipeIdentity, Task<string>> handler)
 {
     public const string PipeName = "PrivGateElevation";
 
@@ -61,13 +103,11 @@ public sealed class NamedPipeHost(Func<JsonElement, int, Task<string>> handler)
             try
             {
                 var json = JsonSerializer.Deserialize<JsonElement>(line);
-                var session = ClientSession(server);
-                if (json.ValueKind == JsonValueKind.Object && json.TryGetProperty("sessionId", out var sidEl)
-                    && sidEl.TryGetInt32(out var fromMsg) && fromMsg > 0)
-                {
-                    session = fromMsg;
-                }
-                var reply = await handler(json, session);
+                // The trust boundary: bind identity to the pipe client's own
+                // process/token. Payload-supplied userSid/sessionId are never
+                // consulted (parsing stays tolerant; the fields are unused).
+                var identity = ClientIdentity(server);
+                var reply = await handler(json, identity);
                 await writer.WriteLineAsync(reply);
             }
             catch (Exception ex)
@@ -77,17 +117,83 @@ public sealed class NamedPipeHost(Func<JsonElement, int, Task<string>> handler)
         }
     }
 
-    static int ClientSession(NamedPipeServerStream server)
+    const uint ProcessQueryLimitedInformation = 0x1000;
+    const uint TokenQueryAccess = 0x0008;
+    const int TokenUserClass = 1;
+
+    /// <summary>
+    /// Derives who is really on the other end of the pipe: their process
+    /// token's user SID plus the logon session of their process. Any failure
+    /// degrades to Anonymous rather than to something spoofable.
+    /// </summary>
+    static PipeIdentity ClientIdentity(NamedPipeServerStream server)
     {
         try
         {
-            if (!GetNamedPipeClientProcessId(server.SafePipeHandle, out var pid)) return 0;
-            return ProcessIdToSessionId(pid, out var session) ? (int)session : 0;
+            if (!GetNamedPipeClientProcessId(server.SafePipeHandle, out var pid))
+            {
+                return PipeIdentity.Anonymous;
+            }
+            var session = ProcessIdToSessionId(pid, out var logon) ? (int)logon : 0;
+            return new PipeIdentity(ClientProcessUserSid(pid), session);
         }
         catch
         {
-            return 0;
+            return PipeIdentity.Anonymous;
         }
+    }
+
+    static string ClientProcessUserSid(uint pid)
+    {
+        var proc = OpenProcess(ProcessQueryLimitedInformation, false, pid);
+        if (proc == IntPtr.Zero) return "";
+        try
+        {
+            if (!OpenProcessToken(proc, TokenQueryAccess, out var token)) return "";
+            try
+            {
+                // Size query first (returns false with ERROR_INSUFFICIENT_BUFFER).
+                GetTokenInformation(token, TokenUserClass, IntPtr.Zero, 0, out var needed);
+                if (needed == 0) return "";
+                var buf = Marshal.AllocHGlobal((int)needed);
+                try
+                {
+                    if (!GetTokenInformation(token, TokenUserClass, buf, needed, out _)) return "";
+                    var user = Marshal.PtrToStructure<TOKEN_USER>(buf);
+                    if (user.Sid == IntPtr.Zero || !ConvertSidToStringSid(user.Sid, out var sidPtr))
+                    {
+                        return "";
+                    }
+                    try
+                    {
+                        return Marshal.PtrToStringUni(sidPtr) ?? "";
+                    }
+                    finally
+                    {
+                        LocalFree(sidPtr);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buf);
+                }
+            }
+            finally
+            {
+                CloseHandle(token);
+            }
+        }
+        finally
+        {
+            CloseHandle(proc);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct TOKEN_USER
+    {
+        public IntPtr Sid;
+        public uint Attributes;
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -95,4 +201,23 @@ public sealed class NamedPipeHost(Func<JsonElement, int, Task<string>> handler)
 
     [DllImport("kernel32.dll")]
     static extern bool ProcessIdToSessionId(uint dwProcessId, out uint pSessionId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool OpenProcessToken(IntPtr process, uint desiredAccess, out IntPtr token);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    static extern bool GetTokenInformation(
+        IntPtr token, int infoClass, IntPtr info, uint infoLength, out uint returnLength);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern bool ConvertSidToStringSid(IntPtr sid, out IntPtr stringSid);
+
+    [DllImport("kernel32.dll")]
+    static extern IntPtr LocalFree(IntPtr mem);
 }

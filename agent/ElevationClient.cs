@@ -130,6 +130,9 @@ static class ElevationClient
             file = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
         }
         var sid = WindowsIdentity.GetCurrent().User?.Value ?? "";
+        // Informational only: the broker derives caller identity from this
+        // process's own token via NamedPipeHost.ClientIdentity and ignores
+        // payload userSid/sessionId (kept for readable broker.log lines).
         var payload = JsonSerializer.Serialize(new
         {
             mode = "elevate",

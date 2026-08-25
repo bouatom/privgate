@@ -6,21 +6,14 @@ using System.Text.Json;
 
 if (args.Length < 2 || args[0] != "--elevate")
 {
-    Console.Error.WriteLine("Usage: PrivGate.Helper --elevate <path> [--user-sid S-1-5-...]");
+    Console.Error.WriteLine("Usage: PrivGate.Helper --elevate <path> [extra arguments]");
     return 1;
 }
 
 var file = args[1];
 var extra = "";
-var sid = CurrentUserSid();
 for (var i = 2; i < args.Length; i++)
 {
-    if (args[i] == "--user-sid" && i + 1 < args.Length)
-    {
-        sid = args[i + 1];
-        i++;
-        continue;
-    }
     extra = extra.Length == 0 ? args[i] : extra + " " + args[i];
 }
 
@@ -30,10 +23,17 @@ if (file.EndsWith(".msc", StringComparison.OrdinalIgnoreCase))
     file = Path.Combine(Environment.SystemDirectory, "mmc.exe");
 }
 
+// Trust model: this helper runs as the invoking user (launched directly from
+// their session), so the token the broker derives from the pipe client's
+// process IS our token. The broker ignores any "userSid"/"sessionId" in this
+// payload — NamedPipeHost.ClientIdentity binds identity to the client process
+// via its own token and logon session — so the fields below are informational
+// only (they make broker.log lines readable). There is deliberately no
+// --user-sid override: a CLI flag cannot choose who you are.
 var payload = JsonSerializer.Serialize(new
 {
     mode = "elevate",
-    userSid = sid,
+    userSid = CurrentUserSid(),
     filePath = file,
     arguments = extra,
     sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId,
@@ -58,7 +58,7 @@ static string CurrentUserSid()
     }
     catch
     {
-        // Fall through to the lab SID used by control-plane seed data.
+        // Non-Windows dry-run: report nothing rather than a fake SID.
     }
-    return "S-1-5-21-1000-1000-1000-1101";
+    return "";
 }

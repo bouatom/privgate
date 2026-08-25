@@ -135,7 +135,9 @@ sealed class BrokerHost
                 userSid = args[args.Length - 2],
                 filePath = args[args.Length - 1],
             });
-            Console.WriteLine(await host.Handle(once, 0));
+            // The --once CLI runs as the invoking user, so this process's own
+            // token is the honest caller identity for the in-process call.
+            Console.WriteLine(await host.Handle(once, PipeIdentity.Self()));
             ready?.TrySetResult(true);
             return;
         }
@@ -146,21 +148,24 @@ sealed class BrokerHost
         await pipe.ListenAsync(ct);
     }
 
-    async Task<string> Handle(JsonElement msg, int sessionId)
+    async Task<string> Handle(JsonElement msg, PipeIdentity caller)
     {
         var mode = msg.GetProperty("mode").GetString();
         if (mode == "status") return BrokerStatus.Current.ToJson();
-        var userSid = msg.TryGetProperty("userSid", out var sidEl) ? sidEl.GetString() ?? "" : "";
+        // Trust note: msg.userSid / msg.sessionId are deliberately never read.
+        // Identity comes only from the pipe client's own process token
+        // (NamedPipeHost.ClientIdentity); a client editing its JSON cannot
+        // impersonate another user or desktop session.
         if (mode == "jit-status")
         {
-            var state = await _api.JitStateAsync(userSid, _ct);
+            var state = await _api.JitStateAsync(caller.UserSid, _ct);
             return state.GetRawText();
         }
         if (mode == "uac-canceled")
         {
             await _api.ReportUacCanceledAsync(
                 msg.TryGetProperty("filePath", out var canceledPath) ? canceledPath.GetString() ?? "" : "",
-                userSid,
+                caller.UserSid,
                 msg.TryGetProperty("outcome", out var ocEl) && ocEl.ValueKind == JsonValueKind.String
                     ? ocEl.GetString() ?? ""
                     : "",
@@ -172,7 +177,7 @@ sealed class BrokerHost
             // Runs here, in the service (SYSTEM), because opening the token of
             // an elevated process is routinely denied to the medium-IL tray.
             var candidate = msg.TryGetProperty("filePath", out var clsPath) ? clsPath.GetString() ?? "" : "";
-            var outcome = UacClassifier.Classify(userSid, candidate, sessionId);
+            var outcome = UacClassifier.Classify(caller.UserSid, candidate, caller.Session);
             BrokerLog.Write($"uac.classified outcome={UacClassifier.Wire(outcome)} target={candidate}");
             return JsonSerializer.Serialize(new { outcome = UacClassifier.Wire(outcome) });
         }
@@ -208,7 +213,7 @@ sealed class BrokerHost
         var arguments = msg.TryGetProperty("arguments", out var argvEl) ? argvEl.GetString() ?? "" : "";
         if (HardBans.IsBanned(filePath))
         {
-            var jit = await _api.JitStateAsync(userSid, _ct);
+            var jit = await _api.JitStateAsync(caller.UserSid, _ct);
             var active = jit.TryGetProperty("active", out var a) && a.GetBoolean();
             if (!active)
             {
@@ -221,7 +226,7 @@ sealed class BrokerHost
         var publisher = Authenticode.Publisher(filePath);
         var result = await _api.EvaluateAsync(new
         {
-            userSid,
+            userSid = caller.UserSid,
             entraOid = msg.TryGetProperty("entraOid", out var oid) ? oid.GetString() : "",
             filePath,
             fileHash = hash,
@@ -237,6 +242,27 @@ sealed class BrokerHost
         BrokerLog.Write($"decision={decision} requestId={requestId ?? "-"} file={filePath}");
         if (decision == "allow")
         {
+            // Launch + honest outcome reporting shared by the JIT and plain
+            // allow paths. pid <= 0 (or a throw) is a failure — never reported
+            // as success; every attempt emits launch-result telemetry.
+            (int Pid, string Error) StartTicketProcess(bool denyChildren)
+            {
+                try
+                {
+                    var launchedPid = ElevationHost.Launch(filePath, arguments, denyChildren, caller.Session);
+                    if (launchedPid > 0)
+                    {
+                        EmitLaunchResult(requestId, filePath, ok: true, "");
+                        return (launchedPid, "");
+                    }
+                    return (0, "the program could not be started on this desktop");
+                }
+                catch (Exception ex)
+                {
+                    return (0, ex.Message);
+                }
+            }
+
             var ticket = result.GetProperty("ticket").GetString() ?? "";
             var parsed = TicketVerifier.Verify(ticket, _cfg.TicketSigningKey, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
             if (!parsed.dev.Equals(_cfg.DeviceId, StringComparison.OrdinalIgnoreCase))
@@ -258,10 +284,25 @@ sealed class BrokerHost
                 _watchdog.Arm(parsed.nonce, parsed.sub, until);
                 BrokerStatus.Current.NoteJit(true, until);
                 BrokerStatus.Current.NotePending("");
-                var pid = 0;
-                if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                var (pid, launchError) = StartTicketProcess(parsed.child == "deny");
+                if (pid <= 0)
                 {
-                    pid = ElevationHost.Launch(filePath, arguments, parsed.child == "deny", sessionId);
+                    // The JIT grant stands, but the requested program did not
+                    // start. Say so instead of claiming it opened on the
+                    // desktop (the old lie when CreateProcessAsUser failed).
+                    BrokerLog.Write($"launch failed jit=true file={filePath} detail={launchError}");
+                    BrokerStatus.Current.NoteNotice(
+                        "Program not started",
+                        "Temporary install rights are active, but " + launchError +
+                        ". Finish any installs you already started before the window ends.");
+                    EmitLaunchResult(requestId, filePath, ok: false, launchError);
+                    return JsonSerializer.Serialize(new
+                    {
+                        decision = "deny",
+                        jit = true,
+                        reason = "Your temporary admin window is on, but the requested program could not be started (" +
+                                 launchError + ").",
+                    });
                 }
                 BrokerStatus.Current.NoteNotice(
                     "JIT admin is on",
@@ -276,7 +317,20 @@ sealed class BrokerHost
                 });
             }
             BrokerStatus.Current.NotePending("");
-            var launched = ElevationHost.Launch(filePath, arguments, parsed.child == "deny", sessionId);
+            var (launched, allowError) = StartTicketProcess(parsed.child == "deny");
+            if (launched <= 0)
+            {
+                BrokerLog.Write($"launch failed file={filePath} detail={allowError}");
+                BrokerStatus.Current.NoteNotice(
+                    "Program not started",
+                    "Approval was granted, but " + allowError + ".");
+                EmitLaunchResult(requestId, filePath, ok: false, allowError);
+                return JsonSerializer.Serialize(new
+                {
+                    decision = "deny",
+                    reason = "Approved, but the program could not be started (" + allowError + ").",
+                });
+            }
             return JsonSerializer.Serialize(new { decision = "allow", pid = launched });
         }
         if (decision == "pending")
@@ -301,5 +355,26 @@ sealed class BrokerHost
                     : "Denied by policy: " + denyReason);
         }
         return result.GetRawText();
+    }
+
+    /// <summary>
+    /// Fire-and-forget launch-outcome telemetry to the console (F2). Never
+    /// delays or fails the elevate reply: the report is dropped when offline
+    /// and failures are logged. Additive only — evaluate's mint-time audit is
+    /// untouched; this lands as device.launch.succeeded / device.launch.failed.
+    /// </summary>
+    void EmitLaunchResult(string? requestId, string filePath, bool ok, string detail)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _api.ReportLaunchResultAsync(requestId ?? "", filePath, ok, detail, _ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                BrokerLog.Write("launch-result report failed: " + ex.Message);
+            }
+        }, _ct);
     }
 }

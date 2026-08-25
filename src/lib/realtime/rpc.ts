@@ -22,6 +22,14 @@ export type AgentRpc =
       fileHash?: string;
       publisher?: string;
       outcome?: string;
+    }
+  | {
+      id?: string;
+      type: "launch-result";
+      requestId?: string;
+      filePath: string;
+      ok: boolean;
+      detail?: string;
     };
 
 /** Classifier verdicts the console accepts on uac-canceled telemetry. */
@@ -29,6 +37,11 @@ const UAC_OUTCOMES = ["approved-self", "approved-other", "escaped", "timeout", "
 
 /** GUI heartbeat sanity window: 0..30 days of tray uptime. */
 const MAX_UPTIME_SEC = 30 * 24 * 3600;
+
+/** Length caps for launch-result free-text fields (device-controlled strings). */
+const LAUNCH_MAX_REQUEST_ID = 128;
+const LAUNCH_MAX_FILE_PATH = 1024;
+const LAUNCH_MAX_DETAIL = 512;
 
 export function handleAgentRpc(
   deviceId: string,
@@ -132,6 +145,29 @@ export function handleAgentRpc(
       appendAudit(db, `device:${deviceId}`, "device.uac.canceled", deviceId, { filePath });
     }
     return { id: message.id, type: "result", ok: true, payload: { recorded: !dupe } };
+  }
+  if (message.type === "launch-result") {
+    // Strict validation: `ok` must be a real boolean (no truthy strings), and
+    // every device-controlled string is trimmed and length-capped before it
+    // reaches the audit log.
+    if (typeof message.ok !== "boolean") {
+      return { id: message.id, type: "result", ok: false, error: "ok boolean required" };
+    }
+    const requestId =
+      typeof message.requestId === "string"
+        ? message.requestId.trim().slice(0, LAUNCH_MAX_REQUEST_ID)
+        : "";
+    const filePath = String(message.filePath || "").trim().slice(0, LAUNCH_MAX_FILE_PATH);
+    const detail = typeof message.detail === "string" ? message.detail.trim().slice(0, LAUNCH_MAX_DETAIL) : "";
+    // Additive telemetry only — evaluate.ts's mint-time audit is untouched.
+    appendAudit(
+      getDb(),
+      `device:${deviceId}`,
+      "device.launch." + (message.ok ? "succeeded" : "failed"),
+      deviceId,
+      { requestId, filePath, detail },
+    );
+    return { id: message.id, type: "result", ok: true, payload: { recorded: true } };
   }
   return { id: (message as { id?: string }).id, type: "result", ok: false, error: "unknown message" };
 }

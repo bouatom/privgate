@@ -135,6 +135,25 @@ public sealed class RealtimeChannel : IDisposable
             ct);
     }
 
+    /// <summary>
+    /// Reports the outcome of a broker-side program launch (allow-ticket path,
+    /// including JIT). Optional fields ride along only when non-empty so the
+    /// console's strict validation sees a clean shape.
+    /// </summary>
+    public Task<JsonElement> LaunchResultAsync(
+        string requestId, string filePath, bool ok, CancellationToken ct, string detail = "")
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["type"] = "launch-result",
+            ["filePath"] = filePath,
+            ["ok"] = ok,
+        };
+        if (!string.IsNullOrWhiteSpace(requestId)) payload["requestId"] = requestId;
+        if (!string.IsNullOrWhiteSpace(detail)) payload["detail"] = detail;
+        return RpcAsync(payload, ct);
+    }
+
     async Task ConnectAsync(CancellationToken ct)
     {
         var ws = new ClientWebSocket();
@@ -232,7 +251,9 @@ public sealed class RealtimeChannel : IDisposable
             var sid = msg.TryGetProperty("userSid", out var sidEl) ? sidEl.GetString() ?? "" : "";
             if (sid.Length > 0) watchdog.RevokeNow(sid);
             BrokerStatus.Current.NoteJit(false);
-            BrokerStatus.Current.NoteNotice("JIT admin ended", "Temporary local Administrators membership was removed.");
+            BrokerStatus.Current.NoteNotice(
+                "JIT admin ended",
+                "Temporary local Administrators membership was removed. Finish any installs before the end time.");
             return;
         }
         if (type == "agent-update")
@@ -298,9 +319,9 @@ public sealed class RealtimeChannel : IDisposable
         BrokerStatus.Current.NoteJit(true, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
         BrokerStatus.Current.NoteNotice(
             "JIT admin is on",
-            "You are in local Administrators until " +
-            DateTimeOffset.FromUnixTimeSeconds(parsed.exp).ToLocalTime().ToString("g") +
-            ". Request Disk Management from the tray to open it on this desktop without signing out.");
+            "Temporary install rights granted until " +
+            DateTimeOffset.FromUnixTimeSeconds(parsed.exp).ToLocalTime().ToString("HH:mm") +
+            " - open Disk Management from the tray shield.");
     }
 
     async Task<JsonElement> RpcAsync(Dictionary<string, object?> payload, CancellationToken ct)

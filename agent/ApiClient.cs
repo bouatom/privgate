@@ -83,6 +83,24 @@ public sealed class ApiClient
     }
 
     /// <summary>
+    /// Reports a broker-side launch outcome as launch-result telemetry,
+    /// mirroring ReportClientStatusAsync: realtime only, dropped when offline.
+    /// </summary>
+    public async Task<JsonElement> ReportLaunchResultAsync(
+        string requestId, string filePath, bool ok, string detail = "", CancellationToken ct = default)
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try
+            {
+                return await realtime.LaunchResultAsync(requestId, filePath, ok, ct, detail).ConfigureAwait(false);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime launch-result: {ex.Message}"); }
+        }
+        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+    }
+
+    /// <summary>
     /// Reports that the local JIT watchdog revoked an elapsed window. Realtime
     /// only: if offline, the server's expiry sweep reconciles the row instead.
     /// </summary>
