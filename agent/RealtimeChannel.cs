@@ -99,17 +99,21 @@ public sealed class RealtimeChannel : IDisposable
         return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-state", ["userSid"] = userSid }, ct);
     }
 
-    /// <summary>Reports a cancelled stock-UAC attempt (best-effort telemetry).</summary>
-    public Task<JsonElement> UacCanceledAsync(string filePath, string userSid, CancellationToken ct)
+    /// <summary>
+    /// Reports a closed stock-UAC prompt with its classifier verdict
+    /// (best-effort telemetry; empty <paramref name="outcome"/> keeps the
+    /// legacy canceled-report shape).
+    /// </summary>
+    public Task<JsonElement> UacCanceledAsync(string filePath, string userSid, CancellationToken ct, string outcome = "")
     {
-        return RpcAsync(
-            new Dictionary<string, object?>
-            {
-                ["type"] = "uac-canceled",
-                ["filePath"] = filePath,
-                ["userSid"] = userSid,
-            },
-            ct);
+        var payload = new Dictionary<string, object?>
+        {
+            ["type"] = "uac-canceled",
+            ["filePath"] = filePath,
+            ["userSid"] = userSid,
+        };
+        if (!string.IsNullOrWhiteSpace(outcome)) payload["outcome"] = outcome;
+        return RpcAsync(payload, ct);
     }
 
     /// <summary>Tells the server an armed JIT window elapsed locally.</summary>
@@ -204,7 +208,17 @@ public sealed class RealtimeChannel : IDisposable
         if (type == "request-denied")
         {
             BrokerStatus.Current.NotePending("");
-            BrokerStatus.Current.NoteNotice("Request denied", "The request was denied.");
+            // The push carries only a requestId today; if the console ever
+            // attaches a reason, surface it instead of the generic text.
+            var denyReason = msg.TryGetProperty("reason", out var drEl) &&
+                drEl.ValueKind == JsonValueKind.String
+                ? (drEl.GetString() ?? "").Trim()
+                : "";
+            BrokerStatus.Current.NoteNotice(
+                "Request denied",
+                string.IsNullOrWhiteSpace(denyReason)
+                    ? "The request was denied."
+                    : "Denied by policy: " + denyReason);
             CompleteTicket(msg, allow: false);
             return;
         }
@@ -264,7 +278,11 @@ public sealed class RealtimeChannel : IDisposable
         waiter.TrySetResult(JsonSerializer.SerializeToElement(new
         {
             decision = "deny",
-            reason = "request denied",
+            reason = msg.TryGetProperty("reason", out var renEl) &&
+                renEl.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(renEl.GetString())
+                ? renEl.GetString()!.Trim()
+                : "request denied",
             requestId,
         }));
     }

@@ -47,16 +47,18 @@ public sealed class ApiClient
     }
 
     /// <summary>
-    /// Reports a cancelled stock-UAC attempt over the realtime channel. Telemetry
-    /// only: when the websocket is down the report is dropped (no HTTP fallback).
+    /// Reports a closed stock-UAC attempt with its classifier outcome over the
+    /// realtime channel. Telemetry only: when the websocket is down the report
+    /// is dropped (no HTTP fallback).
     /// </summary>
-    public async Task<JsonElement> ReportUacCanceledAsync(string filePath, string userSid, CancellationToken ct = default)
+    public async Task<JsonElement> ReportUacCanceledAsync(
+        string filePath, string userSid, string outcome = "", CancellationToken ct = default)
     {
         if (realtime is { IsConnected: true })
         {
             try
             {
-                return await realtime.UacCanceledAsync(filePath, userSid, ct).ConfigureAwait(false);
+                return await realtime.UacCanceledAsync(filePath, userSid, ct, outcome).ConfigureAwait(false);
             }
             catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime uac-canceled: {ex.Message}"); }
         }

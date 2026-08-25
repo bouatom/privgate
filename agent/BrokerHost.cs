@@ -161,8 +161,20 @@ sealed class BrokerHost
             await _api.ReportUacCanceledAsync(
                 msg.TryGetProperty("filePath", out var canceledPath) ? canceledPath.GetString() ?? "" : "",
                 userSid,
+                msg.TryGetProperty("outcome", out var ocEl) && ocEl.ValueKind == JsonValueKind.String
+                    ? ocEl.GetString() ?? ""
+                    : "",
                 _ct);
             return JsonSerializer.Serialize(new { ok = true });
+        }
+        if (mode == "uac-classify")
+        {
+            // Runs here, in the service (SYSTEM), because opening the token of
+            // an elevated process is routinely denied to the medium-IL tray.
+            var candidate = msg.TryGetProperty("filePath", out var clsPath) ? clsPath.GetString() ?? "" : "";
+            var outcome = UacClassifier.Classify(userSid, candidate, sessionId);
+            BrokerLog.Write($"uac.classified outcome={UacClassifier.Wire(outcome)} target={candidate}");
+            return JsonSerializer.Serialize(new { outcome = UacClassifier.Wire(outcome) });
         }
         if (mode == "ui-heartbeat")
         {
@@ -277,7 +289,16 @@ sealed class BrokerHost
         else if (decision == "deny")
         {
             BrokerStatus.Current.NotePending("");
-            BrokerStatus.Current.NoteNotice("Request denied", "The request was denied.");
+            // Surface the server's decision reason instead of a bare denial;
+            // fall back to the generic text when the payload has none.
+            var denyReason = result.TryGetProperty("reason", out var rEl) && rEl.ValueKind == JsonValueKind.String
+                ? (rEl.GetString() ?? "").Trim()
+                : "";
+            BrokerStatus.Current.NoteNotice(
+                "Request denied",
+                string.IsNullOrWhiteSpace(denyReason)
+                    ? "The request was denied."
+                    : "Denied by policy: " + denyReason);
         }
         return result.GetRawText();
     }

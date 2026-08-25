@@ -21,7 +21,11 @@ export type AgentRpc =
       filePath?: string;
       fileHash?: string;
       publisher?: string;
+      outcome?: string;
     };
+
+/** Classifier verdicts the console accepts on uac-canceled telemetry. */
+const UAC_OUTCOMES = ["approved-self", "approved-other", "escaped", "timeout", "unknown"];
 
 /** GUI heartbeat sanity window: 0..30 days of tray uptime. */
 const MAX_UPTIME_SEC = 30 * 24 * 3600;
@@ -99,6 +103,16 @@ export function handleAgentRpc(
     const filePath = String(message.filePath || "").trim().slice(0, 1024) || "(unidentified program)";
     const fileHash = /^[\da-fA-F]{64}$/.test(String(message.fileHash || "")) ? String(message.fileHash) : "";
     const publisher = String(message.publisher || "").trim().slice(0, 256);
+    // Classifier verdict from the broker service; anything outside the
+    // whitelist degrades to absent so legacy agents behave exactly as before.
+    const rawOutcome = typeof message.outcome === "string" ? message.outcome.trim() : "";
+    const outcome = UAC_OUTCOMES.includes(rawOutcome) ? rawOutcome : "";
+    // An administrator approved the prompt themselves: record the observation
+    // audit-only. No fake canceled request row, no queue pollution.
+    if (outcome === "approved-self" || outcome === "approved-other") {
+      appendAudit(db, `device:${deviceId}`, "device.uac.approved", deviceId, { filePath, outcome });
+      return { id: message.id, type: "result", ok: true, payload: { recorded: false } };
+    }
     const dupe = db
       .prepare(
         `SELECT id FROM requests WHERE user_id = ? AND device_id = ? AND file_path = ? AND status = 'canceled'`,

@@ -53,12 +53,21 @@ static class ElevationPrompt
         if (visible && !_uacVisible) _pendingTarget = ForegroundTracker.Candidate();
         _uacVisible = visible;
         if (!Watch.ShouldPrompt(pids)) return;
-        BrokerLog.Write(_pendingTarget.Length > 0
-            ? "uac.closed — offering PrivGate request for " + _pendingTarget
-            : "uac.closed — offering PrivGate request (program unidentified)");
         _promptOpen = true;
         try
         {
+            // Classify BEFORE reporting: consent closing does not mean the
+            // prompt was dismissed. An administrator who approved their own
+            // prompt must not get a fake "canceled" row or the follow-up nag.
+            var outcome = ClassifyClosedPrompt();
+            if (outcome == UacOutcome.ApprovedSelf || outcome == UacOutcome.ApprovedOther)
+            {
+                ElevationClient.ReportCanceled(_pendingTarget, UacClassifier.Wire(outcome));
+                return;
+            }
+            BrokerLog.Write(_pendingTarget.Length > 0
+                ? "uac.closed — offering PrivGate request for " + _pendingTarget
+                : "uac.closed — offering PrivGate request (program unidentified)");
             ElevationClient.ReportCanceled(_pendingTarget);
             AskAfterUac(_pendingTarget);
         }
@@ -67,6 +76,21 @@ static class ElevationPrompt
             _promptOpen = false;
             _pendingTarget = "";
         }
+    }
+
+    /// <summary>
+    /// Asks the broker service to classify the just-closed prompt; Unknown on
+    /// any failure so the legacy flow still runs.
+    /// </summary>
+    static UacOutcome ClassifyClosedPrompt()
+    {
+        var outcome = ElevationClient.ClassifyClosedPrompt(
+            _pendingTarget,
+            System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "",
+            Process.GetCurrentProcess().SessionId);
+        BrokerLog.Write("uac.classified outcome=" + UacClassifier.Wire(outcome) +
+            " target=" + (_pendingTarget.Length > 0 ? _pendingTarget : "(unidentified program)"));
+        return outcome;
     }
 
     /// <summary>
@@ -201,7 +225,10 @@ static class ElevationPrompt
             var decision = json.TryGetProperty("decision", out var d) ? d.GetString() : "";
             var reason = json.TryGetProperty("reason", out var r) ? r.GetString() : "";
             if (decision == "allow") return "Approved. The program should be opening on this desktop.";
-            if (decision == "deny") return "Denied. " + (reason ?? "");
+            if (decision == "deny")
+            {
+                return "Denied. " + (string.IsNullOrWhiteSpace(reason) ? "The request was denied." : reason);
+            }
             if (decision == "pending") return "Still waiting for an approver in the PrivGate console.";
             return string.IsNullOrWhiteSpace(reply) ? "No reply from the broker." : reply;
         }
