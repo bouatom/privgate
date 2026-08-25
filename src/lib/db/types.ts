@@ -111,5 +111,7 @@ export type DirectoryGroup = {
   name: string;
   directorySource: string;
   objectId: string;
+  /** AD distinguished name ('' for Entra-sourced groups). */
+  dn: string;
   memberCount: number;
 };

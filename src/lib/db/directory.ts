@@ -93,6 +93,7 @@ export function listGroups(db: DatabaseSync): DirectoryGroup[] {
     name: String(row.name),
     directorySource: String(row.directory_source),
     objectId: String(row.object_id),
+    dn: String(row.dn ?? ""),
     memberCount: Number(row.member_count),
   }));
 }
@@ -115,20 +116,28 @@ export function listGroupMemberships(
   }));
 }
 
+/**
+ * Replace all groups from one directory source, leaving other sources intact
+ * so AD and Entra groups can coexist. Group ids stay stable across syncs; the
+ * optional `dn` carries the AD distinguished name ('' for Entra).
+ */
 export function replaceGroups(
   db: DatabaseSync,
-  groups: Array<{ id: string; name: string; objectId: string; memberUserIds: string[] }>,
+  groups: Array<{ id: string; name: string; objectId: string; memberUserIds: string[]; dn?: string }>,
+  source: "entra" | "ad" = "entra",
 ) {
   db.exec("BEGIN");
   try {
-    db.exec("DELETE FROM group_members");
-    db.exec("DELETE FROM groups");
+    db.prepare(
+      `DELETE FROM group_members WHERE group_id IN (SELECT id FROM groups WHERE directory_source = ?)`,
+    ).run(source);
+    db.prepare(`DELETE FROM groups WHERE directory_source = ?`).run(source);
     const insertG = db.prepare(
-      `INSERT INTO groups (id, name, directory_source, object_id) VALUES (?, ?, 'entra', ?)`,
+      `INSERT INTO groups (id, name, directory_source, object_id, dn) VALUES (?, ?, ?, ?, ?)`,
     );
     const insertM = db.prepare(`INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)`);
     for (const group of groups) {
-      insertG.run(group.id, group.name, group.objectId);
+      insertG.run(group.id, group.name, source, group.objectId, group.dn ?? "");
       for (const userId of group.memberUserIds) insertM.run(group.id, userId);
     }
     db.exec("COMMIT");

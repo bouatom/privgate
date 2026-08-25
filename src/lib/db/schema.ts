@@ -145,6 +145,7 @@ export function migrate(db: DatabaseSync) {
   ensureColumn(db, "oauth_state", "meta", "TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "jit_grants", "group_id", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "jit_grants", "member_ids_json", "TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(db, "groups", "dn", "TEXT NOT NULL DEFAULT ''");
   migratePortal(db);
   migrateSetupState(db);
   seedSetupState(db);

@@ -63,7 +63,10 @@ describe("directory groups", () => {
     ]);
     expect(listGroups(db)[0]?.name).toBe("Finance");
     expect(groupIdsForUser(db, "user-admin")).toEqual(["g1"]);
-    expect(groupIdsForUser(db, "user-staff")).toEqual([]);
+    // Entra replacement is source-scoped: the seeded 'seed' fixture group
+    // survives (AD groups must too), while entra rows are fully replaced.
+    expect(groupIdsForUser(db, "user-staff")).toEqual(["g-helpdesk"]);
+    expect(listGroups(db).filter((g) => g.directorySource === "entra")).toHaveLength(1);
   });
 });
 

@@ -1,9 +1,8 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
 import { Client } from "ldapts";
-import { usersFromLdapEntries } from "./ad-sid";
+import { AD_GROUP_ATTRIBUTES, AD_GROUP_FILTER, applyAdDirectorySync } from "./ad-groups";
 import { getAdBindPassword, getAdSettings, saveAdSettings } from "./db/ad";
-import { upsertUsers } from "./db/users";
 
 export type LdapSession = {
   bind(dn: string, password: string): Promise<void>;
@@ -64,7 +63,7 @@ export async function testAdBind(db: DatabaseSync): Promise<void> {
   }
 }
 
-export async function syncAdUsers(db: DatabaseSync): Promise<{ users: number }> {
+export async function syncAdUsers(db: DatabaseSync): Promise<{ users: number; groups: number }> {
   const settings = getAdSettings(db);
   const password = getAdBindPassword(db);
   requireBind(settings, password);
@@ -72,24 +71,25 @@ export async function syncAdUsers(db: DatabaseSync): Promise<{ users: number }> 
   const client = await openLdap(settings);
   try {
     await client.bind(settings.bindDn, password);
-    const { searchEntries } = await client.search(settings.baseDn, {
+    const { searchEntries: userEntries } = await client.search(settings.baseDn, {
       scope: "sub",
       filter: settings.userFilter,
       attributes: SEARCH_ATTRIBUTES,
       paged: { pageSize: 500 },
       explicitBufferAttributes: ["objectSid"],
     });
-    const users = usersFromLdapEntries(searchEntries, settings.baseDn);
-    upsertUsers(
-      db,
-      users.map((user) => ({
-        displayName: user.displayName,
-        userPrincipalName: user.userPrincipalName,
-        adSid: user.adSid || undefined,
-      })),
-    );
+    // Security groups ride along in the same session; members resolve against
+    // the user entries above and persist scoped to source 'ad'.
+    const { searchEntries: groupEntries } = await client.search(settings.baseDn, {
+      scope: "sub",
+      filter: AD_GROUP_FILTER,
+      attributes: AD_GROUP_ATTRIBUTES,
+      paged: { pageSize: 500 },
+      explicitBufferAttributes: ["objectSid"],
+    });
+    const synced = applyAdDirectorySync(db, userEntries, groupEntries, settings.baseDn);
     saveAdSettings(db, { lastSyncAt: new Date().toISOString(), lastError: "" });
-    return { users: users.length };
+    return synced;
   } finally {
     await client.unbind().catch(() => undefined);
   }
