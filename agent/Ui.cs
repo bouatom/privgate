@@ -14,6 +14,10 @@ static class Ui
     public static readonly Color Line = Hex("#2C3545");
     public static readonly Color Ink = Hex("#E8EDF5");
     public static readonly Color Muted = Hex("#8B97AB");
+    // Agent-local derived tone for secondary-but-important lines (error detail
+    // under a friendly headline). Not a console token: src/app/globals.css is
+    // untouched; the hexes above stay 1:1 with the console dark palette.
+    public static readonly Color MutedStrong = Hex("#A5B1C4");
     public static readonly Color Amber = Hex("#E0A14A");
     public static readonly Color AmberInk = Hex("#1A1208");
     public static readonly Color Ok = Hex("#4FBE8E");
@@ -37,8 +41,11 @@ static class Ui
         };
     }
 
-    /// <summary>Body text on a themed dialog (light ink).</summary>
-    public static Label Body(string text)
+    /// <summary>
+    /// Body text on a themed dialog (light ink — primary reading text).
+    /// Pass accessibleName when the text is long or dynamic.
+    /// </summary>
+    public static Label Body(string text, string? accessibleName = null)
     {
         return new Label
         {
@@ -47,20 +54,25 @@ static class Ui
             Text = text,
             ForeColor = Ink,
             BackColor = Color.Transparent,
+            AccessibleName = accessibleName ?? text,
         };
     }
 
-    /// <summary>Muted secondary text.</summary>
-    public static Label Note(string text)
+    /// <summary>
+    /// Muted secondary text. AutoSizes so scaled/localized strings are never
+    /// clipped by a fixed height; docked Bottom keeps it full dialog width.
+    /// </summary>
+    public static Label Note(string text, string? accessibleName = null)
     {
         return new Label
         {
             Dock = DockStyle.Bottom,
-            Height = 34,
+            AutoSize = true,
             Padding = new Padding(16, 0, 16, 10),
             Text = text,
             ForeColor = Muted,
             BackColor = Color.Transparent,
+            AccessibleName = accessibleName ?? text,
         };
     }
 

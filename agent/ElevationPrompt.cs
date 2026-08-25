@@ -102,10 +102,10 @@ static class ElevationPrompt
         if (target.Length > 0)
         {
             using var dlg = Ui.Dialog("PrivGate", new Size(480, 210));
-            dlg.Controls.Add(Ui.Note("An approver can allow it without an admin password."));
+            dlg.Controls.Add(Ui.Note("An approver can allow it without an admin password.", "Approver hint"));
             var body = Ui.Body(
                 "Windows asked for administrator approval and the prompt was closed.\n\n" +
-                "Submit a PrivGate request for\n" + target + "?");
+                "Submit a PrivGate request for\n" + target + "?", "Submit a PrivGate request");
             var buttons = new FlowLayoutPanel
             {
                 Dock = DockStyle.Bottom,
@@ -121,6 +121,8 @@ static class ElevationPrompt
             buttons.Controls.Add(yes);
             buttons.Controls.Add(no);
             dlg.Controls.Add(buttons);
+            dlg.AcceptButton = yes;   // Enter → primary action
+            dlg.CancelButton = no;    // Esc → least destructive ("Not now")
             if (dlg.ShowDialog() == DialogResult.Yes) Request(target);
             return;
         }
@@ -128,9 +130,9 @@ static class ElevationPrompt
         using var ask = Ui.Dialog("PrivGate", new Size(480, 210));
         var askBody = Ui.Body(
             "Windows asked for administrator approval and the prompt was closed.\n\n" +
-            "Which program did you try to open?");
+            "Which program did you try to open?", "Choose the program to request");
         ask.Controls.Add(askBody);
-        ask.Controls.Add(Ui.Note("An approver can allow it without an admin password."));
+        ask.Controls.Add(Ui.Note("An approver can allow it without an admin password.", "Approver hint"));
         var askButtons = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
@@ -152,6 +154,8 @@ static class ElevationPrompt
         askButtons.Controls.Add(browse);
         askButtons.Controls.Add(later);
         ask.Controls.Add(askButtons);
+        ask.AcceptButton = disk;  // Enter → primary action
+        ask.CancelButton = later; // Esc → least destructive ("Not now")
         var choice = ask.ShowDialog();
         if (choice == DialogResult.Yes)
         {
@@ -179,10 +183,16 @@ static class ElevationPrompt
         var wait = Ui.Dialog("PrivGate request", new Size(460, 190));
         var label = Ui.Body(
             "Requesting " + path + "\n\nIf an approver allows it, the program opens here without signing out." +
-            "\n\nYou can close this window — we will notify you when a decision arrives.");
+            "\n\nYou can close this window — we will notify you when a decision arrives.", "Request status");
         wait.Controls.Add(label);
-        var elapsed = Ui.Note("Waiting 0:00…");
+        var elapsed = Ui.Note("Waiting 0:00…", "Elapsed wait time");
         wait.Controls.Add(elapsed);
+        // Invisible Esc sink: the window has no visible buttons, but Esc must
+        // still dismiss it (closing is safe — the request keeps waiting).
+        var esc = new Button { Visible = false, AccessibleName = "Dismiss wait window" };
+        esc.Click += (_, _) => wait.Close();
+        wait.Controls.Add(esc);
+        wait.CancelButton = esc;
         var started = Stopwatch.StartNew();
         const int timeoutSeconds = 16 * 60;
         var ticker = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -206,7 +216,19 @@ static class ElevationPrompt
                 {
                     if (!open) return;
                     ticker.Stop();
-                    label.Text = Summarize(reply);
+                    var primary = Summarize(reply, out var detail);
+                    label.Text = primary;
+                    if (detail.Length > 0)
+                    {
+                        // Raw detail stays secondary: muted-strong line under
+                        // the friendly headline, JSON syntax stripped.
+                        elapsed.Text = "Details: " + detail;
+                        elapsed.ForeColor = Ui.MutedStrong;
+                    }
+                    else
+                    {
+                        elapsed.Text = "";
+                    }
                     wait.Text = "PrivGate request";
                 }));
             }
@@ -217,24 +239,60 @@ static class ElevationPrompt
         });
     }
 
-    static string Summarize(string reply)
+    /// <summary>
+    /// Turns a broker reply into human copy. The primary text is always
+    /// friendly; anything raw (error reason, unparsable reply) goes to
+    /// <paramref name="detail"/> and is rendered as a muted secondary line —
+    /// never braces or JSON syntax on screen.
+    /// </summary>
+    static string Summarize(string reply, out string detail)
     {
+        detail = "";
+        var shape = "empty";
+        var reason = "";
         try
         {
             var json = JsonSerializer.Deserialize<JsonElement>(reply);
-            var decision = json.TryGetProperty("decision", out var d) ? d.GetString() : "";
-            var reason = json.TryGetProperty("reason", out var r) ? r.GetString() : "";
-            if (decision == "allow") return "Approved. The program should be opening on this desktop.";
-            if (decision == "deny")
-            {
-                return "Denied. " + (string.IsNullOrWhiteSpace(reason) ? "The request was denied." : reason);
-            }
-            if (decision == "pending") return "Still waiting for an approver in the PrivGate console.";
-            return string.IsNullOrWhiteSpace(reply) ? "No reply from the broker." : reply;
+            shape = json.TryGetProperty("decision", out var d) ? d.GetString() ?? "" : "";
+            reason = json.TryGetProperty("reason", out var r) ? r.GetString() ?? "" : "";
         }
         catch
         {
-            return reply;
+            shape = "";
+            reason = reply;
         }
+        switch (shape)
+        {
+            case "allow": return "Approved. The program should be opening on this desktop.";
+            case "deny":
+                return "Denied. " + (string.IsNullOrWhiteSpace(reason) ? "The request was denied." : reason);
+            case "pending": return "Still waiting for an approver in the PrivGate console.";
+            case "error":
+                detail = CleanDetail(reason);
+                if (IsTimeout(reason))
+                {
+                    return "No one approved within 16 minutes - try again or contact IT.";
+                }
+                return "PrivGate could not reach its helper - try again, or contact IT if it keeps happening.";
+            default:
+                // Unknown shape or non-JSON garbage: same generic failure copy,
+                // with whatever came back preserved as the secondary line.
+                detail = string.IsNullOrWhiteSpace(reply) ? "" : CleanDetail(reply);
+                if (detail.Length == 0) detail = "no reply from the broker";
+                return "PrivGate could not reach its helper - try again, or contact IT if it keeps happening.";
+        }
+    }
+
+    static bool IsTimeout(string reason)
+    {
+        var r = (reason ?? "").ToLowerInvariant();
+        return r.Contains("timeout") || r.Contains("timed out") || r.Contains("expired");
+    }
+
+    /// <summary>Strips JSON syntax characters so raw detail never shows braces.</summary>
+    static string CleanDetail(string raw)
+    {
+        var text = (raw ?? "").Replace("{", "").Replace("}", "").Replace("\"", "").Trim();
+        return text.Length <= 300 ? text : text.Substring(0, 300);
     }
 }
