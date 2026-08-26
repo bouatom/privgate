@@ -216,6 +216,9 @@ if want windows; then
   cp "$CACHE/WinSW-x64.exe" "$STAGE/win/PrivGateConsole.exe"
   cp "$ROOT/packaging/windows/privgate-console.xml" "$STAGE/win/PrivGateConsole.xml"
   copy_crlf "$ROOT/packaging/windows/service-ctl.cmd" "$STAGE/win/service-ctl.cmd"
+  # Inbound firewall helper consumed by the MSI custom actions (generate-wxs.cjs
+  # gives the file stable component/file ids); also lands in the NSIS payload.
+  copy_crlf "$ROOT/packaging/windows/firewall-console.cmd" "$STAGE/win/firewall-console.cmd"
   copy_crlf "$ROOT/packaging/windows/install-service.cmd" "$STAGE/win/install-service.cmd"
   copy_if "$ROOT/scripts/update-server.ps1" "$STAGE/win/update-server.ps1"
 

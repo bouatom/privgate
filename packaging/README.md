@@ -35,6 +35,28 @@ A Linux `.tar.gz` is optional for local builds (`PRIVGATE_SKIP_TARBALL` is unset
 
 The installer prompts for **bind address**, **management web port**, and **client/broker port**. Secrets are generated automatically (`AUTH_MODE=local`). Data: `%ProgramData%\PrivGate`, `/Library/Application Support/PrivGate`, or `/var/lib/privgate`. Set `PRIVGATE_BIND=127.0.0.1` at install to listen on this machine only. There is no demo login. Open `/setup` in the browser to create the Master Admin. Connect Entra ID and/or on-premises Active Directory later under Configuration → Integrations; each is optional.
 
+## Firewall ports
+
+| Traffic | Direction | Port |
+| --- | --- | --- |
+| Console web UI | inbound on the console host | TCP `3000` (`PRIVGATE_WEB_PORT`) |
+| Agents (Windows brokers) | inbound on the console host | TCP `3001` (`PRIVGATE_AGENT_PORT`) |
+| Agent → console | outbound from each enrolled PC | TCP `3001` |
+
+The Windows installers create these rules themselves and remove them on uninstall:
+
+- Console EXE/MSI: inbound rules **PrivGate Console (web)** and **PrivGate Agent broker** for the configured ports (the MSI helper re-reads them from `console.env`, so upgrades after a port change stay correct). Hosts without the firewall service log a warning instead of failing.
+- Client MSI / install scripts: outbound rule **PrivGate Agent**, scoped to `PrivGate.Agent.exe` (`PrivGate.Helper.exe` is local named pipe only).
+
+Linux and macOS do not touch ufw/firewalld/pf automatically — open the ports yourself, e.g.:
+
+```bash
+sudo ufw allow 3000/tcp
+sudo ufw allow 3001/tcp
+```
+
+(or the firewalld/pf equivalent for your distro).
+
 ## Upgrade the management console
 
 Install the newer package over the old one. Do not uninstall first. One command, no manual steps — see [docs/updating.md](../docs/updating.md) for the full procedure, the shipped updater scripts (`update-server.sh` / `.ps1`), and rollback.

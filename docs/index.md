@@ -21,7 +21,11 @@ UAC stays on. Admin passwords are never stored on the PC.
 
 After setup, open [http://127.0.0.1:3000](http://127.0.0.1:3000/) on the console host, or `http://<console-host>:3000/` from another computer. The first visit is a **setup wizard** that creates the local Master Admin. Connect Entra ID and/or on-premises Active Directory later under Configuration → Integrations — they are independent. Sign in with Entra appears on `/login` only after Entra is connected. There is **no demo login**.
 
-The process binds **all interfaces** by default (`PRIVGATE_BIND=0.0.0.0`): management UI on **3000**, Windows brokers on **3001**. Data and generated secrets:
+The process binds **all interfaces** by default (`PRIVGATE_BIND=0.0.0.0`): management UI on **3000**, Windows brokers on **3001**.
+
+**Firewall ports:** the console needs inbound TCP `3000` (web) and `3001` (agent broker); each enrolled PC needs outbound access to the console on `3001`. The Windows installers create these rules automatically (inbound "PrivGate Console (web)" / "PrivGate Agent broker" on the console host, outbound "PrivGate Agent" scoped to `PrivGate.Agent.exe` on clients). On macOS and Linux open them manually, e.g. `sudo ufw allow 3000/tcp` and `sudo ufw allow 3001/tcp` — see [packaging/README.md](../packaging/README.md#firewall-ports).
+
+Data and generated secrets:
 
 - Windows: `%ProgramData%\PrivGate` (`console.env`)
 - macOS: `/Library/Application Support/PrivGate`

@@ -9,6 +9,7 @@ import {
   listClientBinaries,
 } from "./client-binaries";
 import { embedUninstallFileSnippet, registerArpSnippet } from "./client-uninstall";
+import { agentFirewallAllowSnippet } from "./client-firewall";
 
 function psQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -84,7 +85,7 @@ $bin = Join-Path $InstallDir ${psQuote(AGENT_EXE)}
 if (-not (Test-Path $bin)) { throw "${AGENT_EXE} was not written." }
 $cfg = Join-Path $InstallDir ${psQuote(AGENT_CONFIG)}
 if (-not (Test-Path $cfg)) { throw "${AGENT_CONFIG} was not written. Binding redirects are required on .NET Framework 4.8." }
-
+${agentFirewallAllowSnippet()}
 $svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
 if ($svc) {
   Stop-Service PrivGateBroker -Force -ErrorAction SilentlyContinue

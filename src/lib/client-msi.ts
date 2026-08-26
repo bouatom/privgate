@@ -12,6 +12,7 @@ import {
   packagedClientMsiPath,
 } from "./client-binaries";
 import { patchMsiSlots } from "./client-msi-slots";
+import { agentFirewallCmdContent } from "./client-firewall";
 
 export function msiTool(): "wixl" | null {
   const probe = spawnSync("wixl", ["--version"], { encoding: "utf8" });
@@ -27,23 +28,35 @@ function xmlEscape(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 }
 
+/** Shipped netsh helper name inside both client MSI flavors (see client-firewall.ts). */
+const FIREWALL_CMD_NAME = "firewall-agent.cmd";
+
 function clientWxs(stage: string, files: string[], apiBase: string, token: string): string {
+  const compId = (name: string, i: number): string =>
+    name === FIREWALL_CMD_NAME ? "cmpFirewallAgent" : `cmp${i + 1}`;
+  const fileId = (name: string, i: number): string =>
+    name === FIREWALL_CMD_NAME ? "filFirewallAgent" : `fil${i + 1}`;
   const components = files.map((name, i) => {
-    const id = `cmp${i + 1}`;
-    const fid = `fil${i + 1}`;
     const source = xmlEscape(path.join(stage, name));
     if (name === AGENT_EXE) {
-      return `          <Component Id="${id}" Guid="*">
-            <File Id="${fid}" Source="${source}" KeyPath="yes" />
+      return `          <Component Id="${compId(name, i)}" Guid="*">
+            <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
             <ServiceInstall Id="BrokerSvc" Name="PrivGateBroker" DisplayName="PrivGate Elevation Broker" Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal" Description="PrivGate SYSTEM elevation broker. Does not disable UAC or store admin passwords." />
             <ServiceControl Id="BrokerSvcCtl" Name="PrivGateBroker" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
           </Component>`;
     }
-    return `          <Component Id="${id}" Guid="*">
-            <File Id="${fid}" Source="${source}" KeyPath="yes" />
+    if (name === FIREWALL_CMD_NAME) {
+      // Stable ids so the custom actions below can reference the helper by
+      // FileKey (wixl supports only FileKey-based custom actions).
+      return `          <Component Id="${compId(name, i)}" Guid="9d2c5b7e-6a4f-4e3b-8c1d-2f0a5b6c7d8e">
+            <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
+          </Component>`;
+    }
+    return `          <Component Id="${compId(name, i)}" Guid="*">
+            <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
           </Component>`;
   });
-  const refs = files.map((_, i) => `        <ComponentRef Id="cmp${i + 1}" />`).join("\n");
+  const refs = files.map((name, i) => `        <ComponentRef Id="${compId(name, i)}" />`).join("\n");
   const version = String(process.env.PRIVGATE_VERSION || "0.2.1").replace(/^v/i, "").split(/[-+]/)[0] || "0.2.1";
   return `<?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
@@ -74,6 +87,12 @@ ${refs}
         <ComponentRef Id="cmpReg" />
         <ComponentRef Id="cmpTray" />
     </Feature>
+    <CustomAction Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add" Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="RemoveAgentFirewall" FileKey="filFirewallAgent" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"</Custom>
+      <Custom Action="AddAgentFirewall" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
   </Product>
 </Wix>
 `;
@@ -102,6 +121,12 @@ function buildLiveClientMsi(apiBase: string, token: string): Buffer {
       EnrollmentToken: token,
     };
     writeFileSync(path.join(stage, "appsettings.json"), `${JSON.stringify(settings, null, 2)}\n`);
+    // Outbound firewall helper (cmd.exe misparses labels with LF endings, so
+    // ship CRLF exactly like build.sh does for its .cmd files).
+    writeFileSync(
+      path.join(stage, FIREWALL_CMD_NAME),
+      agentFirewallCmdContent().replace(/\r?\n/g, "\r\n"),
+    );
     const staged = readdirSync(stage);
     const wxsPath = path.join(stage, "client.wxs");
     const msiPath = path.join(stage, "PrivGate-Client.msi");

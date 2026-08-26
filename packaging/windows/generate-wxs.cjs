@@ -40,6 +40,7 @@ let fileId = 0;
 let dirId = 0;
 const componentRefs = [];
 let serviceCtlFileId = "";
+let firewallConsoleFileId = "";
 
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
@@ -56,10 +57,13 @@ function emitDirectory(abs, indent) {
   }
   for (const f of files) {
     fileId += 1;
-    const isCtl = f.name.toLowerCase() === "service-ctl.cmd";
-    const id = isCtl ? "filServiceCtl" : `fil${fileId}`;
-    const cid = isCtl ? "cmpServiceCtl" : `cmp${fileId}`;
+    const lower = f.name.toLowerCase();
+    const isCtl = lower === "service-ctl.cmd";
+    const isFw = lower === "firewall-console.cmd";
+    const id = isCtl ? "filServiceCtl" : isFw ? "filFirewallConsole" : `fil${fileId}`;
+    const cid = isCtl ? "cmpServiceCtl" : isFw ? "cmpFirewallConsole" : `cmp${fileId}`;
     if (isCtl) serviceCtlFileId = id;
+    if (isFw) firewallConsoleFileId = id;
     componentRefs.push(cid);
     // Stop-only, never Remove: upgrade-in-place must stop -> swap -> start
     // with a stable service id (WinSW id PrivGateConsole). A Remove attr here
@@ -116,6 +120,26 @@ const startAction = serviceCtlFileId
     </InstallExecuteSequence>`
   : "";
 
+// Inbound Windows Firewall exceptions for the management ports. wixl has no
+// WiX Firewall extension support (fire:FirewallException aborts the compile),
+// so the rules come from a shipped helper run through FileKey custom actions -
+// the same mechanism service-ctl.cmd uses above. The helper resolves the live
+// ports from %ProgramData%\PrivGate\console.env (defaults 3000/3001), making
+// rule creation order-independent versus StartPrivGate and correct on hosts
+// that changed ports after install. Removal runs while the helper file still
+// exists (Before="InstallValidate") and only on a real uninstall: during a
+// major upgrade REMOVE holds product codes rather than ALL, so upgrades take
+// the idempotent delete-then-add refresh instead.
+const firewallAction = firewallConsoleFileId
+  ? `
+    <CustomAction Id="AddConsoleFirewall" FileKey="${firewallConsoleFileId}" ExeCommand="add" Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="RemoveConsoleFirewall" FileKey="${firewallConsoleFileId}" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveConsoleFirewall" Before="InstallValidate">REMOVE~="ALL"</Custom>
+      <Custom Action="AddConsoleFirewall" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>`
+  : "";
+
 const wxs = `<?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product Id="*" Name="PrivGate Console" Language="1033" Version="${xmlEscape(version)}" Manufacturer="PrivGate" UpgradeCode="a3c8e1b0-7d2f-4c91-9e4a-1b2c3d4e5f60">
@@ -130,7 +154,7 @@ ${inner}        </Directory>
     </Directory>
     <Feature Id="Main" Title="PrivGate Console" Level="1">
 ${refs}
-    </Feature>${startAction}
+    </Feature>${startAction}${firewallAction}
   </Product>
 </Wix>
 `;

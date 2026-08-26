@@ -105,11 +105,16 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(deploy).toContain("sc.exe delete PrivGateBroker");
     expect(deploy).toContain("CurrentVersion\\Run");
     expect(deploy).toContain("PrivGateTray");
+    // Outbound allow for the agent (a restrictive baseline must not block it
+    // from dialing the console); Helper.exe is local named pipe only.
+    expect(deploy).toContain('netsh advfirewall firewall add rule name="PrivGate Agent" dir=out action=allow');
+    expect(deploy).toMatch(/program="\$fwBin"/);
 
     const zipInstall = installScript();
     expect(zipInstall).toContain("Uninstall\\PrivGateClient");
     expect(zipInstall).toContain("Uninstall-PrivGate.ps1");
     expect(zipInstall).toContain("PrivGateTray");
+    expect(zipInstall).toContain('netsh advfirewall firewall add rule name="PrivGate Agent" dir=out action=allow');
 
     const uninstall = uninstallScript();
     expect(uninstall).toContain("PrivGateBroker");
@@ -120,6 +125,8 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(uninstall).toContain("ProgramFiles");
     expect(uninstall).toContain("ProgramData");
     expect(uninstall).not.toContain("/api/");
+    // Matching removal of the outbound rule on every uninstall flavor.
+    expect(uninstall).toContain('netsh advfirewall firewall delete rule name="PrivGate Agent"');
   });
 
   it("refuses a device zip whose published exe.config lacks the Unsafe redirect", () => {
@@ -187,9 +194,18 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(cjs).toContain("http://privgate-api-base.invalid/");
     expect(cjs).toContain("privgate-enrollment-token.");
     expect(cjs).toContain("PrivGateTray");
+    // Both client MSI flavors must ship the outbound firewall helper and its
+    // custom actions (wixl has no fire: extension).
+    expect(cjs).toContain("firewall-agent.cmd");
+    expect(cjs).toContain('Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add"');
+    expect(cjs).toMatch(/<Custom Action="AddAgentFirewall" After="InstallFiles">NOT REMOVE~="ALL"<\/Custom>/);
+    expect(cjs).toMatch(/<Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"<\/Custom>/);
     const msiTs = readFileSync(path.resolve(__dirname, "./client-msi.ts"), "utf8");
     expect(msiTs).toContain("PrivGateTray");
     expect(msiTs).toContain("CurrentVersion\\\\Run");
+    expect(msiTs).toContain("firewall-agent.cmd");
+    expect(msiTs).toContain('Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add"');
+    expect(msiTs).toMatch(/<Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"<\/Custom>/);
   });
 
   it("treats MSI as available only when the packaged file exists", () => {

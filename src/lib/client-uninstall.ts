@@ -1,4 +1,5 @@
 import "server-only";
+import { agentFirewallRemoveSnippet } from "./client-firewall";
 
 /** Shared Windows client uninstall + Apps & Features (ARP) registration. */
 
@@ -25,7 +26,7 @@ if ($svc) {
   sc.exe delete PrivGateBroker | Out-Null
   Start-Sleep -Seconds 1
 }
-
+${agentFirewallRemoveSnippet()}
 Remove-Item "HKLM:\\SOFTWARE\\PrivGate" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${CLIENT_ARP_ID}" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-ItemProperty -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" -Name "PrivGateTray" -ErrorAction SilentlyContinue

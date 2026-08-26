@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ZipEntry } from "./zip";
 import { registerArpSnippet, uninstallScript } from "./client-uninstall";
+import { agentFirewallAllowSnippet } from "./client-firewall";
 
 export function safeApiBase(raw: string | undefined, origin: string): string {
   const fallback = origin.replace(/\/$/, "");
@@ -85,7 +86,7 @@ if (-not (Test-Path $cfg)) { throw "PrivGate.Agent.exe.config was not installed.
 if (-not (Select-String -Path $cfg -Pattern "System.Runtime.CompilerServices.Unsafe" -Quiet)) {
   throw "PrivGate.Agent.exe.config is missing the System.Runtime.CompilerServices.Unsafe binding redirect."
 }
-
+${agentFirewallAllowSnippet()}
 $svc = Get-Service -Name "PrivGateBroker" -ErrorAction SilentlyContinue
 if ($svc) {
   Stop-Service PrivGateBroker -Force -ErrorAction SilentlyContinue
