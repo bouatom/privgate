@@ -127,17 +127,6 @@ export function RequestsClient({
 
   return (
     <>
-      <div className="top">
-        <div>
-          <h1>Elevation requests</h1>
-          <p className="lede">
-            Standard users asked to run something that is not on the always-allow list. Risk is scored from the
-            binary, path, publisher, and arguments — not the filename alone. Policy admins can turn a row into an
-            always-allow rule using the recorded hash and publisher; saving a rule never decides the request —
-            approval stays separate, and you will be asked whether to approve a waiting row right after saving.
-          </p>
-        </div>
-      </div>
       <div className="grid cards" style={{ marginBottom: 20 }}>
         <div className="card">
           <div className="k">Pending</div>

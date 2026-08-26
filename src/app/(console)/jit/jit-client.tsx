@@ -104,12 +104,6 @@ export function JitClient({
 
   return (
     <>
-      <div className="top">
-        <div>
-          <h1>JIT admin windows</h1>
-          <p className="lede">Temporary local Administrators membership, 15–60 minutes, one active window per subject and device — target a single user or a whole security group. The broker schedules revoke on the PC at grant time.</p>
-        </div>
-      </div>
       {canGrant ? (
       <form className="panel stack" onSubmit={onSubmit} style={{ padding: 18, marginBottom: 16 }}>
         <div className="grid cards">
