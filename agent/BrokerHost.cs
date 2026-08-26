@@ -33,7 +33,24 @@ static class BrokerLog
         }
         catch
         {
-            // Never fail the broker because the log file is locked.
+            // Never fail the broker because the log file is locked. The
+            // shared ProgramData log is often unwritable for the tray
+            // (BUILTIN\Users only gets Read+Execute on the service-created
+            // file), so fall back to a per-user log: without this the tray
+            // is a diagnostic blind spot — its uac.closed lines used to
+            // vanish while the broker's side of the same flow appeared.
+            try
+            {
+                var dir = System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "PrivGate");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(System.IO.Path.Combine(dir, "tray.log"), line + Environment.NewLine);
+            }
+            catch
+            {
+                // Nothing left to try; drop the line.
+            }
         }
         Console.Error.WriteLine(line);
     }
