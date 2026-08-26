@@ -5,7 +5,14 @@ import { publishConsole, publishDevice } from "./bus";
 export function notifyPendingRequest(request: ElevationRequest) {
   publishConsole("requests");
   publishConsole("devices");
-  publishDevice(request.deviceId, { type: "request-pending", requestId: request.id });
+  // filePath names the program in the agent's tray notice ("Waiting for
+  // approval: …") instead of a generic "a program".
+  publishDevice(request.deviceId, {
+    type: "request-pending",
+    requestId: request.id,
+    filePath: request.filePath,
+    arguments: request.arguments ?? "",
+  });
 }
 
 export function notifyRequestApproved(request: ElevationRequest, ticket: string) {
