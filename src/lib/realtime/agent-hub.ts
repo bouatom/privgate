@@ -93,12 +93,19 @@ function accept(req: IncomingMessage, ws: WebSocket) {
     return;
   }
 
-  // Validate origin BEFORE accepting connection
+  // Validate origin BEFORE accepting connection. Native .NET ClientWebSocket
+  // sends no Origin header at all, and some proxies send the literal "null"
+  // sentinel; validateAgentOrigin accepts both (contract since 43d75cc).
+  // Device HMAC above remains the primary gate.
   const requestOrigin = header(req, "origin");
-  if (!validateAgentOrigin(requestOrigin || "", process.env)) {
+  if (!validateAgentOrigin(requestOrigin ?? "", process.env)) {
     const db = getDb();
-    console.error(`PrivGate WebSocket rejected: origin mismatch (got ${requestOrigin})`);
+    // "absent" should be unreachable today (validation allows missing/null
+    // origins); kept so a future tightening still logs a precise reason.
+    const detail = requestOrigin === null ? "absent" : `wrong value ${requestOrigin}`;
+    console.error(`PrivGate WebSocket rejected: origin mismatch (${detail})`);
     appendAudit(db, `device:${auth.deviceId}`, "agent.ws.origin-rejected", auth.deviceId, {
+      originKind: requestOrigin === null ? "absent" : "value",
       origin: requestOrigin,
       expected: expectedAgentOrigin(process.env),
     });

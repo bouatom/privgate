@@ -28,6 +28,28 @@ describe("validateAgentOrigin", () => {
     expect(validateAgentOrigin("", env, mockLogger)).toBe(true);
   });
 
+  it("accepts the literal \"null\" sentinel origin even when an origin is configured", () => {
+    const env = { PRIVGATE_AGENT_ORIGIN: "https://privgate.example.com:3001" };
+    expect(validateAgentOrigin("null", env, mockLogger)).toBe(true);
+  });
+
+  it("normalizes whitespace and case on the \"null\" sentinel", () => {
+    const env = { PRIVGATE_AGENT_ORIGIN: "https://privgate.example.com:3001" };
+    expect(validateAgentOrigin(" Null ", env, mockLogger)).toBe(true);
+    expect(validateAgentOrigin("NULL", env, mockLogger)).toBe(true);
+  });
+
+  it("allows the \"null\" sentinel when nothing is configured", () => {
+    expect(validateAgentOrigin("null", {}, mockLogger)).toBe(true);
+  });
+
+  it("still rejects a wrong non-null origin next to accepted sentinels", () => {
+    const env = { PRIVGATE_AGENT_ORIGIN: "https://privgate.example.com:3001" };
+    expect(validateAgentOrigin("null", env, mockLogger)).toBe(true);
+    expect(validateAgentOrigin("", env, mockLogger)).toBe(true);
+    expect(validateAgentOrigin("https://attacker.com:3001", env, mockLogger)).toBe(false);
+  });
+
   it("allows native missing origin when nothing is configured", () => {
     expect(validateAgentOrigin("", {}, mockLogger)).toBe(true);
   });
@@ -53,5 +75,11 @@ describe("validateAgentOrigin", () => {
   it("rejects mismatched scheme", () => {
     const env = { PRIVGATE_AGENT_ORIGIN: "https://privgate.example.com:3001" };
     expect(validateAgentOrigin("http://privgate.example.com:3001", env, mockLogger)).toBe(false);
+  });
+
+  it("falls back to HMAC-only when the configured origin is invalid", () => {
+    const env = { PRIVGATE_AGENT_ORIGIN: "not-a-url" };
+    expect(expectedAgentOrigin(env, mockLogger)).toBe(null);
+    expect(validateAgentOrigin("https://anything.example.com:3001", env, mockLogger)).toBe(true);
   });
 });

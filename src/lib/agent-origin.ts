@@ -35,7 +35,9 @@ export function expectedAgentOrigin(env: Env = process.env, logger?: Log): strin
 /**
  * HMAC already authenticated this upgrade. Origin is extra CSRF for browsers.
  *
- * - Missing Origin: native agent — allow.
+ * - Missing Origin: native agent — allow (contract since 43d75cc).
+ * - Literal "null" Origin: some clients/proxies send this sentinel when there
+ *   is no meaningful origin — treat like missing; HMAC is the gate.
  * - Origin present: must match expected when we can compute it.
  * - Origin present but expected unknown (typical LAN): allow; HMAC is the gate.
  */
@@ -44,7 +46,8 @@ export function validateAgentOrigin(
   env: Env = process.env,
   logger?: Log,
 ): boolean {
-  if (!requestOrigin) return true;
+  const origin = requestOrigin.trim();
+  if (!origin || origin.toLowerCase() === "null") return true;
 
   const expected = expectedAgentOrigin(env, logger);
   if (!expected) {
@@ -52,9 +55,9 @@ export function validateAgentOrigin(
     return true;
   }
 
-  const matches = requestOrigin.toLowerCase() === expected.toLowerCase();
+  const matches = origin.toLowerCase() === expected.toLowerCase();
   if (!matches) {
-    logger?.warn(`WebSocket origin mismatch: got ${requestOrigin}, expected ${expected}`);
+    logger?.warn(`WebSocket origin mismatch: got ${origin}, expected ${expected}`);
   }
   return matches;
 }
