@@ -173,11 +173,47 @@ static class ElevationPrompt
         }
     }
 
+    /// <summary>
+    /// Themed notice that a request is already pending. Any failure in themed
+    /// construction or display falls back to the plain OS MessageBox — losing
+    /// the styling is harmless, breaking the consent-watching flow is not.
+    /// </summary>
+    static void ShowAlreadyWaiting()
+    {
+        try
+        {
+            using var dlg = Ui.Dialog("PrivGate", new Size(420, 170));
+            dlg.Controls.Add(Ui.Body(
+                "A PrivGate request is already waiting for approval.",
+                "Request already waiting"));
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 44,
+                FlowDirection = FlowDirection.RightToLeft,
+                Padding = new Padding(12),
+                BackColor = Color.Transparent,
+            };
+            var ok = Ui.Primary("OK");
+            ok.Click += (_, _) => { dlg.DialogResult = DialogResult.OK; dlg.Close(); };
+            buttons.Controls.Add(ok);
+            dlg.Controls.Add(buttons);
+            dlg.AcceptButton = ok; // Enter → dismiss
+            dlg.CancelButton = ok; // Esc → dismiss
+            dlg.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            BrokerLog.Write("themed already-waiting dialog failed: " + ex);
+            MessageBox.Show("A PrivGate request is already waiting for approval.", "PrivGate");
+        }
+    }
+
     internal static void Request(string path)
     {
         if (_busy)
         {
-            MessageBox.Show("A PrivGate request is already waiting for approval.", "PrivGate");
+            ShowAlreadyWaiting();
             return;
         }
         _busy = true;

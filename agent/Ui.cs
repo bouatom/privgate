@@ -79,6 +79,62 @@ static class Ui
         };
     }
 
+    /// <summary>
+    /// Dialog heading, like the console's card titles: larger bold ink text
+    /// for the top of a themed window. Pass accessibleName when dynamic.
+    /// </summary>
+    public static Label Title(string text, string? accessibleName = null)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Padding = new Padding(16, 14, 16, 2),
+            Text = text,
+            ForeColor = Ink,
+            BackColor = Color.Transparent,
+            Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+            AccessibleName = accessibleName ?? text,
+        };
+    }
+
+    /// <summary>
+    /// Small muted uppercase microcopy, like .nav-section-label / .card .k in
+    /// the console. WinForms labels cannot letter-space, so uppercase + the
+    /// small size carry the idiom alone.
+    /// </summary>
+    public static Label SectionLabel(string text, string? accessibleName = null)
+    {
+        var upper = text.ToUpperInvariant();
+        return new Label
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            Padding = new Padding(16, 10, 16, 2),
+            Text = upper,
+            ForeColor = Muted,
+            BackColor = Color.Transparent,
+            // 8.25pt == the console's 11px at standard DPI; scales with system DPI.
+            Font = new Font("Segoe UI", 8.25f),
+            AccessibleName = accessibleName ?? upper,
+        };
+    }
+
+    /// <summary>
+    /// 1px separator in the Line tone between dialog sections, like the
+    /// console's border tokens. Docks Bottom by default; move it as needed.
+    /// </summary>
+    public static Panel Hairline(string? accessibleName = null)
+    {
+        return new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 1,
+            BackColor = Line,
+            AccessibleName = accessibleName ?? "Separator",
+        };
+    }
+
     /// <summary>Amber primary action, like button.primary in the console.</summary>
     public static Button Primary(string text)
     {

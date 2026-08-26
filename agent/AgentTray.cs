@@ -28,7 +28,9 @@ sealed class AgentTrayContext : ApplicationContext
         _form = new AgentStatusForm();
         _icon = new NotifyIcon
         {
-            Icon = SystemIcons.Shield,
+            // Brand tile instead of SystemIcons.Shield; sized for the device
+            // DPI (96 DPI → 16px) so higher-scale sessions get a sharper tray.
+            Icon = AppIcon.Create(TrayPx()),
             Visible = true,
             Text = "PrivGate Agent",
             ContextMenuStrip = BuildMenu(),
@@ -106,9 +108,51 @@ sealed class AgentTrayContext : ApplicationContext
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "PrivGate Agent");
+            ShowError(ex.Message);
         }
     }
+
+    /// <summary>
+    /// Themed error dialog for failures inside error paths (e.g. the log
+    /// viewer). Deliberately defensive: if building or showing the themed
+    /// dialog throws — fonts missing, GDI+ unhappy in this session — fall
+    /// back to the stock MessageBox. Error reporting must never itself crash
+    /// the tray.
+    /// </summary>
+    static void ShowError(string message)
+    {
+        try
+        {
+            using var dlg = Ui.Dialog("PrivGate Agent", new Size(440, 200));
+            var ok = Ui.Primary("OK");
+            ok.Click += (_, _) => dlg.Close();
+            var buttons = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                FlowDirection = FlowDirection.RightToLeft,
+                Height = 46,
+                Padding = new Padding(12),
+                BackColor = Color.Transparent,
+            };
+            buttons.Controls.Add(ok);
+            dlg.Controls.Add(Ui.Body(message, "Error detail"));
+            dlg.Controls.Add(buttons);
+            dlg.AcceptButton = ok;
+            dlg.CancelButton = ok;
+            dlg.ShowDialog();
+        }
+        catch
+        {
+            MessageBox.Show(message, "PrivGate Agent");
+        }
+    }
+
+    /// <summary>
+    /// Tray square size for the UI thread's device DPI (96 DPI → 16px, the
+    /// floor). The process has no PerMonitorV2 manifest today, so this reads
+    /// 96 and Windows scales — the math is ready if awareness lands later.
+    /// </summary>
+    int TrayPx() => Math.Max(AppIcon.MinPx, _form.DeviceDpi * 16 / 96);
 
     void Refresh()
     {
@@ -145,7 +189,11 @@ sealed class AgentTrayContext : ApplicationContext
         else if (!string.IsNullOrEmpty(snap.Pending)) state = "waiting";
         var text = $"PrivGate Agent ({state})";
         _icon.Text = text.Length <= 63 ? text : text.Substring(0, 63);
-        _icon.Icon = snap.Realtime ? SystemIcons.Shield : SystemIcons.Warning;
+        // realtime down = Problem. The Problem state is a full-red shield
+        // rather than amber+badge: at 16px a badge dot is ≤2px and vanishes,
+        // while the color-only swap keeps the brand silhouette constant.
+        var desired = AppIcon.Create(TrayPx(), snap.Realtime ? AppIconState.Normal : AppIconState.Problem);
+        if (!ReferenceEquals(_icon.Icon, desired)) _icon.Icon = desired;
         if (snap.NoticeSeq > _seenNotice && snap.NoticeSeq > 0)
         {
             _seenNotice = snap.NoticeSeq;
@@ -184,97 +232,5 @@ sealed class AgentTrayContext : ApplicationContext
         if (_ownsBroker) _cts.Cancel();
         _cts.Dispose();
         base.ExitThreadCore();
-    }
-}
-
-sealed class AgentStatusForm : Form
-{
-    readonly Label _realtime = Field();
-    readonly Label _device = Field();
-    readonly Label _host = Field();
-    readonly Label _api = Field();
-    readonly Label _source = Field();
-    readonly Label _jit = Field();
-    readonly Label _pending = Field();
-    readonly Label _error = Field();
-    readonly ListBox _requests = new() { Dock = DockStyle.Fill, Font = new Font("Consolas", 9f) };
-
-    public AgentStatusForm()
-    {
-        Text = "PrivGate Agent";
-        StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(520, 420);
-        Size = new Size(560, 480);
-        FormClosing += (_, e) =>
-        {
-            if (e.CloseReason == CloseReason.UserClosing)
-            {
-                e.Cancel = true;
-                Hide();
-            }
-        };
-
-        var grid = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(16),
-            ColumnCount = 2,
-            RowCount = 10,
-        };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddRow(grid, 0, "Realtime", _realtime);
-        AddRow(grid, 1, "Device", _device);
-        AddRow(grid, 2, "Hostname", _host);
-        AddRow(grid, 3, "Console", _api);
-        AddRow(grid, 4, "Source", _source);
-        AddRow(grid, 5, "JIT admin", _jit);
-        AddRow(grid, 6, "Pending request", _pending);
-        AddRow(grid, 7, "Last error", _error);
-        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        grid.Controls.Add(new Label { Text = "Requests", AutoSize = true, Padding = new Padding(0, 8, 0, 0) }, 0, 8);
-        grid.SetColumnSpan(_requests, 2);
-        grid.Controls.Add(_requests, 0, 9);
-        Controls.Add(grid);
-    }
-
-    public void Bind(StatusSnapshot snap)
-    {
-        _realtime.Text = snap.Realtime
-            ? $"Connected since {snap.ConnectedAt ?? "now"}  (reconnects {snap.Reconnects})"
-            : "Offline";
-        _realtime.ForeColor = snap.Realtime ? Color.ForestGreen : Color.Firebrick;
-        _device.Text = string.IsNullOrEmpty(snap.DeviceId) ? "—" : snap.DeviceId;
-        _host.Text = snap.Hostname;
-        _api.Text = string.IsNullOrEmpty(snap.ApiBase) ? "—" : snap.ApiBase;
-        _source.Text = string.IsNullOrEmpty(snap.Source) ? "—" : snap.Source;
-        _jit.Text = snap.JitActive
-            ? "On until " + (snap.JitUntil ?? "expiry") +
-              ". Request a program from the tray to open it on this desktop without signing out."
-            : "Off";
-        _pending.Text = string.IsNullOrEmpty(snap.Pending) ? "—" : snap.Pending;
-        _error.Text = string.IsNullOrEmpty(snap.LastError) ? "—" : snap.LastError;
-        _requests.BeginUpdate();
-        _requests.Items.Clear();
-        foreach (var row in snap.Requests.Reverse())
-        {
-            _requests.Items.Add($"{row.At}  {row.Decision,-8}  {row.Path}");
-        }
-        if (_requests.Items.Count == 0) _requests.Items.Add("No requests yet.");
-        _requests.EndUpdate();
-    }
-
-    static Label Field() => new()
-    {
-        AutoSize = true,
-        MaximumSize = new Size(400, 0),
-        Padding = new Padding(0, 4, 0, 4),
-    };
-
-    static void AddRow(TableLayoutPanel grid, int row, string title, Control value)
-    {
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        grid.Controls.Add(new Label { Text = title, AutoSize = true, Padding = new Padding(0, 4, 0, 0) }, 0, row);
-        grid.Controls.Add(value, 1, row);
     }
 }
