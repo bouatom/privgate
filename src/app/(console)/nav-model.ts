@@ -12,6 +12,7 @@ export type NavIconName =
   | "monitor"
   | "shield-check"
   | "users"
+  | "clock"
   | "doc-list"
   | "gear";
 
@@ -52,10 +53,10 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Policies", href: "/allowlists", icon: "shield-check", anyOf: ["policies.view"] },
       {
-        label: "Directory",
+        label: "JIT Access",
         href: "/directory",
-        icon: "users",
-        anyOf: ["directory.users.view", "directory.users.manage"],
+        icon: "clock",
+        anyOf: ["jit.view", "jit.grant", "directory.users.view", "directory.users.manage"],
       },
     ],
   },

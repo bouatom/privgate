@@ -89,7 +89,9 @@ export function ConsoleShell({
       <aside className="rail" id="console-rail">
         <div className="brand-row">
           <div className="brand">
-            <div className="mark" title="PrivGate console">PG</div>
+            <div className="mark" title="PrivGate console">
+              <img src="/icon" alt="" width={22} height={22} style={{ display: "block" }} />
+            </div>
             <div>
               <strong>PRIVGATE</strong>
               <span>Privilege elevation</span>

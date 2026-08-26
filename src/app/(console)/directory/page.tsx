@@ -1,39 +1,42 @@
 import { can, getSession } from "@/lib/auth";
-import { getDb, listGroupMemberships, listGroups, listUsers } from "@/lib/db";
-import { isHighPrivilegeGroup } from "@/lib/elevation";
+import { getDb, listDeviceSummaries, listGroups, listJit, listUsers } from "@/lib/db";
+import { expireDueJit } from "@/lib/jit-expiry";
 import { presentUsers } from "@/lib/present";
 import { Forbidden } from "../forbidden";
-import { UsersClient } from "../users/users-client";
+import { JitClient } from "../jit/jit-client";
 
 export default async function DirectoryPage() {
   const session = await getSession();
-  const usersVisible = can(session, "directory.users.view") || can(session, "directory.users.manage");
-  if (!usersVisible) return <Forbidden />;
+  if (!can(session, "jit.view") && !can(session, "jit.grant")) return <Forbidden />;
 
   const db = getDb();
-  const membershipsByUser = new Map<string, Array<{ name: string; objectId: string }>>();
-  for (const membership of listGroupMemberships(db)) {
-    const groups = membershipsByUser.get(membership.userId) ?? [];
-    groups.push({ name: membership.groupName, objectId: membership.objectId });
-    membershipsByUser.set(membership.userId, groups);
-  }
-  const groups = listGroups(db);
+  expireDueJit();
+
+  // All directory users are JIT-eligible by policy — present every user with
+  // jitEligible: true so the grant dialog shows the full roster.
+  const users = presentUsers(listUsers(db)).map((u) => ({ ...u, jitEligible: true }));
+  const groups = listGroups(db).filter((g) => g.memberCount > 0);
+  const devices = listDeviceSummaries(db);
+  const grants = listJit(db);
 
   return (
     <>
       <div className="top">
         <div>
-          <h1>Directory</h1>
+          <h1>JIT Access</h1>
           <p className="lede">
-            Synced directory users and groups from Entra ID or Active Directory.
+            Temporary local Administrators windows that the broker revokes on
+            schedule. Every directory user is eligible for JIT access.
           </p>
         </div>
       </div>
-      <UsersClient
-        users={presentUsers(listUsers(db), { membershipsByUser })}
-        elevatedGroupCount={groups.filter((g) => isHighPrivilegeGroup(g)).length}
+      <JitClient
+        users={users}
         groups={groups}
-        canManage={can(session, "directory.users.manage")}
+        devices={devices}
+        grants={grants}
+        canGrant={can(session, "jit.grant")}
+        canRevoke={can(session, "jit.revoke")}
       />
     </>
   );
