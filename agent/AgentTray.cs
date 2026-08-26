@@ -9,6 +9,7 @@ sealed class AgentTrayContext : ApplicationContext
     readonly NotifyIcon _icon;
     readonly AgentStatusForm _form;
     readonly System.Windows.Forms.Timer _timer;
+    readonly System.Windows.Forms.Timer _consentTimer;
     readonly string[] _args;
     readonly CancellationTokenSource _cts = new();
     readonly bool _ownsBroker;
@@ -36,6 +37,13 @@ sealed class AgentTrayContext : ApplicationContext
         _timer = new System.Windows.Forms.Timer { Interval = 1500 };
         _timer.Tick += (_, _) => Refresh();
         _timer.Start();
+        // Consent watching runs on its own fast timer: a UAC prompt that is
+        // cancelled must produce the PrivGate review window in well under a
+        // second, before the user forgets what they were elevating. Both
+        // timers fire on the UI thread, so they never interleave.
+        _consentTimer = new System.Windows.Forms.Timer { Interval = 300 };
+        _consentTimer.Tick += (_, _) => ElevationPrompt.TickConsent();
+        _consentTimer.Start();
         Refresh();
         Heartbeat.Start();
         if (_seenNotice == 0)
@@ -132,7 +140,6 @@ sealed class AgentTrayContext : ApplicationContext
             };
         }
         _form.Bind(snap);
-        ElevationPrompt.TickConsent();
         var state = snap.Realtime ? "connected" : "offline";
         if (snap.JitActive) state = "JIT on";
         else if (!string.IsNullOrEmpty(snap.Pending)) state = "waiting";
@@ -142,9 +149,8 @@ sealed class AgentTrayContext : ApplicationContext
         if (snap.NoticeSeq > _seenNotice && snap.NoticeSeq > 0)
         {
             _seenNotice = snap.NoticeSeq;
-            Balloon(snap.NoticeTitle, snap.NoticeBody);
-            // Balloons die to focus assist and fullscreen apps; JIT and
-            // approval notices must be seen, so surface a topmost toast too.
+            // Toast only: balloons die to focus assist and fullscreen apps,
+            // and showing both duplicates every notice on the desktop.
             Toast.Show(snap.NoticeTitle, snap.NoticeBody);
         }
     }
