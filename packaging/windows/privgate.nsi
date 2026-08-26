@@ -163,6 +163,51 @@ Function LaunchConsole
   ExecShell "open" "http://127.0.0.1:$WebPort/setup"
 FunctionEnd
 
+; Reads KEY=<digits> from $DataDir\PrivGate\console.env (written by
+; write-env.cjs). The network page only runs on first install, so an upgrade
+; must recover the live ports this way or firewall rules would drift back to
+; the defaults while the service listens elsewhere. Stack in: key name.
+; Stack out: validated port text, or empty when absent/unparsable (caller
+; then keeps its current value). Round-tripping through IntOp/IntFmt rejects
+; quotes, stray CR and anything non-numeric.
+Function ReadEnvPort
+  Exch $R0
+  StrCpy $R1 ""
+  ClearErrors
+  nsExec::ExecToStack 'cmd /q /c findstr /B /L /C:"$R0=" "$DataDir\PrivGate\console.env"'
+  Pop $R2
+  Pop $R3
+  ${If} $R2 == 0
+    StrLen $R4 "$R0="
+    StrCpy $R5 $R3 "" $R4
+    IntOp $R6 $R5 + 0
+    IntFmt $R6 "%u" $R6
+    ${If} $R6 == $R5
+    ${AndIf} $R6 > 0
+    ${AndIf} $R6 < 65536
+      StrCpy $R1 $R6
+    ${EndIf}
+  ${EndIf}
+  Exch $R1
+FunctionEnd
+
+Function SyncFirewallPorts
+  ${If} ${FileExists} "$DataDir\PrivGate\console.env"
+    Push "PRIVGATE_WEB_PORT"
+    Call ReadEnvPort
+    Pop $0
+    ${If} $0 != ""
+      StrCpy $WebPort $0
+    ${EndIf}
+    Push "PRIVGATE_AGENT_PORT"
+    Call ReadEnvPort
+    Pop $0
+    ${If} $0 != ""
+      StrCpy $AgentPort $0
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
 Function StopExistingService
   ; Self-sufficient stop: extract THIS build's control script from the
   ; installer and run it against $INSTDIR. Never trust the on-disk copy -
@@ -170,17 +215,40 @@ Function StopExistingService
   ; entirely, and fire-and-forget stops leave SERVICE_STOP_PENDING wrappers
   ; locked. The embedded script polls for STOPPED (20s) then escalates to
   ; taskkill /F on the wrapper PID (10s), so no fixed Sleep guess exists.
+  ${If} $INSTDIR == ""
+    ; Unreachable past the directory page by construction; kept so an empty
+    ; target can never reach the helper silently (it would stop/kill nothing
+    ; and later show as unrelated locked-file errors).
+    MessageBox MB_ICONSTOP \
+      "Internal setup error: the installation folder is empty, so the running console cannot be stopped safely. Setup will close instead of touching an unknown folder. Re-run setup and choose an installation folder."
+    Abort
+  ${EndIf}
+  ${If} $PLUGINSDIR == ""
+    MessageBox MB_ICONSTOP \
+      "Internal setup error: no temporary plugin folder is available ($TEMP may be unusable), so the service control helper cannot be extracted. Setup will close."
+    Abort
+  ${EndIf}
+  DetailPrint "Stopping the running console - helper: $PLUGINSDIR\service-ctl.cmd - target dir: $INSTDIR"
   File /oname=$PLUGINSDIR\service-ctl.cmd "payload\service-ctl.cmd"
-  nsExec::ExecToLog '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
+  ; ExecToStack rather than ExecToLog: the helper's output comes back on the
+  ; stack and is quoted verbatim inside the warning below, so a failed stop
+  ; shows WHY (stuck status, escalation result) - not just an exit code.
+  nsExec::ExecToStack '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
   Pop $0
-  ; A failure here is silent today and only surfaces later as confusing
-  ; "error writing to file" popups when locked payloads cannot be replaced.
+  Pop $1
+  ${If} $1 == ""
+    StrCpy $1 "(no output captured from service-ctl.cmd)"
+  ${EndIf}
+  DetailPrint "stop-all finished with code $0"
   ${If} $0 != 0
+    ; Locked leftovers would otherwise only surface as confusing "error
+    ; writing to file" popups once copying starts.
     MessageBox MB_ICONEXCLAMATION|MB_OKCANCEL \
-      "Stopping the running console returned code $0. If it is still running, the following file copies may report write errors.$\n$\nContinue anyway? (No aborts the update.)" \
+      "Stopping the running console failed with code $0. Helper output:$\n$\n$1$\n$\nIf the console is still running, the following file copies may report write errors.$\n$\nContinue anyway? Choosing No aborts the update now." \
       IDOK stop_warn_continue
     Abort
     stop_warn_continue:
+      DetailPrint "Continuing despite stop-all failure - some files may stay locked."
   ${EndIf}
 FunctionEnd
 
@@ -220,11 +288,38 @@ Section "Install"
     Pop $0
   ${EndIf}
 
+  ; Open the management ports in Windows Firewall. Runs after write-env so a
+  ; fresh install uses the ports chosen on the network page and an upgrade
+  ; reuses the live ports from console.env (SyncFirewallPorts). netsh fails on
+  ; hosts without the firewall service (Server Core, hardened images): every
+  ; result is logged, none is fatal - remote reachability, not install health.
+  Call SyncFirewallPorts
+  DetailPrint "Updating Windows Firewall rules (web $WebPort, broker $AgentPort)"
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PrivGate Console (web)"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PrivGate Console (web)" dir=in action=allow protocol=TCP localport=$WebPort'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "WARNING: could not open inbound TCP $WebPort (netsh exit code $0). Other computers may be unable to reach the console until the port is opened manually."
+  ${EndIf}
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PrivGate Agent broker"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall add rule name="PrivGate Agent broker" dir=in action=allow protocol=TCP localport=$AgentPort'
+  Pop $0
+  ${If} $0 != 0
+    DetailPrint "WARNING: could not open inbound TCP $AgentPort (netsh exit code $0). Windows brokers may be unable to connect until the port is opened manually."
+  ${EndIf}
+
   ; The freshly extracted script is current by construction: start (and its
   ; WinSW `install`) updates the existing service in place - same service id,
   ; never a delete/recreate.
   nsExec::ExecToLog '"$INSTDIR\service-ctl.cmd" start'
   Pop $0
+  ${If} $0 != 0
+    ; Do not fail the whole update over a refused start, but a service left
+    ; dead silently is how outages get discovered hours later.
+    DetailPrint "WARNING: starting the console service returned code $0. Check the PrivGateConsole service and %PROGRAMDATA%\PrivGate\logs."
+  ${EndIf}
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\PrivGate\Console" "InstallDir" "$INSTDIR"
@@ -246,10 +341,29 @@ FunctionEnd
 Section "Uninstall"
   ; Same self-sufficient stop as the install section, so a hand-started node
   ; or a STOP_PENDING drain cannot leave files locked under RMDir /r.
+  ${If} $INSTDIR == ""
+    MessageBox MB_ICONSTOP \
+      "Internal uninstall error: the installation folder is empty, so uninstall cannot tell which folder to remove. Nothing was deleted."
+    Abort
+  ${EndIf}
+  DetailPrint "Stopping the running console - helper: $PLUGINSDIR\service-ctl.cmd - target dir: $INSTDIR"
   File /oname=$PLUGINSDIR\service-ctl.cmd "payload\service-ctl.cmd"
-  nsExec::ExecToLog '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
+  nsExec::ExecToStack '"$PLUGINSDIR\service-ctl.cmd" stop-all "$INSTDIR"'
   Pop $0
+  Pop $1
+  ${If} $0 != 0
+    ; Uninstall must stay possible even with a wedged service: report the
+    ; failure in the log, keep going, let RMDir /r report leftovers.
+    DetailPrint "stop-all returned code $0 during uninstall - continuing. Helper output: $1"
+  ${EndIf}
   nsExec::ExecToLog '"$INSTDIR\PrivGateConsole.exe" uninstall'
+  Pop $0
+  ; Remove the inbound exceptions added at install. Rule names carry no port,
+  ; so an upgrade that moved to different ports is still cleaned up.
+  DetailPrint "Removing Windows Firewall rules"
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PrivGate Console (web)"'
+  Pop $0
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="PrivGate Agent broker"'
   Pop $0
   Call un.InitDataDir
   ; Data survives uninstall on purpose: $DataDir\PrivGate holds privgate.db
