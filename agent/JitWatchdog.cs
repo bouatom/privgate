@@ -78,6 +78,27 @@ public sealed class JitWatchdog
         return state;
     }
 
+    /// <summary>
+    /// True when the given user SID currently holds the local JIT window
+    /// (jit-revoke.json names them and the expiry has not passed). Read-only;
+    /// used by the jit-open pipe shortcut so JIT users skip the request flow.
+    /// </summary>
+    public bool IsJitActiveFor(string userSid)
+    {
+        try
+        {
+            if (!File.Exists(statePath)) return false;
+            var state = JsonSerializer.Deserialize<JitState>(File.ReadAllText(statePath));
+            return state is not null
+                && state.userSid.Equals(userSid ?? "", StringComparison.OrdinalIgnoreCase)
+                && DateTimeOffset.UtcNow.ToUnixTimeSeconds() < state.exp;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static void RevokeLocalAdmin(string userSid) => RunNet("delete", userSid);
 
     public static void GrantLocalAdmin(string userSid) => RunNet("add", userSid);

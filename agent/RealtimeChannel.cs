@@ -243,17 +243,12 @@ public sealed class RealtimeChannel : IDisposable
         }
         if (type == "jit-grant")
         {
-            ApplyJitGrant(msg);
+            JitPush.ApplyGrant(msg, ticketKey, deviceId, watchdog);
             return;
         }
         if (type == "jit-revoke")
         {
-            var sid = msg.TryGetProperty("userSid", out var sidEl) ? sidEl.GetString() ?? "" : "";
-            if (sid.Length > 0) watchdog.RevokeNow(sid);
-            BrokerStatus.Current.NoteJit(false);
-            BrokerStatus.Current.NoteNotice(
-                "JIT admin ended",
-                "Temporary local Administrators membership was removed. Finish any installs before the end time.");
+            JitPush.ApplyRevoke(msg, watchdog);
             return;
         }
         if (type == "agent-update")
@@ -289,7 +284,14 @@ public sealed class RealtimeChannel : IDisposable
     void CompleteTicket(JsonElement msg, bool allow)
     {
         var requestId = msg.TryGetProperty("requestId", out var rid) ? rid.GetString() ?? "" : "";
-        if (requestId.Length == 0 || !tickets.TryRemove(requestId, out var waiter)) return;
+        if (requestId.Length == 0) return;
+        if (!tickets.TryRemove(requestId, out var waiter))
+        {
+            // No pipe waiter: the request came from a path with no live dialog
+            // (e.g. UAC-cancel). The approval must still DO something.
+            if (allow) PendingLaunches.TryLaunch(requestId);
+            return;
+        }
         if (allow)
         {
             var ticket = msg.TryGetProperty("ticket", out var ticketEl) ? ticketEl.GetString() : "";
@@ -306,23 +308,6 @@ public sealed class RealtimeChannel : IDisposable
                 : "request denied",
             requestId,
         }));
-    }
-
-    void ApplyJitGrant(JsonElement msg)
-    {
-        var packed = msg.TryGetProperty("ticket", out var ticketEl) ? ticketEl.GetString() ?? "" : "";
-        if (packed.Length == 0 || ticketKey.Length == 0) return;
-        var parsed = TicketVerifier.Verify(packed, ticketKey, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-        if (!parsed.dev.Equals(deviceId, StringComparison.OrdinalIgnoreCase)) return;
-        JitWatchdog.GrantLocalAdmin(parsed.sub);
-        watchdog.Arm(parsed.nonce, parsed.sub, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
-        BrokerStatus.Current.NoteJit(true, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
-        BrokerStatus.Current.NoteNotice(
-            "JIT admin is on",
-            "Until " +
-            DateTimeOffset.FromUnixTimeSeconds(parsed.exp).ToLocalTime().ToString("HH:mm") +
-            ": right-click the shield → Request a program… to start anything elevated — no sign-out needed. " +
-            "Start-menu and UAC launches still use your old logon token.");
     }
 
     async Task<JsonElement> RpcAsync(Dictionary<string, object?> payload, CancellationToken ct)
