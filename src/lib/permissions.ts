@@ -112,12 +112,10 @@ export const NAV_PERMISSION: Record<string, PermissionId> = {
 };
 
 export const CONFIG_TABS: Array<{ label: string; href: string; anyOf: PermissionId[] }> = [
-  { label: "Users & permissions", href: "/configuration/access", anyOf: ["portal.users.manage", "portal.roles.manage"] },
   { label: "Network", href: "/configuration/network", anyOf: ["portal.users.manage", "integrations.view", "integrations.manage", "devices.enroll"] },
   { label: "Integrations", href: "/configuration/integrations", anyOf: ["integrations.view", "integrations.manage"] },
   { label: "Notifications", href: "/configuration/notifications", anyOf: ["notifications.view", "notifications.manage"] },
   { label: "Updates", href: "/configuration/updates", anyOf: ["dashboard.view", "configuration.update"] },
-  { label: "Audit", href: "/configuration/audit", anyOf: ["audit.view"] },
 ];
 
 export function firstAllowedConfigHref(granted: readonly string[] | undefined): string {
