@@ -5,9 +5,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "./db";
 import { listAudit } from "./db";
-import { applyConsoleUpdate, buildUpdaterCommand } from "./self-update-apply";
+import { applyConsoleUpdate, buildUpdaterCommand, resolveWindowsPowershell } from "./self-update-apply";
 import {
   APPLY_STALE_MS,
+  UPDATER_START_WINDOW_MS,
   applyPaths,
   parseApplyStatus,
   currentApplyStatus,
@@ -58,7 +59,7 @@ function okFetch() {
 function fakeSpawn(calls: Array<{ file: string; args: string[]; options: Record<string, unknown> }>) {
   return ((file: string, args: string[], options: Record<string, unknown>) => {
     calls.push({ file, args, options });
-    return { unref: () => {} };
+    return { pid: 4242, unref: () => {} };
   }) as never;
 }
 
@@ -69,11 +70,27 @@ describe("buildUpdaterCommand", () => {
       installerPath: "C:\\data\\updates\\x.msi",
       scriptPath: "C:\\Program Files\\PrivGate\\update-server.ps1",
       sha256: "a".repeat(64),
+      systemRoot: "C:\\Windows",
     });
-    expect(cmd.file).toBe("powershell.exe");
-    expect(cmd.args).toContain("-File");
+    // Absolute interpreter path: a WinSW service can run with a stripped PATH
+    // where the bare "powershell.exe" name never resolves and the detached
+    // updater silently never starts (prod incident 10.0.2.25).
+    expect(cmd.file).toBe(resolveWindowsPowershell("C:\\Windows"));
+    expect(cmd.file.toLowerCase()).toContain("windowspowershell\\v1.0\\powershell.exe");
+    expect(cmd.args.slice(0, 5)).toEqual(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"]);
     expect(cmd.args[cmd.args.indexOf("-Installer") + 1]).toBe("C:\\data\\updates\\x.msi");
     expect(cmd.args[cmd.args.indexOf("-Sha256") + 1]).toBe("a".repeat(64));
+  });
+
+  it("never spawns the bare powershell.exe name even when SystemRoot is unset", () => {
+    const cmd = buildUpdaterCommand({
+      platform: "win32",
+      installerPath: "C:\\d\\x.msi",
+      scriptPath: "C:\\Program Files\\PrivGate\\update-server.ps1",
+      sha256: "a".repeat(64),
+    });
+    expect(cmd.file.startsWith("C:\\Windows")).toBe(true); // deterministic fallback
+    expect(path.win32.isAbsolute(cmd.file)).toBe(true);
   });
 
   it("drives update-server.sh with --deb/--pkg and --sha256 on POSIX", () => {
@@ -133,6 +150,64 @@ describe("parseApplyStatus / currentApplyStatus", () => {
     expect(old.lastLines).toEqual(["line-one", "line-two"]);
   });
 
+  it("stays running while the updater has proven it started (updater start line)", () => {
+    const sixMinutesIn = parseApplyStatus({
+      state: state(new Date(Date.now() - (UPDATER_START_WINDOW_MS + 60_000)).toISOString()),
+      logText: "==> updater start pid=7 ps=5.1.26100\n==> Verifying checksum of x.msi\n",
+      nowMs: Date.now(),
+    });
+    expect(sixMinutesIn.phase).toBe("running");
+    expect(sixMinutesIn.hint).toBeNull();
+  });
+
+  it("declares a header-only run stale after the updater-start window and points at the log file", () => {
+    const headerOnly = "==> PrivGate self-update to 0.2.13 (x.msi)\n==> handing off to updater (pid 4242)\n";
+
+    const fresh = parseApplyStatus({ state: state(), logText: headerOnly, nowMs: Date.now() });
+    expect(fresh.phase).toBe("running");
+
+    const quiet = parseApplyStatus({
+      state: state(new Date(Date.now() - UPDATER_START_WINDOW_MS - 1000).toISOString()),
+      logText: headerOnly,
+      nowMs: Date.now(),
+    });
+    expect(quiet.phase).toBe("stale");
+    expect(quiet.hint).toContain("/tmp/apply.log");
+    // The handoff line proves the child was launched — copy must say so.
+    expect(quiet.hint).toContain("produced no output");
+  });
+
+  it("says the updater likely never started when not even a handoff line exists", () => {
+    const quiet = parseApplyStatus({
+      state: state(new Date(Date.now() - UPDATER_START_WINDOW_MS - 1000).toISOString()),
+      logText: "==> PrivGate self-update to 0.2.13 (x.msi)",
+      nowMs: Date.now(),
+    });
+    expect(quiet.phase).toBe("stale");
+    expect(quiet.hint).toContain("never started");
+  });
+
+  it("treats the updater watchdog timeout as failed", () => {
+    const timedOut = parseApplyStatus({
+      state: state(),
+      logText:
+        "==> updater start pid=9 ps=5.1\n" +
+        "error: update-server: update timed out after 601s in phase install (last completed: stop)\n",
+      nowMs: Date.now(),
+    });
+    expect(timedOut.phase).toBe("failed");
+    expect(timedOut.hint).toContain("/tmp/apply.log");
+  });
+
+  it("matches an error: line anywhere in the log, not only at byte 0", () => {
+    const res = parseApplyStatus({
+      state: state(),
+      logText: "==> updater start pid=9\nerror: msiexec exited 1603\n",
+      nowMs: Date.now(),
+    });
+    expect(res.phase).toBe("failed");
+  });
+
   it("currentApplyStatus reads real disk state", () => {
     const env = envFixture();
     expect(currentApplyStatus(env).phase).toBe("idle");
@@ -161,11 +236,48 @@ describe("applyConsoleUpdate", () => {
     expect(spawned[0].options.detached).toBe(true);
     expect(spawned[0].args).toContain(sha256(ASSET_BODY));
     expect(readFileSync(paths.stateFile, "utf8")).toContain("0.2.13");
-    expect(readFileSync(paths.logFile, "utf8")).toContain("self-update to 0.2.13");
+
+    // One log tells the whole story: header → download → sums → handoff pid.
+    const logText = readFileSync(paths.logFile, "utf8");
+    expect(logText).toContain("self-update to 0.2.13");
+    expect(logText).toContain(`==> download start https://example.test/installer.msi`);
+    expect(logText).toContain(`==> downloaded ${ASSET_BODY.length} bytes (PrivGate-Console-0.2.13-win-x64.msi)`);
+    expect(logText).toContain(`==> sha256 verified ${sha256(ASSET_BODY)}`);
+    expect(logText).toContain("==> handing off to updater (pid 4242)");
+
+    // The updater is spawned with an explicit working directory and full env.
+    expect(String(spawned[0].options.cwd)).toBeTruthy();
+    expect(spawned[0].options.env).toMatchObject({ PRIVGATE_DATA_DIR: env.PRIVGATE_DATA_DIR });
 
     const audits = listAudit(db, { action: "console.update.apply" });
     expect(audits).toHaveLength(1);
     expect(audits[0].target).toBe("0.2.13");
+  });
+
+  it("leaves NO header-only log behind when the updater process cannot be started", async () => {
+    const db = resetDbForTests(":memory:");
+    const env = envFixture();
+    const paths = applyPaths(env);
+    const throwingSpawn = (() => {
+      throw new Error("spawn ENOENT");
+    }) as never;
+
+    const result = await applyConsoleUpdate({
+      db,
+      actor: "admin@contoso.test",
+      candidate: candidate(),
+      spawnImpl: throwingSpawn,
+      fetchImpl: okFetch(),
+      env,
+    });
+
+    expect(result).toMatchObject({ ok: false, status: 500 });
+    // The exact prod-incident artifact was a log with a single header line and
+    // no trace of why — a failed spawn must remove state AND that log.
+    expect(() => readFileSync(paths.stateFile)).toThrow();
+    expect(() => readFileSync(paths.logFile)).toThrow();
+    // The attempt itself stays in the audit trail (appended pre-spawn).
+    expect(listAudit(db, { action: "console.update.apply" })).toHaveLength(1);
   });
 
   it("aborts BEFORE spawning when the downloaded artifact fails its sums entry", async () => {

@@ -19,6 +19,8 @@ export type ApplyView = {
   target: string | null;
   startedAt: string | null;
   lastLines: string[];
+  /** Where to look next; names the on-server log file for stale/failed runs. */
+  hint: string | null;
 };
 
 type StatusBody = {
@@ -31,7 +33,8 @@ type StatusBody = {
 const APPLY_PHASE_LABEL: Record<ApplyView["phase"], string> = {
   idle: "No update has been applied from this console yet.",
   running: "Update in progress — the console service will restart. This page recovers on its own.",
-  stale: "The last update never reported an outcome (no terminal log entry). Check the service state and logs.",
+  stale:
+    "The last update never reported an outcome (no terminal log entry). The console is still on the old version until an updater step proves otherwise.",
   succeeded: "The last update completed successfully.",
   failed: "The last update FAILED. Nothing was replaced if the failure was a checksum error; otherwise see the rollback notes in docs/updating.md.",
 };
@@ -137,7 +140,7 @@ export function UpdatesClient({
       return;
     }
     setMessage(`Updater launched for ${body.target}. The console will be briefly offline and come back on the new version.`);
-    setApply({ phase: "running", target: body.target ?? null, startedAt: new Date().toISOString(), lastLines: [] });
+    setApply({ phase: "running", target: body.target ?? null, startedAt: new Date().toISOString(), lastLines: [], hint: null });
     void refreshStatus();
   }
 
@@ -250,6 +253,11 @@ export function UpdatesClient({
             Target <span className="mono">{apply.target ?? "?"}</span> · phase: <span className="mono">{apply.phase}</span>.
             {" "}{APPLY_PHASE_LABEL[apply.phase]}
           </p>
+          {apply.hint ? (
+            <p className="lede" style={{ fontSize: 13, margin: 0 }}>
+              {apply.hint}
+            </p>
+          ) : null}
           {apply.lastLines.length > 0 ? (
             <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 12 }}>{apply.lastLines.join("\n")}</pre>
           ) : null}

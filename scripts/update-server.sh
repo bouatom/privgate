@@ -24,7 +24,7 @@
 #
 # This script ships inside every console payload (/opt/privgate on POSIX), so
 # it can also update an installed console from a later download.
-set -euo pipefail
+set -Eeuo pipefail
 
 PREFIX="${PRIVGATE_PREFIX:-/opt/privgate}"
 NODE_BIN=""
@@ -38,8 +38,27 @@ EXPECTED_SHA256=""
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OS_NAME="$(uname -s)"
 
+# Logging contract mirrors scripts/update-server.ps1 (the console's status
+# parser depends on it): FIRST output is "==> updater start ...", phases log
+# via log(), any failure prints "error: ..." on its own line and exits nonzero.
 log() { printf '==> %s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
+trap 'printf '"'"'error: update-server failed unexpectedly at line %s\n'"'"' "$LINENO" >&2' ERR
+
+# Watchdog: the whole run may never exceed 10 minutes across all phases.
+START_TS="$(date +%s)"
+WATCHDOG_LAST="start"
+watchdog() { # <phase-name>
+  local phase="$1" elapsed
+  elapsed=$(( $(date +%s) - START_TS ))
+  if ((elapsed > 600)); then
+    fail "update timed out after ${elapsed}s in phase $phase (last completed: $WATCHDOG_LAST)"
+  fi
+  WATCHDOG_LAST="$phase"
+}
+
+log "updater start pid=$$ bash=${BASH_VERSION:-?} at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+log "args: $*"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -225,12 +244,18 @@ verify_artifact_integrity() { # for --deb / --pkg file sources
 }
 
 if [[ -n "$PAYLOAD" ]]; then
+  watchdog "verify-payload"
   log "Verifying new payload"
   artifact_check "$PAYLOAD"
   assert_payload_sums "$PAYLOAD"
+
+  watchdog "backup"
   backup_current
+
+  watchdog "stop"
   stop_console
 
+  watchdog "swap"
   log "Swapping files in $PREFIX"
   mkdir -p "$PREFIX"
   find "$PREFIX" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
@@ -244,11 +269,13 @@ if [[ -n "$PAYLOAD" ]]; then
   fi
   "$NODE_BIN" "$PREFIX/write-env.cjs" --dir "$DATA_DIR" --preserve
 
+  watchdog "start"
   log "Starting console"
   start_console
 else
   # Native package managers stop the service themselves (prerm/preinst,
   # pkg preinstall) and restart it after swapping files.
+  watchdog "verify-artifact"
   verify_artifact_integrity
   if [[ -n "$DEB" ]]; then
     log "Verifying deb payload before install"
@@ -269,6 +296,7 @@ else
     fi
     rm -rf "$VERIFY_TMP"
   fi
+  watchdog "install"
   backup_current
   if [[ -n "$DEB" ]]; then
     log "Installing $DEB"
@@ -279,8 +307,11 @@ else
   fi
 fi
 
+watchdog "health"
 log "Waiting for the management web port to answer"
 health_check
+
+watchdog "prune"
 prune_old_backups
 
 log "Update complete."

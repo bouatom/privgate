@@ -22,10 +22,9 @@ import { parseSha256Sums, type UpdateCandidate } from "./self-update";
  *   spawn the platform updater DETACHED → web process dies mid-apply →
  *   updater stops the service, swaps files, starts it again, health-checks.
  *
- * The web process is a casualty by design: the updater's whole job is to stop
- * it. State therefore lives on DISK (see self-update-status.ts), never in
- * memory, so GET /api/configuration/update/status reconstructs progress after
- * the old process is gone and the new one has taken over.
+ * Every step appends `==>` progress lines to <dataDir>/updates/apply.log so a
+ * silent handoff is diagnosable afterwards (the web process is a casualty by
+ * design; the log is the only witness).
  *
  * Fail closed: nothing is spawned until the downloaded artifact matches the
  * release's sha256sums.txt entry. A missing sums file aborts the apply too.
@@ -33,17 +32,30 @@ import { parseSha256Sums, type UpdateCandidate } from "./self-update";
 
 const DOWNLOAD_CAP_BYTES = 600 * 1024 * 1024;
 
+/**
+ * Absolute powershell.exe path — NEVER spawn the bare name. A WinSW service
+ * can run with a stripped PATH; CreateProcess then cannot resolve
+ * "powershell.exe", the detached updater never starts, and the only trace is
+ * the orphaned header line in apply.log (prod incident 10.0.2.25). SystemRoot
+ * is always set on Windows; the System32 PowerShell install always exists.
+ */
+export function resolveWindowsPowershell(systemRoot?: string): string {
+  const root = (systemRoot || "C:\\Windows").replace(/[\\/]+$/, "");
+  return `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+}
+
 /** Pure command builder so both platforms are unit-tested without spawning. */
 export function buildUpdaterCommand(opts: {
   platform?: string;
   installerPath: string;
   scriptPath: string;
   sha256: string;
+  systemRoot?: string;
 }): { file: string; args: string[] } {
   const platform = opts.platform ?? process.platform;
   if (platform === "win32") {
     return {
-      file: "powershell.exe",
+      file: resolveWindowsPowershell(opts.systemRoot),
       args: [
         "-NoProfile",
         "-NonInteractive",
@@ -74,7 +86,7 @@ export function resolveUpdaterScript(cwd: string = process.cwd(), platform: stri
   return null;
 }
 
-async function streamToFile(url: string, destPath: string, fetchImpl: FetchLike): Promise<void> {
+async function streamToFile(url: string, destPath: string, fetchImpl: FetchLike): Promise<number> {
   const res = await fetchImpl(url, { headers: { "User-Agent": "privgate-console-self-update" } });
   if (!res.ok || !res.body) throw new Error(`download failed (HTTP ${res.status})`);
   const source = Readable.fromWeb(res.body as import("node:stream/web").ReadableStream);
@@ -90,6 +102,7 @@ async function streamToFile(url: string, destPath: string, fetchImpl: FetchLike)
     out.on("finish", () => resolve());
     source.pipe(out);
   });
+  return total;
 }
 
 async function fileSha256(filePath: string): Promise<string> {
@@ -103,7 +116,7 @@ async function fileSha256(filePath: string): Promise<string> {
   return hash.digest("hex");
 }
 
-type SpawnLike = (file: string, args: string[], options: Record<string, unknown>) => { unref: () => void };
+type SpawnLike = (file: string, args: string[], options: Record<string, unknown>) => { pid?: number; unref: () => void };
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export type ApplyResult =
@@ -119,6 +132,19 @@ export type ApplyDeps = {
   env?: Record<string, string | undefined>;
   now?: () => number;
 };
+
+/** Progress lines share the updater's log fd; logging must never break the apply. */
+function logLine(logFd: number, line: string): void {
+  try {
+    fs.writeSync(logFd, `${line}\n`);
+  } catch {
+    /* best effort */
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Run pre-checks, then hand off to the detached updater. Returns as soon as
@@ -154,53 +180,81 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
   await fsp.mkdir(paths.workDir, { recursive: true });
   const installerPath = path.join(paths.workDir, deps.candidate.assetName);
   const sumsPath = path.join(paths.workDir, "sha256sums.txt");
-  let verifiedSha256 = "";
 
-  try {
-    await streamToFile(deps.candidate.url, installerPath, deps.fetchImpl ?? fetch);
-    await streamToFile(deps.candidate.sumsUrl, sumsPath, deps.fetchImpl ?? fetch);
+  // Rotate the old logs up front so download/verify/handoff lines land in the
+  // SAME file the updater writes to — one log tells the whole story.
+  await fsp.rm(paths.prevLogFile, { force: true });
+  await fsp.rename(paths.logFile, paths.prevLogFile).catch(() => {});
 
-    // Fail closed BEFORE anything is touched.
-    const expected = parseSha256Sums(await fsp.readFile(sumsPath, "utf8")).get(deps.candidate.assetName);
-    if (!expected) throw new Error("sha256sums.txt has no entry for the chosen asset");
-    const actual = await fileSha256(installerPath);
-    verifiedSha256 = actual;
-    if (actual !== expected.toLowerCase()) {
-      throw new Error(`checksum mismatch: expected ${expected.toLowerCase()}, got ${actual}`);
+  let logFd: number | null = null;
+  const closeLog = () => {
+    if (logFd !== null) {
+      try {
+        fs.closeSync(logFd);
+      } catch {
+        /* already closed */
+      }
+      logFd = null;
     }
-  } catch (error) {
-    await fsp.rm(installerPath, { force: true }).catch(() => {});
-    await fsp.rm(sumsPath, { force: true }).catch(() => {});
-    return {
-      ok: false,
-      status: 502,
-      error: `Verification failed, nothing was changed: ${error instanceof Error ? error.message : String(error)}`,
-    };
-  }
-
-  const scriptPath = resolveUpdaterScript(process.cwd());
-  if (!scriptPath) {
-    return { ok: false, status: 500, error: "update-server script not found in this installation." };
-  }
-
-  const command = buildUpdaterCommand({
-    platform: process.platform,
-    installerPath,
-    scriptPath,
-    sha256: verifiedSha256,
-  });
-
-  if (deps.db) {
-    appendAudit(deps.db, deps.actor, "console.update.apply", deps.candidate.version, {
-      channel: deps.candidate.channel,
-      asset: deps.candidate.assetName,
-      prerelease: deps.candidate.prerelease,
-    });
-  }
+  };
 
   try {
-    await fsp.rm(paths.prevLogFile, { force: true });
-    await fsp.rename(paths.logFile, paths.prevLogFile).catch(() => {});
+    logFd = fs.openSync(paths.logFile, "a");
+    fs.writeSync(logFd, `==> PrivGate self-update to ${deps.candidate.version} (${deps.candidate.assetName})\n`);
+    logLine(logFd, `==> download start ${deps.candidate.url}`);
+
+    let verifiedSha256 = "";
+    try {
+      const bytes = await streamToFile(deps.candidate.url, installerPath, deps.fetchImpl ?? fetch);
+      logLine(logFd, `==> downloaded ${bytes} bytes (${deps.candidate.assetName})`);
+      await streamToFile(deps.candidate.sumsUrl, sumsPath, deps.fetchImpl ?? fetch);
+
+      // Fail closed BEFORE anything is touched or executed.
+      const expected = parseSha256Sums(await fsp.readFile(sumsPath, "utf8")).get(deps.candidate.assetName);
+      if (!expected) throw new Error("sha256sums.txt has no entry for the chosen asset");
+      const actual = await fileSha256(installerPath);
+      if (actual !== expected.toLowerCase()) {
+        throw new Error(`checksum mismatch: expected ${expected.toLowerCase()}, got ${actual}`);
+      }
+      verifiedSha256 = actual;
+      logLine(logFd, `==> sha256 verified ${verifiedSha256}`);
+    } catch (error) {
+      logLine(logFd, `error: verification failed, nothing was changed: ${errorMessage(error)}`);
+      closeLog();
+      await fsp.rm(installerPath, { force: true }).catch(() => {});
+      await fsp.rm(sumsPath, { force: true }).catch(() => {});
+      // A leftover state file from any earlier run must not outlive a failed attempt.
+      await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
+      return {
+        ok: false,
+        status: 502,
+        error: `Verification failed, nothing was changed: ${errorMessage(error)}`,
+      };
+    }
+
+    const scriptPath = resolveUpdaterScript(process.cwd());
+    if (!scriptPath) {
+      closeLog();
+      await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
+      return { ok: false, status: 500, error: "update-server script not found in this installation." };
+    }
+
+    const command = buildUpdaterCommand({
+      platform: process.platform,
+      installerPath,
+      scriptPath,
+      sha256: verifiedSha256,
+      systemRoot: env.SystemRoot ?? env.windir,
+    });
+
+    if (deps.db) {
+      appendAudit(deps.db, deps.actor, "console.update.apply", deps.candidate.version, {
+        channel: deps.candidate.channel,
+        asset: deps.candidate.assetName,
+        prerelease: deps.candidate.prerelease,
+      });
+    }
+
     const newState: ApplyState = {
       target: deps.candidate.version,
       asset: deps.candidate.assetName,
@@ -210,18 +264,27 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     };
     await fsp.writeFile(paths.stateFile, JSON.stringify(newState, null, 2));
 
-    const logFd = fs.openSync(paths.logFile, "a");
-    fs.writeSync(logFd, `==> PrivGate self-update to ${deps.candidate.version} (${deps.candidate.assetName})\n`);
+    // Explicit cwd + full env passthrough: services may run with a minimal
+    // default working directory, and the child needs the service environment.
     const child = (deps.spawnImpl ?? spawnReal)(command.file, command.args, {
       detached: true,
+      cwd: path.dirname(scriptPath),
+      env: { ...env } as NodeJS.ProcessEnv,
       stdio: ["ignore", logFd, logFd],
       windowsHide: true,
     });
     child.unref();
-    fs.closeSync(logFd);
+    if (typeof child.pid === "number") {
+      logLine(logFd, `==> handing off to updater (pid ${child.pid})`);
+    }
+    closeLog();
   } catch (error) {
+    closeLog();
+    // A header-only log whose updater never started is exactly the artifact
+    // that made the prod incident undiagnosable — remove it with the state.
     await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
-    return { ok: false, status: 500, error: `Failed to start updater: ${error instanceof Error ? error.message : String(error)}` };
+    await fsp.rm(paths.logFile, { force: true }).catch(() => {});
+    return { ok: false, status: 500, error: `Failed to start updater: ${errorMessage(error)}` };
   }
 
   return { ok: true, target: deps.candidate.version, logFile: paths.logFile };
