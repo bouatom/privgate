@@ -45,7 +45,10 @@ $ErrorActionPreference = 'Stop'
 # console attached, so host-UI writes are not guaranteed to reach the
 # redirected stdout handle. Direct handle writes always land in the log fd.
 function Write-Line([string]$Message) { [Console]::Out.WriteLine($Message) }
-function Step([string]$Message) { Write-Line "==> $Message" }
+function Step([string]$Message) {
+  $elapsed = [int]((Get-Date) - $watchdogStarted).TotalSeconds
+  Write-Line ("==> [{0}s] {1}" -f $elapsed, $Message)
+}
 function Fail([string]$Message) { throw "update-server: $Message" }
 
 # --- watchdog: no phase may leave the whole run older than 10 minutes ---
@@ -64,6 +67,14 @@ try {
   Step ("updater start pid={0} ps={1} at {2:u}" -f $PID, $PSVersionTable.PSVersion.ToString(), $watchdogStarted)
   Step ("cmdline: {0}" -f [Environment]::CommandLine)
 
+  # Windows Event Log — durable audit trail that survives apply.log rotation.
+  $eventSource = 'PrivGate'
+  try {
+    if (-not [System.Diagnostics.EventLog]::SourceExists($eventSource)) {
+      New-EventLog -LogName Application -Source $eventSource -ErrorAction Stop
+    }
+  } catch { /* non-critical: skip if Event Log is unavailable */ }
+
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   if (-not (New-Object Security.Principal.WindowsPrincipal($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Fail 'run elevated (needs to stop/start the system service)'
@@ -78,6 +89,24 @@ try {
   $nodeExe = Join-Path $installDir 'node.exe'
   $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
   $backupDir = "$installDir.backup-$stamp"
+
+  # Log the currently-installed version for before/after visibility.
+  $currentVersion = 'unknown'
+  try {
+    $versionFile = Join-Path $installDir 'version.json'
+    if (Test-Path $versionFile) {
+      $v = Get-Content $versionFile -Raw | ConvertFrom-Json
+      $currentVersion = $v.version
+    }
+  } catch { /* non-critical */ }
+  Step "current version: $currentVersion"
+
+  # Write the start event to Windows Event Log (informational).
+  try {
+    Write-EventLog -LogName Application -Source $eventSource -EventId 1001 `
+      -EntryType Information -Message "PrivGate self-update started: $currentVersion → (pending)" -ErrorAction SilentlyContinue
+  } catch { /* non-critical */ }
+
   $expectedSha256 = ''
   if ($Sha256) {
     $expectedSha256 = $Sha256.Trim().ToLowerInvariant()
@@ -260,6 +289,21 @@ try {
       Assert-Watchdog 'start'
       Step 'Starting console service'
       & (Join-Path $installDir 'service-ctl.cmd') start | Out-Null
+
+      # Confirm the service actually reached Running state.
+      $svc = Get-Service -Name 'PrivGateConsole' -ErrorAction SilentlyContinue
+      if ($svc) {
+        $deadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $deadline) {
+          $svc.Refresh()
+          if ($svc.Status -eq 'Running') { break }
+          Start-Sleep -Seconds 1
+        }
+        Step "Service status after start: $($svc.Status)"
+        if ($svc.Status -ne 'Running') { Fail "console service did not reach Running state" }
+      } else {
+        Step "WARNING: PrivGateConsole service not found after start"
+      }
     }
     'ByInstaller' {
       if (-not (Test-Path $Installer)) { Fail "installer not found: $Installer" }
@@ -287,6 +331,21 @@ try {
       Assert-Watchdog 'start'
       Step 'Ensuring the console service is running'
       & (Join-Path $installDir 'service-ctl.cmd') start | Out-Null
+
+      # Confirm the service actually reached Running state.
+      $svc = Get-Service -Name 'PrivGateConsole' -ErrorAction SilentlyContinue
+      if ($svc) {
+        $deadline = (Get-Date).AddSeconds(15)
+        while ((Get-Date) -lt $deadline) {
+          $svc.Refresh()
+          if ($svc.Status -eq 'Running') { break }
+          Start-Sleep -Seconds 1
+        }
+        Step "Service status after start: $($svc.Status)"
+        if ($svc.Status -ne 'Running') { Fail "console service did not reach Running state" }
+      } else {
+        Step "WARNING: PrivGateConsole service not found after start"
+      }
     }
   }
 
@@ -297,6 +356,18 @@ try {
   Prune-OldBackups
 
   Step 'Update complete.'
+  # Log the new version for before/after visibility.
+  try {
+    $newVersionFile = Join-Path $installDir 'version.json'
+    if (Test-Path $newVersionFile) {
+      $nv = Get-Content $newVersionFile -Raw | ConvertFrom-Json
+      Step "new version: $($nv.version)"
+    }
+  } catch { /* non-critical */ }
+  try {
+    Write-EventLog -LogName Application -Source $eventSource -EventId 1002 `
+      -EntryType Information -Message "PrivGate self-update succeeded: $currentVersion → (see version.json)" -ErrorAction SilentlyContinue
+  } catch { /* non-critical */ }
   Write-Line @"
 Rollback (only if needed):
   Rename-Item '$installDir' '$installDir.bad'
@@ -309,5 +380,9 @@ Data ($DataDir) was never touched by this update.
   # ANY terminating failure lands here — including Fail(), cmdlet errors and
   # the watchdog — so the apply log always carries an "error:" line.
   Write-Line ("error: {0}" -f $_.Exception.Message)
+  try {
+    Write-EventLog -LogName Application -Source $eventSource -EventId 1003 `
+      -EntryType Error -Message "PrivGate self-update failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
+  } catch { /* non-critical */ }
   exit 1
 }

@@ -119,8 +119,14 @@ export function reconcileReportedVersion(
       waitedMs: Date.now() - marker.pushedAt,
     });
   } else if (marker && compareVersions(reported, marker.version) < 0) {
-    // Reported behind an outstanding push: keep the marker visible so the UI
-    // keeps rendering "updating…" until the device catches up.
+    // Device reported an older version while a push is outstanding — the
+    // update likely failed (download error, MSI rollback, etc.). Record the
+    // failure and keep the marker so the UI shows the attempt.
+    appendAudit(db, `device:${deviceId}`, "device.update.failed", deviceId, {
+      expected: marker.version,
+      reported,
+    });
+    // Keep the pending marker visible so the UI keeps showing the attempt.
     setDeviceAgentVersion(
       db,
       deviceId,

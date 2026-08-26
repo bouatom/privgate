@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { appendAudit } from "@/lib/db/audit";
 import { isResponse, requireAdmin } from "@/lib/http";
 import { checkForUpdate } from "@/lib/self-update-service";
 import { applyConsoleUpdate } from "@/lib/self-update-apply";
@@ -31,6 +32,9 @@ export async function POST() {
   const db = getDb();
   const check = await checkForUpdate({ db });
   if (!check.available || !check.version || !check.url || !check.sumsUrl) {
+    appendAudit(db, auth.session.email, "console.update.apply.attempted", "(no-version)", {
+      reason: check.error ?? "no update available",
+    });
     return NextResponse.json(
       { error: check.error ? `No update can be verified right now: ${check.error}` : "No newer version available for this channel." },
       { status: check.version && !check.available ? 409 : 502 },

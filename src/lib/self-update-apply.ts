@@ -205,8 +205,10 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
 
     let verifiedSha256 = "";
     try {
+      const dlStart = Date.now();
       const bytes = await streamToFile(deps.candidate.url, installerPath, deps.fetchImpl ?? fetch);
-      logLine(logFd, `==> downloaded ${bytes} bytes (${deps.candidate.assetName})`);
+      const dlMs = Date.now() - dlStart;
+      logLine(logFd, `==> downloaded ${bytes} bytes in ${dlMs}ms (${deps.candidate.assetName})`);
       await streamToFile(deps.candidate.sumsUrl, sumsPath, deps.fetchImpl ?? fetch);
 
       // Fail closed BEFORE anything is touched or executed.
@@ -225,6 +227,12 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
       await fsp.rm(sumsPath, { force: true }).catch(() => {});
       // A leftover state file from any earlier run must not outlive a failed attempt.
       await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
+      if (deps.db) {
+        appendAudit(deps.db, deps.actor, "console.update.apply.failed", deps.candidate.version, {
+          reason: errorMessage(error),
+          phase: "verification",
+        });
+      }
       return {
         ok: false,
         status: 502,
@@ -236,6 +244,12 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     if (!scriptPath) {
       closeLog();
       await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
+      if (deps.db) {
+        appendAudit(deps.db, deps.actor, "console.update.apply.failed", deps.candidate.version, {
+          reason: "update-server script not found",
+          phase: "updater-not-found",
+        });
+      }
       return { ok: false, status: 500, error: "update-server script not found in this installation." };
     }
 
@@ -284,6 +298,12 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     // that made the prod incident undiagnosable — remove it with the state.
     await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
     await fsp.rm(paths.logFile, { force: true }).catch(() => {});
+    if (deps.db) {
+      appendAudit(deps.db, deps.actor, "console.update.apply.failed", deps.candidate.version, {
+        reason: errorMessage(error),
+        phase: "spawn-failed",
+      });
+    }
     return { ok: false, status: 500, error: `Failed to start updater: ${errorMessage(error)}` };
   }
 

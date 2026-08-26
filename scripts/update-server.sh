@@ -41,7 +41,7 @@ OS_NAME="$(uname -s)"
 # Logging contract mirrors scripts/update-server.ps1 (the console's status
 # parser depends on it): FIRST output is "==> updater start ...", phases log
 # via log(), any failure prints "error: ..." on its own line and exits nonzero.
-log() { printf '==> %s\n' "$*"; }
+log() { printf '==> [%ss] %s\n' "$(( $(date +%s) - START_TS ))" "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
 trap 'printf '"'"'error: update-server failed unexpectedly at line %s\n'"'"' "$LINENO" >&2' ERR
 
@@ -101,6 +101,13 @@ default_data_dir() {
   esac
 }
 DATA_DIR="${DATA_DIR:-$(default_data_dir)}"
+
+# Log the currently-installed version for before/after visibility.
+CURRENT_VERSION="unknown"
+if [[ -f "$PREFIX/version.json" ]]; then
+  CURRENT_VERSION="$("$NODE_BIN" -e "try{console.log(require('$PREFIX/version.json').version)}catch{}" 2>/dev/null || echo "unknown")"
+fi
+log "current version: $CURRENT_VERSION"
 
 stop_console() {
   log "Stopping the running console (SIGTERM drains sockets and closes SQLite)"
@@ -314,6 +321,12 @@ health_check
 watchdog "prune"
 prune_old_backups
 
+# Log the new version for before/after visibility.
+NEW_VERSION="unknown"
+if [[ -f "$PREFIX/version.json" ]]; then
+  NEW_VERSION="$("$NODE_BIN" -e "try{console.log(require('$PREFIX/version.json').version)}catch{}" 2>/dev/null || echo "unknown")"
+fi
+log "new version: $NEW_VERSION"
 log "Update complete."
 cat <<ROLLBACK
 Rollback (only if needed):

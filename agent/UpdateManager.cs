@@ -12,11 +12,21 @@ namespace PrivGate.Agent;
 /// silently. The MSI MajorUpgrade stops this service, replaces files, and
 /// restarts it; on startup the new build re-registers/reconnects and reports
 /// its version. Standard Windows Installer only — no elevation tricks.
+///
+/// All update activity is written to update.log in the state directory. This
+/// log survives service restarts because it is flushed to disk before msiexec
+/// is launched (the MSI kills this process). On startup, check the log for
+/// the outcome of the last update attempt.
 /// </summary>
 public sealed class UpdateManager
 {
     public const string DownloadPath = "/api/agent/update/download";
     static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
+    const int DownloadRetries = 3;
+    static readonly TimeSpan[] RetryDelays = [
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(5),
+    ];
 
     readonly string apiBase;
     readonly string deviceId;
@@ -59,7 +69,7 @@ public sealed class UpdateManager
         var version = msg.TryGetProperty("version", out var v) ? v.GetString() ?? "" : "";
         if (version.Length == 0 || !IsNewer(version))
         {
-            Console.WriteLine($"PrivGate update: ignoring push '{version}' (installed {AgentVersion()})");
+            Log($"ignoring push '{version}' (installed {AgentVersion()})");
             return;
         }
         if (Interlocked.Exchange(ref updateRunning, 1) == 1) return;
@@ -67,8 +77,10 @@ public sealed class UpdateManager
         {
             try
             {
+                Log($"update started: {AgentVersion()} → {version}");
                 BrokerStatus.Current.NoteNotice("PrivGate update", $"Downloading version {version}…");
-                var msiPath = await DownloadAsync(ct: CancellationToken.None).ConfigureAwait(false);
+                var msiPath = await DownloadWithRetryAsync(ct: CancellationToken.None).ConfigureAwait(false);
+                Log("download complete, launching installer");
                 BrokerStatus.Current.NoteNotice("PrivGate update", "Installing — the service restarts in a moment.");
                 RunMsiexec(msiPath);
                 // msiexec stops PrivGateBroker; process exits via service stop.
@@ -76,15 +88,42 @@ public sealed class UpdateManager
             catch (Exception ex)
             {
                 Interlocked.Exchange(ref updateRunning, 0);
+                Log($"FAILED: {ex.Message}");
                 Console.Error.WriteLine($"PrivGate update failed: {ex.Message}");
                 BrokerStatus.Current.NoteNotice("PrivGate update failed", ex.Message);
             }
         });
     }
 
-    async Task<string> DownloadAsync(CancellationToken ct)
+    async Task<string> DownloadWithRetryAsync(CancellationToken ct)
     {
         Directory.CreateDirectory(stateDir);
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= DownloadRetries; attempt++)
+        {
+            try
+            {
+                Log($"download attempt {attempt}/{DownloadRetries}");
+                var path = await DownloadOnceAsync(ct).ConfigureAwait(false);
+                return path;
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                Log($"download attempt {attempt} failed: {ex.Message}");
+                if (attempt < DownloadRetries)
+                {
+                    var delay = RetryDelays[Math.Min(attempt - 1, RetryDelays.Length - 1)];
+                    Log($"retrying in {delay.TotalSeconds:F0}s");
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
+                }
+            }
+        }
+        throw lastError!;
+    }
+
+    async Task<string> DownloadOnceAsync(CancellationToken ct)
+    {
         var targetPath = Path.Combine(stateDir, "PrivGate-Client.msi");
         var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
         byte[] rawHash;
@@ -97,10 +136,11 @@ public sealed class UpdateManager
         req.Headers.TryAddWithoutValidation("X-Timestamp", ts);
         req.Headers.TryAddWithoutValidation("X-Signature", sig);
 
+        var sw = Stopwatch.StartNew();
         using var res = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!res.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"download failed ({(int)res.StatusCode})");
+            throw new InvalidOperationException($"HTTP {(int)res.StatusCode}");
         }
         var expectedSha = res.Headers.TryGetValues("X-Update-Sha256", out var values)
             ? values.FirstOrDefault() ?? ""
@@ -110,11 +150,14 @@ public sealed class UpdateManager
             throw new InvalidOperationException("server did not provide a content hash");
         }
 
+        long bytesWritten = 0;
         using (var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false))
         using (var output = File.Create(targetPath))
         {
-            await stream.CopyToAsync(output, 81920, ct).ConfigureAwait(false);
+            bytesWritten = await stream.CopyToAsync(output, 81920, ct).ConfigureAwait(false);
         }
+        sw.Stop();
+        Log($"downloaded {bytesWritten} bytes in {sw.ElapsedMilliseconds}ms");
 
         VerifySha256(targetPath, expectedSha);
         return targetPath;
@@ -140,7 +183,7 @@ public sealed class UpdateManager
         var hex = Authenticode.BytesToHex(bytes);
         if (!string.Equals(hex, expectedHex, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException("update package failed integrity check");
+            throw new InvalidDataException($"checksum mismatch: expected {expectedHex[..16]}…, got {hex[..16]}…");
         }
     }
 
@@ -157,6 +200,32 @@ public sealed class UpdateManager
         };
         Console.WriteLine($"PrivGate update: launching {psi.FileName} {psi.Arguments}");
         Process.Start(psi);
+    }
+
+    /// <summary>
+    /// Append a timestamped line to the persistent update log. This log survives
+    /// service restarts because it is flushed to disk before msiexec is launched.
+    /// </summary>
+    static void Log(string message)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(GetLogPath())!);
+            var line = $"[{DateTimeOffset.UtcNow:u}] {message}\n";
+            File.AppendAllText(GetLogPath(), line);
+            Console.WriteLine($"PrivGate update: {message}");
+        }
+        catch
+        {
+            // Best effort — logging must never break the update.
+        }
+    }
+
+    static string GetLogPath()
+    {
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        if (string.IsNullOrEmpty(programData)) programData = @"C:\ProgramData";
+        return Path.Combine(programData, "PrivGate", "update", "update.log");
     }
 
     static int[] ParseParts(string version)

@@ -241,7 +241,7 @@ describe("applyConsoleUpdate", () => {
     const logText = readFileSync(paths.logFile, "utf8");
     expect(logText).toContain("self-update to 0.2.13");
     expect(logText).toContain(`==> download start https://example.test/installer.msi`);
-    expect(logText).toContain(`==> downloaded ${ASSET_BODY.length} bytes (PrivGate-Console-0.2.13-win-x64.msi)`);
+    expect(logText).toContain(`==> downloaded ${ASSET_BODY.length} bytes in `);
     expect(logText).toContain(`==> sha256 verified ${sha256(ASSET_BODY)}`);
     expect(logText).toContain("==> handing off to updater (pid 4242)");
 
@@ -276,8 +276,12 @@ describe("applyConsoleUpdate", () => {
     // no trace of why — a failed spawn must remove state AND that log.
     expect(() => readFileSync(paths.stateFile)).toThrow();
     expect(() => readFileSync(paths.logFile)).toThrow();
-    // The attempt itself stays in the audit trail (appended pre-spawn).
+    // The attempt is recorded as both a successful apply (pre-spawn) and a
+    // failed apply (spawn error), giving full audit trail visibility.
     expect(listAudit(db, { action: "console.update.apply" })).toHaveLength(1);
+    const failedAudits = listAudit(db, { action: "console.update.apply.failed" });
+    expect(failedAudits).toHaveLength(1);
+    expect(failedAudits[0].target).toBe("0.2.13");
   });
 
   it("aborts BEFORE spawning when the downloaded artifact fails its sums entry", async () => {
@@ -306,7 +310,10 @@ describe("applyConsoleUpdate", () => {
     expect(result).toMatchObject({ ok: false, status: 502 });
     expect(result.ok ? "" : result.error).toContain("checksum mismatch");
     expect(spawned).toHaveLength(0); // fail closed: nothing was executed
-    expect(listAudit(db, { action: "console.update.apply" })).toHaveLength(0);
+    // Failed apply attempts are recorded in the audit trail.
+    const failedAudits = listAudit(db, { action: "console.update.apply.failed" });
+    expect(failedAudits).toHaveLength(1);
+    expect(failedAudits[0].target).toBe("0.2.13");
     // The poisoned download is removed from the work dir.
     expect(sumsFileWasRemoved(env)).toBe(true);
   });

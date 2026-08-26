@@ -102,4 +102,28 @@ describe("version-report RPC", () => {
     };
     expect(row.agent_version).toBe("");
   });
+
+  it("emits device.update.failed when the device reports an older version after a push", () => {
+    const db = resetDbForTests(":memory:");
+    process.env.PRIVGATE_VERSION = "9.9.9";
+    const { stop } = connectDevice();
+
+    // Push update to the device.
+    requestAgentUpdate(db, device, "admin@contoso.test");
+
+    // Device reports back with an older version (update failed).
+    handleAgentRpc(device, { id: "10", type: "version-report", version: "1.0.0" });
+
+    const failed = listAudit(db, { action: "device.update.failed" });
+    expect(failed).toHaveLength(1);
+    expect(failed[0].target).toBe(device);
+
+    // The pending marker is preserved so the UI shows the attempt.
+    const row = db.prepare("SELECT agent_version FROM devices WHERE id = ?").get(device) as {
+      agent_version: string;
+    };
+    expect(row.agent_version).toContain("+pending@");
+
+    stop();
+  });
 });
