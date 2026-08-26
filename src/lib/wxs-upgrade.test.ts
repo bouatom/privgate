@@ -36,13 +36,15 @@ describe("generate-wxs upgrade metadata", () => {
     expect(xml).toContain('Name="PrivGateConsole"');
     expect(xml).toContain('Stop="both"');
     expect(xml).toContain('Id="StartPrivGate"');
-    // Stray hand-started consoles must be stopped before MSI costs files, or
-    // msiexec raises FilesInUse and silent updates fail. On a major upgrade
-    // REMOVE holds the upgraded-from product code(s); only an uninstall sets
-    // REMOVE="ALL", so the old `NOT REMOVE` condition skipped stray-kill AND
-    // service start on every upgrade.
+    // Stray hand-started consoles must be stopped after the Selection Manager
+    // initializes (After="InstallValidate") but before MSI costs files, or
+    // msiexec raises FilesInUse and silent updates fail. Before="InstallValidate"
+    // triggered error 2731 (Selection Manager not initialized → 1603).
+    // On a major upgrade REMOVE holds the upgraded-from product code(s); only
+    // an uninstall sets REMOVE="ALL", so the `NOT REMOVE` condition skips
+    // stray-kill AND service start on every upgrade.
     expect(xml).toContain('Id="StopPrivGateStray"');
-    expect(xml).toMatch(/<Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE~="ALL"<\/Custom>/);
+    expect(xml).toMatch(/<Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"<\/Custom>/);
     expect(xml).toMatch(/<Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE~="ALL"<\/Custom>/);
     // Upgrade-in-place stops -> swaps -> starts with a stable service id: the
     // ServiceControl entry must never grow a Remove attribute (that deletes
@@ -76,9 +78,10 @@ describe("generate-wxs upgrade metadata", () => {
     expect(xml).toContain('Id="RemoveConsoleFirewall" FileKey="filFirewallConsole" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore"');
     // Install: after files exist; skip on uninstall only (upgrades refresh).
     expect(xml).toMatch(/<Custom Action="AddConsoleFirewall" After="InstallFiles">NOT REMOVE~="ALL"<\/Custom>/);
-    // Uninstall: while the helper file is still on disk (before costing) and
-    // only for a real uninstall, never for a major upgrade.
-    expect(xml).toMatch(/<Custom Action="RemoveConsoleFirewall" Before="InstallValidate">REMOVE~="ALL"<\/Custom>/);
+    // Uninstall: while the helper file is still on disk (after Selection
+    // Manager init, before costing) and only for a real uninstall, never
+    // for a major upgrade.
+    expect(xml).toMatch(/<Custom Action="RemoveConsoleFirewall" After="InstallValidate">REMOVE~="ALL"<\/Custom>/);
   });
 
   it("omits firewall actions when the helper is absent from the stage", () => {

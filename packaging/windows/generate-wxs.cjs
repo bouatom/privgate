@@ -115,7 +115,7 @@ const startAction = serviceCtlFileId
     <CustomAction Id="StopPrivGateStray" FileKey="${serviceCtlFileId}" ExeCommand="stop-all" Execute="immediate" Impersonate="no" Return="ignore" />
     <CustomAction Id="StartPrivGate" FileKey="${serviceCtlFileId}" ExeCommand="start" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="StopPrivGateStray" Before="InstallValidate">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"</Custom>
       <Custom Action="StartPrivGate" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>`
   : "";
@@ -127,7 +127,7 @@ const startAction = serviceCtlFileId
 // ports from %ProgramData%\PrivGate\console.env (defaults 3000/3001), making
 // rule creation order-independent versus StartPrivGate and correct on hosts
 // that changed ports after install. Removal runs while the helper file still
-// exists (Before="InstallValidate") and only on a real uninstall: during a
+// exists (After="InstallValidate") and only on a real uninstall: during a
 // major upgrade REMOVE holds product codes rather than ALL, so upgrades take
 // the idempotent delete-then-add refresh instead.
 const firewallAction = firewallConsoleFileId
@@ -135,7 +135,7 @@ const firewallAction = firewallConsoleFileId
     <CustomAction Id="AddConsoleFirewall" FileKey="${firewallConsoleFileId}" ExeCommand="add" Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="RemoveConsoleFirewall" FileKey="${firewallConsoleFileId}" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="RemoveConsoleFirewall" Before="InstallValidate">REMOVE~="ALL"</Custom>
+      <Custom Action="RemoveConsoleFirewall" After="InstallValidate">REMOVE~="ALL"</Custom>
       <Custom Action="AddConsoleFirewall" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>`
   : "";
