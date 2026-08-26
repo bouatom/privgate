@@ -55,14 +55,8 @@ static class ElevationClient
                 userSid = userSid ?? "",
                 sessionId,
             });
-            using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
-            pipe.Connect(2000);
-            using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-            writer.WriteLine(payload);
             // Covers the classifier's internal poll window plus pipe latency.
-            pipe.ReadTimeout = 6000;
-            var reply = reader.ReadLine() ?? "";
+            var reply = Exchange(payload, 9000);
             var json = JsonSerializer.Deserialize<JsonElement>(reply);
             return UacClassifier.ParseWire(
                 json.TryGetProperty("outcome", out var outcome) ? outcome.GetString() ?? "" : "");
@@ -100,15 +94,46 @@ static class ElevationClient
         });
     }
 
+    /// <summary>
+    /// One request/reply exchange with the broker over the elevation pipe,
+    /// under a hard deadline. Pipe streams do not support ReadTimeout (the
+    /// Stream base setter always throws InvalidOperationException), so the
+    /// whole connect/write/read runs on the thread pool and the caller's
+    /// wait is what enforces the ceiling. A timeout throws TimeoutException
+    /// whose message genuinely reflects waiting, never a fake instant hit.
+    /// </summary>
+    static string Exchange(string payload, int timeoutMs)
+    {
+        var exchange = Task.Run(() =>
+        {
+            using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
+            pipe.Connect(Math.Min(timeoutMs, 8000));
+            using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
+            using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
+            writer.WriteLine(payload);
+            return reader.ReadLine() ?? "";
+        });
+        if (!exchange.Wait(timeoutMs))
+        {
+            throw new TimeoutException("the broker did not reply within " + (timeoutMs / 1000) + "s");
+        }
+        return exchange.Result;
+    }
+
     static void PostOneWay(string payload)
     {
-        using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
-        pipe.Connect(2000);
-        using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
-        using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-        writer.WriteLine(payload);
-        pipe.ReadTimeout = 5000;
-        reader.ReadLine();
+        // Best effort: one-way posts stay quiet on failure so an offline
+        // broker does not turn each 60s heartbeat into log spam. The ack is
+        // still awaited briefly — dropping the connection before the broker
+        // writes its reply used to log 'pipe is broken' fault pairs there.
+        try
+        {
+            Exchange(payload, 7000);
+        }
+        catch
+        {
+            // Fire-and-forget by contract.
+        }
     }
 
     internal static string Request(string path, int timeoutMs = 16 * 60 * 1000)
@@ -141,12 +166,9 @@ static class ElevationClient
             arguments = extra,
             sessionId = Process.GetCurrentProcess().SessionId,
         });
-        using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
-        pipe.Connect(8000);
-        using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
-        using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-        writer.WriteLine(payload);
-        pipe.ReadTimeout = timeoutMs;
-        return reader.ReadLine() ?? "";
+        // True ceiling: the broker holds this pipe open while the request
+        // pends console-side — approval or denial ends it early, and the
+        // broker's own 15-minute waiter always beats this deadline.
+        return Exchange(payload, timeoutMs);
     }
 }

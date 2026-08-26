@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text.Json;
 
 namespace PrivGate.Agent;
@@ -25,9 +26,14 @@ public sealed class JitWatchdog
         {
             var stamp = expiresAt.ToLocalTime().ToString("HH:mm");
             var date = expiresAt.ToLocalTime().ToString("MM/dd/yyyy");
-            var tr = $"net localgroup Administrators {MemberSpec(userSid)} /delete";
+            var tr = $"net localgroup Administrators {MemberArg(userSid)} /delete";
+            // The member argument carries quotes; schtasks /TR needs them
+            // escaped or the stored task command is mangled and the revoke
+            // fires a broken net.exe line (seen in the field: syntax error
+            // from a task whose /TR lost its inner quotes).
+            var trEscaped = tr.Replace("\"", "\\\"");
             Process.Start(new ProcessStartInfo("schtasks.exe",
-                $"/Create /F /TN PrivGate-JIT-{grantId} /SC ONCE /ST {stamp} /SD {date} /RU SYSTEM /TR \"{tr}\"")
+                $"/Create /F /TN PrivGate-JIT-{grantId} /SC ONCE /ST {stamp} /SD {date} /RU SYSTEM /TR \"{trEscaped}\"")
             {
                 UseShellExecute = false,
             })?.WaitForExit(10_000);
@@ -87,6 +93,29 @@ public sealed class JitWatchdog
         return "\"" + value.Replace("\"", "") + "\"";
     }
 
+    /// <summary>
+    /// Member argument for net.exe / schtasks. Windows builds in the field
+    /// reject SID-form members outright — "*S-1-…", bare "S-1-…", quoted or
+    /// not, add or delete, all return a syntax dump — so resolve the SID to
+    /// its account name first and only fall back to the *SID form when the
+    /// translation fails (e.g. a deleted account).
+    /// </summary>
+    internal static string MemberArg(string userSid)
+    {
+        try
+        {
+            var name = new SecurityIdentifier(userSid).Translate(typeof(NTAccount)).Value;
+            if (!string.IsNullOrWhiteSpace(name))
+                return "\"" + name.Replace("\"", "") + "\"";
+        }
+        catch
+        {
+            // Translation is best-effort; unresolvable SIDs fall through to
+            // the legacy *SID form below.
+        }
+        return MemberSpec(userSid);
+    }
+
     static void RunNet(string action, string userSid)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -95,8 +124,8 @@ public sealed class JitWatchdog
             return;
         }
         var args = action == "add"
-            ? $"localgroup Administrators {MemberSpec(userSid)} /add"
-            : $"localgroup Administrators {MemberSpec(userSid)} /delete";
+            ? $"localgroup Administrators {MemberArg(userSid)} /add"
+            : $"localgroup Administrators {MemberArg(userSid)} /delete";
         var psi = new ProcessStartInfo("net.exe", args)
         {
             UseShellExecute = false,
