@@ -154,7 +154,13 @@ public sealed class UpdateManager
         using (var stream = await res.Content.ReadAsStreamAsync().ConfigureAwait(false))
         using (var output = File.Create(targetPath))
         {
-            bytesWritten = await stream.CopyToAsync(output, 81920, ct).ConfigureAwait(false);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
+            {
+                await output.WriteAsync(buffer, 0, read, ct).ConfigureAwait(false);
+                bytesWritten += read;
+            }
         }
         sw.Stop();
         Log($"downloaded {bytesWritten} bytes in {sw.ElapsedMilliseconds}ms");
@@ -183,7 +189,7 @@ public sealed class UpdateManager
         var hex = Authenticode.BytesToHex(bytes);
         if (!string.Equals(hex, expectedHex, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException($"checksum mismatch: expected {expectedHex[..16]}…, got {hex[..16]}…");
+            throw new InvalidDataException($"checksum mismatch: expected {expectedHex.Substring(0, 16)}…, got {hex.Substring(0, 16)}…");
         }
     }
 
