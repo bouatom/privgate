@@ -1,6 +1,6 @@
 {
   "name": "privgate",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "private": true,
   "scripts": {
     "dev": "node packaging/dev.cjs",
