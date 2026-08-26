@@ -319,9 +319,10 @@ public sealed class RealtimeChannel : IDisposable
         BrokerStatus.Current.NoteJit(true, DateTimeOffset.FromUnixTimeSeconds(parsed.exp));
         BrokerStatus.Current.NoteNotice(
             "JIT admin is on",
-            "Temporary install rights granted until " +
+            "Until " +
             DateTimeOffset.FromUnixTimeSeconds(parsed.exp).ToLocalTime().ToString("HH:mm") +
-            " - open Disk Management from the tray shield.");
+            ": right-click the shield → Request a program… to start anything elevated — no sign-out needed. " +
+            "Start-menu and UAC launches still use your old logon token.");
     }
 
     async Task<JsonElement> RpcAsync(Dictionary<string, object?> payload, CancellationToken ct)

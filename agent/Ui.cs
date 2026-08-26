@@ -37,6 +37,9 @@ static class Ui
             MaximizeBox = false,
             MinimizeBox = false,
             ShowInTaskbar = false,
+            // Fullscreen apps (games, kiosks) hide normal dialogs entirely;
+            // prompts must be answerable no matter what is in the foreground.
+            TopMost = true,
             Font = new Font("Segoe UI", 9f),
         };
     }

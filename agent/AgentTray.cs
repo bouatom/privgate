@@ -50,8 +50,6 @@ sealed class AgentTrayContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Status", null, (_, _) => ShowStatus());
-        menu.Items.Add("Request Disk Management…", null, (_, _) =>
-            ElevationPrompt.Request(Path.Combine(Environment.SystemDirectory, "diskmgmt.msc")));
         menu.Items.Add("Request a program…", null, (_, _) => RequestProgram());
         menu.Items.Add("Open log", null, (_, _) => OpenLog());
         menu.Items.Add(new ToolStripSeparator());
@@ -75,7 +73,9 @@ sealed class AgentTrayContext : ApplicationContext
             CheckFileExists = true,
         };
         if (dlg.ShowDialog() != DialogResult.OK) return;
-        ElevationPrompt.Request(dlg.FileName);
+        // Review step: the submitter sees exactly what they are elevating
+        // (name, publisher, version, path, SHA-256) before approvers do.
+        if (RequestReviewForm.Confirm(dlg.FileName)) ElevationPrompt.Request(dlg.FileName);
     }
 
     void Balloon(string title, string body)
@@ -143,6 +143,9 @@ sealed class AgentTrayContext : ApplicationContext
         {
             _seenNotice = snap.NoticeSeq;
             Balloon(snap.NoticeTitle, snap.NoticeBody);
+            // Balloons die to focus assist and fullscreen apps; JIT and
+            // approval notices must be seen, so surface a topmost toast too.
+            Toast.Show(snap.NoticeTitle, snap.NoticeBody);
         }
     }
 
@@ -241,7 +244,7 @@ sealed class AgentStatusForm : Form
         _source.Text = string.IsNullOrEmpty(snap.Source) ? "—" : snap.Source;
         _jit.Text = snap.JitActive
             ? "On until " + (snap.JitUntil ?? "expiry") +
-              ". Request Disk Management from the tray to open it on this desktop without signing out."
+              ". Request a program from the tray to open it on this desktop without signing out."
             : "Off";
         _pending.Text = string.IsNullOrEmpty(snap.Pending) ? "—" : snap.Pending;
         _error.Text = string.IsNullOrEmpty(snap.LastError) ? "—" : snap.LastError;

@@ -123,7 +123,7 @@ static class ElevationPrompt
             dlg.Controls.Add(buttons);
             dlg.AcceptButton = yes;   // Enter → primary action
             dlg.CancelButton = no;    // Esc → least destructive ("Not now")
-            if (dlg.ShowDialog() == DialogResult.Yes) Request(target);
+            if (dlg.ShowDialog() == DialogResult.Yes && RequestReviewForm.Confirm(target)) Request(target);
             return;
         }
 
@@ -141,35 +141,28 @@ static class ElevationPrompt
             Padding = new Padding(12),
             BackColor = Color.Transparent,
         };
-        var disk = Ui.Primary("Request Disk Management");
-        var browse = Ui.Ghost("Browse for the program…");
+        var browse = Ui.Primary("Browse for the program…");
         var later = Ui.Ghost("Not now");
-        disk.AutoSize = true;
         browse.AutoSize = true;
         later.AutoSize = true;
-        disk.Click += (_, _) => { ask.DialogResult = DialogResult.Yes; ask.Close(); };
-        browse.Click += (_, _) => { ask.DialogResult = DialogResult.No; ask.Close(); };
+        browse.Click += (_, _) => { ask.DialogResult = DialogResult.OK; ask.Close(); };
         later.Click += (_, _) => { ask.DialogResult = DialogResult.Cancel; ask.Close(); };
-        askButtons.Controls.Add(disk);
         askButtons.Controls.Add(browse);
         askButtons.Controls.Add(later);
         ask.Controls.Add(askButtons);
-        ask.AcceptButton = disk;  // Enter → primary action
-        ask.CancelButton = later; // Esc → least destructive ("Not now")
-        var choice = ask.ShowDialog();
-        if (choice == DialogResult.Yes)
-        {
-            Request(Path.Combine(Environment.SystemDirectory, "diskmgmt.msc"));
-            return;
-        }
-        if (choice != DialogResult.No) return;
+        ask.AcceptButton = browse; // Enter → primary action
+        ask.CancelButton = later;  // Esc → least destructive ("Not now")
+        if (ask.ShowDialog() != DialogResult.OK) return;
         using var picker = new OpenFileDialog
         {
             Title = "Choose the program Windows just blocked",
             Filter = "Programs and snap-ins (*.exe;*.msc;*.msi)|*.exe;*.msc;*.msi|All files (*.*)|*.*",
             CheckFileExists = true,
         };
-        if (picker.ShowDialog() == DialogResult.OK) Request(picker.FileName);
+        if (picker.ShowDialog() == DialogResult.OK && RequestReviewForm.Confirm(picker.FileName))
+        {
+            Request(picker.FileName);
+        }
     }
 
     internal static void Request(string path)
