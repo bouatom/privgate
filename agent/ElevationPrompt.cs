@@ -14,6 +14,11 @@ static class ElevationPrompt
     static bool _promptOpen;
     static bool _uacVisible;
     static string _pendingTarget = "";
+    // Exact program paths read from consent.exe command lines while the UAC
+    // prompt was open (broker resolves them as SYSTEM). Preferred over the
+    // foreground-tracker guess, which lags behind right-click menus and often
+    // names the previous request's program.
+    static volatile string[] _consentTargets = Array.Empty<string>();
 
     internal static void TickConsent()
     {
@@ -50,12 +55,33 @@ static class ElevationPrompt
             }
         }
         var visible = pids.Count > 0;
-        if (visible && !_uacVisible) _pendingTarget = ForegroundTracker.Candidate();
+        if (visible && !_uacVisible)
+        {
+            _pendingTarget = ForegroundTracker.Candidate();
+            // The prompt just appeared: ask the broker (SYSTEM) to read the
+            // consent.exe command lines now, while they are alive, so the
+            // exact target is known by the time the prompt closes.
+            var snapshot = pids.ToArray();
+            Task.Run(() =>
+            {
+                try
+                {
+                    var targets = ElevationClient.ConsentTargets(snapshot);
+                    if (targets.Length > 0) _consentTargets = targets;
+                }
+                catch
+                {
+                    // Foreground fallback still applies when this fails.
+                }
+            });
+        }
         _uacVisible = visible;
         if (!Watch.ShouldPrompt(pids)) return;
         _promptOpen = true;
         try
         {
+            // Exact capture beats the foreground guess.
+            if (_consentTargets.Length > 0) _pendingTarget = _consentTargets[0];
             // Classify BEFORE reporting: consent closing does not mean the
             // prompt was dismissed. An administrator who approved their own
             // prompt must not get a fake "canceled" row or the follow-up nag.
@@ -75,6 +101,7 @@ static class ElevationPrompt
         {
             _promptOpen = false;
             _pendingTarget = "";
+            _consentTargets = Array.Empty<string>();
         }
     }
 
@@ -101,29 +128,10 @@ static class ElevationPrompt
     {
         if (target.Length > 0)
         {
-            using var dlg = Ui.Dialog("PrivGate", new Size(480, 210));
-            dlg.Controls.Add(Ui.Note("An approver can allow it without an admin password.", "Approver hint"));
-            var body = Ui.Body(
-                "Windows asked for administrator approval and the prompt was closed.\n\n" +
-                "Submit a PrivGate request for\n" + target + "?", "Submit a PrivGate request");
-            var buttons = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 44,
-                FlowDirection = FlowDirection.RightToLeft,
-                Padding = new Padding(12),
-                BackColor = Color.Transparent,
-            };
-            var yes = Ui.Primary("Request it");
-            var no = Ui.Ghost("Not now");
-            yes.Click += (_, _) => { dlg.DialogResult = DialogResult.Yes; dlg.Close(); };
-            no.Click += (_, _) => { dlg.DialogResult = DialogResult.No; dlg.Close(); };
-            buttons.Controls.Add(yes);
-            buttons.Controls.Add(no);
-            dlg.Controls.Add(buttons);
-            dlg.AcceptButton = yes;   // Enter → primary action
-            dlg.CancelButton = no;    // Esc → least destructive ("Not now")
-            if (dlg.ShowDialog() == DialogResult.Yes && RequestReviewForm.Confirm(target)) Request(target);
+            // Straight to the review window: the user just cancelled UAC for
+            // THIS program, so an extra "do you want to request it?" step only
+            // adds delay between the cancel and the ask.
+            if (RequestReviewForm.Confirm(target)) Request(target);
             return;
         }
 

@@ -39,6 +39,39 @@ static class ElevationClient
     }
 
     /// <summary>
+    /// Tells the broker (LOCAL SYSTEM) which consent.exe PIDs just appeared so
+    /// it can snapshot their command lines while the prompt is open. The reply
+    /// carries the exact target program paths extracted from those command
+    /// lines — far better evidence than the foreground-window guess, and
+    /// available the instant the prompt shows. Best-effort: empty array when
+    /// the broker could not read anything.
+    /// </summary>
+    internal static string[] ConsentTargets(IReadOnlyCollection<int> pids)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { mode = "uac-seen", pids });
+            var reply = Exchange(payload, 3000);
+            var json = JsonSerializer.Deserialize<JsonElement>(reply);
+            if (!json.TryGetProperty("targets", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<string>();
+            }
+            var targets = new List<string>();
+            foreach (var el in arr.EnumerateArray())
+            {
+                var t = el.GetString() ?? "";
+                if (t.Length > 0) targets.Add(t);
+            }
+            return targets.ToArray();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    /// <summary>
     /// Asks the broker service (LOCAL SYSTEM) to classify the stock-UAC prompt
     /// that just closed: did an administrator approve it, and whose token is
     /// the elevated child running under? Synchronous round-trip; any transport
