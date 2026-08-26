@@ -154,18 +154,33 @@ public sealed class BrokerStatus
 
     public string ToJson() => JsonSerializer.Serialize(Snapshot("service"), JsonOpts);
 
+    /// <summary>
+    /// One-shot status probe for the tray. Every step is bounded: Connect by
+    /// timeoutMs, and the write/read exchange by the overall wait below. An
+    /// unbounded read or write here once froze the tray on the UI thread
+    /// before the NotifyIcon was ever created (zombie tray, no icon), so the
+    /// whole exchange runs on the thread pool under a hard deadline and
+    /// degrades to null — the tray must always come up.
+    /// </summary>
     public static StatusSnapshot? TryQueryPipe(int timeoutMs = 800)
     {
         try
         {
-            using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
-            pipe.Connect(timeoutMs);
-            using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
-            using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
-            writer.WriteLine(JsonSerializer.Serialize(new { mode = "status" }));
-            var line = reader.ReadLine();
-            if (string.IsNullOrWhiteSpace(line)) return null;
-            return JsonSerializer.Deserialize<StatusSnapshot>(line, JsonOpts);
+            var exchange = Task.Run(async () =>
+            {
+                using var pipe = new NamedPipeClientStream(".", NamedPipeHost.PipeName, PipeDirection.InOut);
+                pipe.Connect(timeoutMs);
+                using var writer = new StreamWriter(pipe, Encoding.UTF8, 4096, leaveOpen: true) { AutoFlush = true };
+                using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, leaveOpen: true);
+                await writer.WriteLineAsync(JsonSerializer.Serialize(new { mode = "status" })).ConfigureAwait(false);
+                var line = await reader.ReadLineAsync().ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(line)) return null;
+                return JsonSerializer.Deserialize<StatusSnapshot>(line, JsonOpts);
+            });
+            // Healthy brokers answer in well under 100ms; the deadline only
+            // exists so a wedged pipe can never stall the tray's UI thread.
+            if (!exchange.Wait(TimeSpan.FromMilliseconds(timeoutMs * 2))) return null;
+            return exchange.Result;
         }
         catch
         {

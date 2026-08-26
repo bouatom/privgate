@@ -76,6 +76,36 @@ public sealed class NamedPipeHost(Func<JsonElement, PipeIdentity, Task<string>> 
     public async Task ListenAsync(CancellationToken ct)
     {
         Console.WriteLine($"PrivGate broker listening on pipe {PipeName}");
+        // A dead listener must never masquerade as a healthy service: the
+        // service stays Running while every pipe client hangs or fails. Any
+        // fault in the accept loop is logged and the loop restarts.
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await AcceptLoop(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                BrokerLog.Write($"pipe listener fault: {ex.Message}");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
+    async Task AcceptLoop(CancellationToken ct)
+    {
         while (!ct.IsCancellationRequested)
         {
             var server = new NamedPipeServerStream(
@@ -84,36 +114,58 @@ public sealed class NamedPipeHost(Func<JsonElement, PipeIdentity, Task<string>> 
                 8,
                 PipeTransmissionMode.Byte,
                 PipeOptions.Asynchronous,
-                inBufferSize: 0,
-                outBufferSize: 0,
+                // Zero means "system default" in the docs, but zero-sized pipe
+                // buffers make writes rendezvous with reads; a client then
+                // blocks forever when the serve side is slow. Real sizes keep
+                // the kernel buffers absorbing traffic.
+                inBufferSize: 4096,
+                outBufferSize: 4096,
                 AuthenticatedUsersOnly());
-            await server.WaitForConnectionAsync(ct);
+            await server.WaitForConnectionAsync(ct).ConfigureAwait(false);
             _ = Task.Run(() => Serve(server), ct);
         }
     }
 
     async Task Serve(NamedPipeServerStream server)
     {
-        using (server)
-        using (var reader = new StreamReader(server, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true))
-        using (var writer = new StreamWriter(server, Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true })
+        try
         {
-            var line = await reader.ReadLineAsync();
-            if (string.IsNullOrWhiteSpace(line)) return;
-            try
+            using (server)
+            using (var reader = new StreamReader(server, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 4096, leaveOpen: true))
+            using (var writer = new StreamWriter(server, Encoding.UTF8, bufferSize: 4096, leaveOpen: true) { AutoFlush = true })
             {
-                var json = JsonSerializer.Deserialize<JsonElement>(line);
-                // The trust boundary: bind identity to the pipe client's own
-                // process/token. Payload-supplied userSid/sessionId are never
-                // consulted (parsing stays tolerant; the fields are unused).
-                var identity = ClientIdentity(server);
-                var reply = await handler(json, identity);
-                await writer.WriteLineAsync(reply);
+                // A client that connects and never speaks must not hold the
+                // instance forever; disposing aborts any pending I/O and the
+                // client sees a closed pipe instead of a silent hang.
+                var readTask = reader.ReadLineAsync();
+                var finished = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(30))).ConfigureAwait(false);
+                if (finished != readTask)
+                {
+                    BrokerLog.Write("pipe: client connected but sent nothing in 30s; dropped");
+                    return;
+                }
+                var line = await readTask.ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(line)) return;
+                try
+                {
+                    var json = JsonSerializer.Deserialize<JsonElement>(line);
+                    // The trust boundary: bind identity to the pipe client's own
+                    // process/token. Payload-supplied userSid/sessionId are never
+                    // consulted (parsing stays tolerant; the fields are unused).
+                    var identity = ClientIdentity(server);
+                    var reply = await handler(json, identity).ConfigureAwait(false);
+                    await writer.WriteLineAsync(reply).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    BrokerLog.Write($"pipe handler fault: {ex.Message}");
+                    await writer.WriteLineAsync(JsonSerializer.Serialize(new { error = ex.Message })).ConfigureAwait(false);
+                }
             }
-            catch (Exception ex)
-            {
-                await writer.WriteLineAsync(JsonSerializer.Serialize(new { error = ex.Message }));
-            }
+        }
+        catch (Exception ex)
+        {
+            BrokerLog.Write($"pipe serve fault: {ex.Message}");
         }
     }
 
