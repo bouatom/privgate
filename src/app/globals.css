@@ -60,6 +60,7 @@ html[data-theme="light"] {
   --focus-ring-color: var(--amber);
   --focus-ring-width: 2px;
   --focus-ring-offset: 2px;
+  --motion-fast: 120ms;
 }
 
 :focus-visible {
@@ -87,12 +88,6 @@ button, input, select, textarea {
   min-height: 100vh;
 }
 
-html[data-rail="hidden"] .shell {
-  grid-template-columns: 1fr;
-}
-html[data-rail="hidden"] .rail {
-  display: none;
-}
 .menu-open { display: none; }
 html[data-rail="hidden"] .menu-open { display: inline-flex; }
 
@@ -165,43 +160,100 @@ html[data-rail="hidden"] .menu-open { display: inline-flex; }
 .brand strong { display: block; letter-spacing: 0.16em; font-size: 13px; }
 .brand span { color: var(--muted); font-size: 12px; }
 
+/* Grouped side-nav zones; spacing comes from section-label margins (18px/6px)
+   plus a tight 2px gap between rows inside a group. */
 nav {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   flex: 1;
 }
 
-nav a {
-  padding: 12px 14px;
-  color: var(--muted);
-  border-left: 2px solid transparent;
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
 }
+/* Bottom zone (System) pins to the rail foot above Sign out. */
+.nav-group-bottom { margin-top: auto; }
 
-/* Side-nav rows: inline stroke icon + label; icon dims until active/hover (amber state). */
+.nav-section-label {
+  margin: 18px 0 6px;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.nav-group:first-child .nav-section-label { margin-top: 0; }
+
+/* Side-nav rows: inline stroke icon + label; densified to a 36px row at
+   constant weight so state changes never shift text. */
 nav a.nav-link {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  border-left: 2px solid transparent;
+  transition:
+    background-color var(--motion-fast) ease,
+    color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease;
 }
 nav a.nav-link svg {
   flex: none;
   opacity: 0.85;
+  transition:
+    opacity var(--motion-fast) ease,
+    color var(--motion-fast) ease;
 }
-nav a.nav-link.active svg,
-nav a.nav-link:hover svg {
-  opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  nav a.nav-link,
+  nav a.nav-link svg { transition: none; }
 }
 
-nav a.active, nav a:hover {
+/* Hover is a soft preview; only .active gets the panel background and amber rail. */
+nav a.nav-link:hover:not(.active) {
+  color: var(--ink);
+  background: var(--panel);
+}
+nav a.nav-link.active {
   color: var(--ink);
   background: var(--nav-active);
   border-left-color: var(--amber);
 }
+nav a.nav-link.active svg {
+  opacity: 1;
+  color: var(--amber);
+}
 
-/* Update-available pill above the Dashboard item (self-update badge). */
+/* Count-badge slot (e.g. pending elevation requests). Empty span renders nothing
+   so unused hooks stay invisible; active row flips it to the pending palette. */
+nav .nav-count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+nav .nav-count:empty { display: none; }
+nav a.nav-link.active .nav-count {
+  color: var(--amber-2);
+  border-color: var(--pill-pending-line);
+}
+
+/* Update-available pill, bottom System zone above Settings (self-update badge). */
 nav .update-pill {
-  padding: 9px 12px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: 0;
   font-size: 12px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -212,6 +264,24 @@ nav .update-pill {
 nav .update-pill:hover {
   color: var(--ink);
   border-color: var(--amber);
+}
+
+/* Collapsed rail (Hide): keep a 60px icon-only column instead of removing the
+   rail. Scoped ≥961px because ≤960px turns the rail into a full-width top bar.
+   Labels/section headers hide, icons center, brand shrinks to its mark tile;
+   native title tooltips carry the names. */
+@media (min-width: 961px) {
+  html[data-rail="hidden"] .shell { grid-template-columns: 60px 1fr; }
+  html[data-rail="hidden"] .rail { padding: 24px 9px 20px; gap: 24px; }
+  html[data-rail="hidden"] .brand-row,
+  html[data-rail="hidden"] .brand { justify-content: center; gap: 0; }
+  html[data-rail="hidden"] .brand-row button { display: none; }
+  html[data-rail="hidden"] .brand > div:not(.mark) { display: none; }
+  html[data-rail="hidden"] .nav-section-label { display: none; }
+  html[data-rail="hidden"] nav a.nav-link { justify-content: center; padding: 0; }
+  html[data-rail="hidden"] nav a.nav-link span { display: none; }
+  html[data-rail="hidden"] nav .update-pill,
+  html[data-rail="hidden"] .signout-btn { display: none; }
 }
 
 .config-tabs {
@@ -552,7 +622,6 @@ tr.queue-row.focused td { background: var(--nav-active); }
 
 @media (max-width: 960px) {
   .shell { grid-template-columns: 1fr; }
-  html[data-rail="hidden"] .shell { grid-template-columns: 1fr; }
   .rail {
     flex-direction: column;
     align-items: stretch;
@@ -560,7 +629,9 @@ tr.queue-row.focused td { background: var(--nav-active); }
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
-  nav { flex-direction: column; flex-wrap: nowrap; }
+  nav { flex-direction: column; flex-wrap: nowrap; gap: 6px; }
+  /* Zone labels read as noise in the stacked top bar; rows keep their own labels. */
+  .nav-section-label { display: none; }
   .cards { grid-template-columns: 1fr; }
   .cards.four { grid-template-columns: 1fr; }
   .device-layout { grid-template-columns: 1fr; }
