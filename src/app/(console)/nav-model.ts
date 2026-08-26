@@ -55,8 +55,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Directory",
         href: "/directory",
         icon: "users",
-        // roles.view does not exist; portal.roles.manage is the real role-permission id.
-        anyOf: ["directory.users.view", "portal.roles.manage"],
+        anyOf: ["directory.users.view", "directory.users.manage"],
       },
     ],
   },
@@ -65,6 +64,12 @@ export const NAV_GROUPS: NavGroup[] = [
     bottom: true,
     items: [
       { label: "Audit log", href: "/configuration/audit", icon: "doc-list", anyOf: ["audit.view"] },
+      {
+        label: "Admins & Roles",
+        href: "/configuration/admins",
+        icon: "users",
+        anyOf: ["portal.users.manage", "portal.roles.manage"],
+      },
       {
         label: "Settings",
         href: "/configuration",

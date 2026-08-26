@@ -202,7 +202,7 @@ export default async function DashboardPage() {
             AD: {ad}
           </p>
           <Link href="/configuration/integrations" prefetch className="mono dash-link">
-            Open integrations →
+            Open Identity Sources →
           </Link>
         </div>
       </div>

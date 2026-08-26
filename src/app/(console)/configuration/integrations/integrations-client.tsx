@@ -7,7 +7,6 @@ import type { AdSettings } from "@/lib/models";
 import { AdPanel } from "./ad-panel";
 import { EntraPanel } from "./entra-panel";
 import type { AdFormState, DeviceFlow, DirectoryStatus } from "./integrations-types";
-import { JsonImportPanel } from "./json-import-panel";
 
 const DEFAULT_FILTER =
   "(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))";
@@ -36,9 +35,6 @@ export function IntegrationsClient({
     baseDn: initialAd.baseDn,
     userFilter: initialAd.userFilter || DEFAULT_FILTER,
   });
-  const [importJson, setImportJson] = useState(
-    '[{"displayName":"Sam Support","userPrincipalName":"sam@contoso.test","adSid":"S-1-5-21-1000-1000-1000-1102","jitEligible":true}]',
-  );
 
   useEffect(() => {
     setDirectory(initialDirectory);
@@ -174,7 +170,7 @@ export function IntegrationsClient({
       await load();
       return;
     }
-    setMessage("LDAP bind succeeded. You can sync AD users without connecting Entra ID.");
+    setMessage("LDAP bind succeeded. You can sync AD users and groups without connecting Entra ID.");
     await load();
   }
 
@@ -182,42 +178,14 @@ export function IntegrationsClient({
     setBusy(true);
     setError("");
     const res = await fetch("/api/directory/ad/sync", { method: "POST" });
-    const body = (await res.json()) as { error?: string; users?: number };
+    const body = (await res.json()) as { error?: string; users?: number; groups?: number };
     setBusy(false);
     if (!res.ok) {
       setError(body.error || "AD sync failed");
-      await load();
       return;
     }
-    setMessage(`AD sync: ${body.users ?? 0} users. Existing Entra object IDs were kept.`);
+    setMessage(`AD sync: ${body.users ?? 0} users and ${body.groups ?? 0} security groups.`);
     await load();
-  }
-
-  async function importUsers(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-    let usersPayload: unknown[];
-    try {
-      const parsed = JSON.parse(importJson) as unknown;
-      if (!Array.isArray(parsed)) throw new Error("JSON must be an array of users.");
-      usersPayload = parsed;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid JSON.");
-      return;
-    }
-    const res = await fetch("/api/users", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ users: usersPayload }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      setError(body.error || "Could not import users.");
-      return;
-    }
-    setMessage("Directory users upserted.");
-    startTransition(() => router.refresh());
   }
 
   const mode = identityMode({
@@ -230,10 +198,10 @@ export function IntegrationsClient({
     <>
       <div className="top">
         <div>
-          <h1>Integrations</h1>
+          <h1>Identity Sources</h1>
           <p className="lede">
-            Identity sources are independent. Connect on-premises Active Directory, Microsoft Entra
-            ID, both (hybrid), or neither.
+            Connect directory services to sync users and groups. Active Directory, Microsoft Entra
+            ID, both (hybrid), or neither — each source is independent.
           </p>
         </div>
       </div>
@@ -261,7 +229,6 @@ export function IntegrationsClient({
         onTest={() => void testAd()}
         onSync={() => void syncAd()}
       />
-      <JsonImportPanel importJson={importJson} setImportJson={setImportJson} onImport={(e) => void importUsers(e)} />
     </>
   );
 }

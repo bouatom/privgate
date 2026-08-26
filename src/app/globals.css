@@ -535,6 +535,35 @@ tr.device-row.selected td { background: var(--nav-active); }
 
 /* Dense fleet table (Devices page) — tighter cells than the default table. */
 table.fleet th, table.fleet td { padding: 8px 12px; }
+.fleet-search {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.fleet-search input {
+  width: 100%;
+  max-width: 320px;
+  padding: 6px 10px;
+  background: var(--input);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.fleet-search input:focus {
+  border-color: var(--amber);
+  outline: none;
+}
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+th.sortable:hover { color: var(--amber-2); }
+.sort-arrow {
+  font-size: 11px;
+  margin-left: 2px;
+}
+.sort-arrow.inactive { opacity: 0.35; }
 .fleet-host {
   background: none;
   border: 0;
@@ -678,6 +707,39 @@ tr.queue-row.focused td { background: var(--nav-active); }
   font-size: 13px;
 }
 .confirm-dialog .row-actions { justify-content: flex-end; margin-top: 16px; }
+
+/* JIT create dialog — wider variant of the confirm dialog for multi-field forms. */
+.jit-create-dialog {
+  width: min(560px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--amber);
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+}
+.jit-create-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.jit-create-dialog label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.jit-create-dialog select,
+.jit-create-dialog input[type="number"],
+.jit-create-dialog input[type="text"] {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--input);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-size: 13px;
+}
 
 /* Native <dialog> variant of the slide-over drawer: showModal() puts it in the
    top layer for real focus containment and Esc handling. Overrides the UA

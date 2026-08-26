@@ -61,7 +61,7 @@ export function UsersClient({
           <h1>Directory users</h1>
           <p className="lede">
             JIT eligibility and real elevation status, straight from the directory. Connect Entra or Active
-            Directory under <Link href="/configuration/integrations" prefetch>Configuration → Integrations</Link>.
+            Directory under <Link href="/configuration/integrations" prefetch>Configuration → Identity Sources</Link>.
             This console never creates or disables directory accounts.
           </p>
         </div>
@@ -137,7 +137,7 @@ export function UsersClient({
               })
             ) : (
               <tr>
-                <td colSpan={4} className={s.empty}>No directory users yet. Connect Entra or import JSON.</td>
+                <td colSpan={4} className={s.empty}>No directory users yet. Connect Entra ID or Active Directory under Identity Sources.</td>
               </tr>
             )}
           </tbody>

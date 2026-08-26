@@ -105,7 +105,7 @@ function SetupWizard({
             <ul className="lede" style={{ margin: 0, paddingLeft: 18 }}>
               <li>Create a local Master Admin to sign in to this console.</li>
               <li>
-                Later, under Configuration → Integrations, connect Entra ID, on-premises Active
+                Later, under Configuration → Identity Sources, connect Entra ID, on-premises Active
                 Directory, both, or neither. Each is optional and independent.
               </li>
               <li>Enroll each Windows PC from Devices after this wizard.</li>
@@ -188,7 +188,7 @@ function SetupWizard({
           <div className="stack">
             <h2 style={{ margin: 0, fontSize: 18 }}>You are ready</h2>
             <p className="lede">
-              Sign in with the local Master Admin. Under Configuration → Integrations you can
+              Sign in with the local Master Admin. Under Configuration → Identity Sources you can
               connect Entra ID for SSO, on-premises Active Directory for on-prem users, both
               (hybrid), or neither.
             </p>

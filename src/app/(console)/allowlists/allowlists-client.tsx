@@ -102,9 +102,9 @@ export function AllowlistsClient({
     <>
       <div className="top">
         <div>
-          <h1>Program rules</h1>
+          <h1>Policies</h1>
           <p className="lede">
-            A rule matches a program by SHA-256 and publisher, then elevates it silently, denies it, or requires
+            Allowlist rules that match programs by SHA-256 and publisher, then elevate silently, deny, or require
             approval. Shells and scripting hosts cannot be allowed silently. You can also create a rule from a
             device elevation log or a blocked request — that copies the recorded hash, publisher, and arguments.
           </p>

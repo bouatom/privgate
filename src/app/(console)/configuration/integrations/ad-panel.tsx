@@ -25,8 +25,8 @@ export function AdPanel({
     <form className="panel stack" style={{ padding: 18, marginBottom: 16 }} onSubmit={onSave}>
       <strong>Active Directory (LDAP)</strong>
       <p className="lede" style={{ fontSize: 13 }}>
-        On-premises AD only. These settings are not used for Entra ID. Use AD alone, with Entra
-        (hybrid), or skip it.
+        On-premises AD only — syncs users and security groups. These settings are not used for
+        Entra ID. Use AD alone, with Entra (hybrid), or skip it.
       </p>
       {ad.lastTestedAt ? (
         <p className="lede" style={{ fontSize: 12 }}>
@@ -36,7 +36,7 @@ export function AdPanel({
       ) : null}
       {ad.lastSyncAt ? (
         <p className="lede" style={{ fontSize: 12 }}>
-          Last AD user sync {new Date(ad.lastSyncAt).toLocaleString()}
+          Last AD sync {new Date(ad.lastSyncAt).toLocaleString()}
         </p>
       ) : null}
       <div className="grid cards">
@@ -110,7 +110,7 @@ export function AdPanel({
           Test LDAP bind
         </button>
         <button className="ghost" type="button" disabled={busy} onClick={onSync}>
-          Sync AD users
+          Sync AD users &amp; groups
         </button>
       </div>
     </form>

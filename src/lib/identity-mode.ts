@@ -7,11 +7,11 @@ export function identityMode(input: { entraConnected: boolean; adConfigured: boo
   return "none";
 }
 
-/** Status line on Configuration → Integrations. Sources stay independent. */
+/** Status line on Configuration → Identity Sources. Sources stay independent. */
 export const IDENTITY_MODE_COPY: Record<IdentityMode, { title: string; body: string }> = {
   none: {
     title: "No directory connected",
-    body: "Active Directory and Entra ID are optional and independent. Connect one, both (hybrid), or neither. JSON import can add users until a directory sync is configured.",
+    body: "Active Directory and Entra ID are optional and independent. Connect one, both (hybrid), or neither. Users and groups will sync once a directory is connected.",
   },
   ad: {
     title: "Active Directory only",
