@@ -152,8 +152,7 @@ sealed class BrokerHost
                 userSid = args[args.Length - 2],
                 filePath = args[args.Length - 1],
             });
-            // The --once CLI runs as the invoking user, so this process's own
-            // token is the honest caller identity for the in-process call.
+            // The --once CLI's own token is the honest caller identity.
             Console.WriteLine(await host.Handle(once, PipeIdentity.Self()));
             ready?.TrySetResult(true);
             return;
@@ -168,11 +167,12 @@ sealed class BrokerHost
     async Task<string> Handle(JsonElement msg, PipeIdentity caller)
     {
         var mode = msg.GetProperty("mode").GetString();
+        // Auxiliary modes (uac-seen, jit-open) live in PipeAux.cs.
+        var aux = PipeAux.Handle(msg, caller, _watchdog);
+        if (aux is not null) return aux;
         if (mode == "status") return BrokerStatus.Current.ToJson();
-        // Trust note: msg.userSid / msg.sessionId are deliberately never read.
-        // Identity comes only from the pipe client's own process token
-        // (NamedPipeHost.ClientIdentity); a client editing its JSON cannot
-        // impersonate another user or desktop session.
+        // Trust note: identity comes only from NamedPipeHost.ClientIdentity
+        // (the client process token); payload userSid/sessionId never read.
         if (mode == "jit-status")
         {
             var state = await _api.JitStateAsync(caller.UserSid, _ct);
@@ -352,6 +352,9 @@ sealed class BrokerHost
         }
         if (decision == "pending")
         {
+            // Remember the launch target so a later approval push can open the
+            // program even when no tray dialog is waiting on the pipe.
+            PendingLaunches.Register(requestId ?? "", filePath, caller.Session);
             BrokerStatus.Current.NotePending($"Waiting for approval: {filePath}");
             BrokerStatus.Current.NoteNotice(
                 "Waiting for approval",
