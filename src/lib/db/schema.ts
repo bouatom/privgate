@@ -149,6 +149,19 @@ export function migrate(db: DatabaseSync) {
   migratePortal(db);
   migrateSetupState(db);
   seedSetupState(db);
+
+  // Performance indexes — after ensureColumn so all referenced columns exist.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
+    CREATE INDEX IF NOT EXISTS idx_requests_device_id ON requests(device_id);
+    CREATE INDEX IF NOT EXISTS idx_requests_user_id ON requests(user_id);
+    CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices(hostname);
+    CREATE INDEX IF NOT EXISTS idx_devices_last_seen ON devices(last_seen_at);
+    CREATE INDEX IF NOT EXISTS idx_jit_grants_status ON jit_grants(status);
+    CREATE INDEX IF NOT EXISTS idx_jit_grants_device ON jit_grants(device_id);
+    CREATE INDEX IF NOT EXISTS idx_jit_grants_user ON jit_grants(user_id);
+    CREATE INDEX IF NOT EXISTS idx_jit_grants_expires ON jit_grants(expires_at);
+  `);
 }
 
 function ensureColumn(db: DatabaseSync, table: string, column: string, spec: string) {

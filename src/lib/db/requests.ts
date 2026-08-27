@@ -97,12 +97,13 @@ export function decideRequest(
   actor: string,
   ttlMinutes = 15,
 ): ElevationRequest | undefined {
-  const current = getRequest(db, id);
-  if (!current || current.status !== "pending") return undefined;
   const now = new Date();
   const expires = new Date(now.getTime() + ttlMinutes * 60_000).toISOString();
-  db.prepare(
-    `UPDATE requests SET status = ?, decided_at = ?, decided_by = ?, approval_expires_at = ? WHERE id = ?`,
-  ).run(status, now.toISOString(), actor, status === "approved" ? expires : null, id);
+  const result = db
+    .prepare(
+      `UPDATE requests SET status = ?, decided_at = ?, decided_by = ?, approval_expires_at = ? WHERE id = ? AND status = 'pending'`,
+    )
+    .run(status, now.toISOString(), actor, status === "approved" ? expires : null, id);
+  if (Number(result.changes) === 0) return undefined;
   return getRequest(db, id);
 }

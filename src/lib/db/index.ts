@@ -25,7 +25,7 @@ export {
   rowUser,
   upsertUsers,
 } from "./users";
-export { deletePolicy, insertPolicy, listPolicies } from "./policies";
+export { deletePolicy, insertPolicy, listPolicies, updatePolicy } from "./policies";
 export { decideRequest, getRequest, insertRequest, listRequests } from "./requests";
 export { activeJit, createJit, expireDueGrants, getJit, grantIdentities, listJit, revokeJit } from "./jit";
 export {

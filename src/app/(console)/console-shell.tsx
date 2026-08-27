@@ -90,7 +90,13 @@ export function ConsoleShell({
         <div className="brand-row">
           <div className="brand">
             <div className="mark" title="PrivGate console">
-              <img src="/icon" alt="" width={22} height={22} style={{ display: "block" }} />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width={22} height={22} style={{ display: "block" }}>
+                <rect width="64" height="64" rx="14" fill="#101218"/>
+                <path d="M32 9l19 7.2V30c0 12.6-8.3 20-19 24.5C21.3 50 13 42.6 13 30V16.2z" fill="#E0A14A"/>
+                <circle cx="32" cy="26.5" r="5.5" fill="#101218"/>
+                <path d="M29.8 30h4.4v13.5a2.2 2.2 0 0 1-4.4 0z" fill="#101218"/>
+                <path d="M33.6 37.5h7a1.8 1.8 0 0 1 0 3.6h-7z" fill="#101218"/>
+              </svg>
             </div>
             <div>
               <strong>PRIVGATE</strong>

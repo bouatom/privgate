@@ -1,8 +1,31 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
+import { isIPv4 } from "node:net";
 import { appendAudit } from "./db/audit";
 import { getNotificationSecrets, getNotificationSettings, getUser, getDevice } from "./db";
 import { sendSmtp } from "./smtp";
+
+/** Block SSRF against private / loopback / link-local / internal addresses. */
+function isPrivateOrReservedHost(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === "localhost" || h === "") return true;
+  // IPv6 loopback / link-local / mapped
+  if (h === "::1" || h === "[::1]" || h.startsWith("fe80") || h.startsWith("fc") || h.startsWith("fd")) return true;
+  if (!isIPv4(h)) return false;
+  const parts = h.split(".").map(Number);
+  if (parts.length !== 4) return false;
+  if (parts[0] === 0 || parts[0] === 10) return true;                             // "this network", private 10/8
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;        // 100.64/10 (CGNAT)
+  if (parts[0] === 127) return true;                                               // loopback 127/8
+  if (parts[0] === 169 && parts[1] === 254) return true;                          // link-local 169.254/16
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;         // private 172.16/12
+  if (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) return true;         // IETF protocol
+  if (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) return true;         // documentation
+  if (parts[0] === 192 && parts[1] === 168) return true;                          // private 192.168/16
+  if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return true;     // 198.18/15
+  if (parts[0] === 224) return true;                                               // multicast
+  return false;
+}
 
 export type NotifyEvent = {
   kind: "pending" | "approved" | "denied" | "jit";
@@ -39,16 +62,21 @@ export async function dispatchNotification(db: DatabaseSync, event: NotifyEvent)
 
   if (settings.webhookEnabled && settings.webhookUrl) {
     try {
-      const res = await fetch(settings.webhookUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          text: `${event.title}\n${event.body}`,
-          event: event.kind,
-          riskLevel: event.riskLevel,
-        }),
-      });
-      if (!res.ok) errors.push(`webhook ${res.status}`);
+      const url = new URL(settings.webhookUrl);
+      if (isPrivateOrReservedHost(url.hostname)) {
+        errors.push("webhook URL points to a private/reserved address");
+      } else {
+        const res = await fetch(settings.webhookUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            text: `${event.title}\n${event.body}`,
+            event: event.kind,
+            riskLevel: event.riskLevel,
+          }),
+        });
+        if (!res.ok) errors.push(`webhook ${res.status}`);
+      }
     } catch (error) {
       errors.push(error instanceof Error ? error.message : "webhook failed");
     }

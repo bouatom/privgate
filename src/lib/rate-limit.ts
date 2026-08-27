@@ -69,3 +69,30 @@ export function clearAllRateLimits(): void {
 export function getDeviceRateLimitState(deviceId: string): RateLimitBucket | undefined {
   return buckets.get(deviceId);
 }
+
+/* ── Login rate limiter ─────────────────────────────────────────────────── */
+
+const loginBuckets = new Map<string, RateLimitBucket>();
+
+export function checkLoginRateLimit(
+  ip: string,
+  windowMs: number = 60_000,
+  maxAttempts: number = 5,
+): { ok: true; remaining: number } | { ok: false; retryAfter: number } {
+  const now = Date.now();
+  let bucket = loginBuckets.get(ip);
+  if (!bucket || now >= bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + windowMs };
+    loginBuckets.set(ip, bucket);
+  }
+  if (bucket.count >= maxAttempts) {
+    return { ok: false, retryAfter: bucket.resetAt - now };
+  }
+  bucket.count++;
+  return { ok: true, remaining: maxAttempts - bucket.count };
+}
+
+/* Clear all buckets (for tests). */
+export function clearAllLoginRateLimits(): void {
+  loginBuckets.clear();
+}

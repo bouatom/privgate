@@ -108,7 +108,7 @@ export function createJit(
   db: DatabaseSync,
   input: { userId?: string; groupId?: string; deviceId: string; durationMinutes: number; reason: string },
 ): JitGrant | { error: string } {
-  if (input.durationMinutes < 15 || input.durationMinutes > 60) {
+  if (!Number.isFinite(input.durationMinutes) || input.durationMinutes < 15 || input.durationMinutes > 60) {
     return { error: "duration must be 15–60 minutes" };
   }
   if (!input.reason.trim()) return { error: "reason required" };

@@ -42,3 +42,24 @@ export function deletePolicy(db: DatabaseSync, id: string): boolean {
   const result = db.prepare("DELETE FROM policies WHERE id = ?").run(id);
   return Number(result.changes) > 0;
 }
+
+export function updatePolicy(db: DatabaseSync, id: string, policy: Policy): boolean {
+  const result = db
+    .prepare(
+      `UPDATE policies SET name = ?, effect = ?, file_hash = ?, publisher = ?, file_name = ?, argument_pattern = ?, bind_type = ?, bind_id = ?, child_processes = ?, high_risk_exception = ? WHERE id = ?`,
+    )
+    .run(
+      policy.name,
+      policy.effect,
+      policy.fileHash.toLowerCase(),
+      policy.publisher,
+      policy.fileName ?? "",
+      policy.argumentPattern ?? "",
+      policy.bindType,
+      policy.bindId ?? "",
+      policy.childProcesses,
+      policy.highRiskException ? 1 : 0,
+      id,
+    );
+  return Number(result.changes) > 0;
+}

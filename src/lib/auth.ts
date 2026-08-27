@@ -12,6 +12,13 @@ export type { AdminSession } from "./models";
 
 const cookieName = "privgate_session";
 
+/** Session TTL in seconds: PRIVGATE_SESSION_TTL env var, min 300s, default 8h. */
+export function sessionTtlSeconds(): number {
+  const raw = Number(process.env.PRIVGATE_SESSION_TTL);
+  if (Number.isFinite(raw) && raw >= 300) return Math.floor(raw);
+  return 60 * 60 * 8;
+}
+
 // Resolved per call, not at module load, so a missing production secret surfaces
 // as a request-time failure instead of breaking `next build`.
 function secret(): Uint8Array {
@@ -22,7 +29,7 @@ export async function issueSession(admin: { email: string; name: string; id?: st
   return new SignJWT({ email: admin.email, name: admin.name, sub: admin.id || "" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("8h")
+    .setExpirationTime(`${sessionTtlSeconds()}s`)
     .sign(secret());
 }
 

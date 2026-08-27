@@ -93,6 +93,8 @@ export function createRole(
   if (!name) return { error: "name required" };
   const permissions = sanitizePermissions(input.permissions);
   if (!permissions.length) return { error: "select at least one permission" };
+  const existing = db.prepare("SELECT id FROM portal_roles WHERE lower(name) = lower(?)").get(name);
+  if (existing) return { error: "a role with that name already exists" };
   const id = randomUUID();
   db.prepare(
     `INSERT INTO portal_roles (id, name, description, permissions_json, system) VALUES (?, ?, ?, ?, 0)`,
@@ -110,6 +112,10 @@ export function updateRole(
   if (current.system) return { error: "predefined roles cannot be edited" };
   const name = (input.name ?? current.name).trim();
   if (!name) return { error: "name required" };
+  if (input.name) {
+    const dup = db.prepare("SELECT id FROM portal_roles WHERE lower(name) = lower(?) AND id != ?").get(name, id);
+    if (dup) return { error: "a role with that name already exists" };
+  }
   const permissions = input.permissions ? sanitizePermissions(input.permissions) : current.permissions;
   if (!permissions.length) return { error: "select at least one permission" };
   db.prepare("UPDATE portal_roles SET name = ?, description = ?, permissions_json = ? WHERE id = ?").run(
