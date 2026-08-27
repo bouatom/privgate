@@ -270,7 +270,7 @@ export function createPortalUser(
   return getPortalUser(db, id)!;
 }
 
-export function updatePortalUser(
+export function patchUser(
   db: DatabaseSync,
   id: string,
   input: {

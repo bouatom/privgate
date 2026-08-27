@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
-import { getPortalUser, updatePortalUser, deletePortalUser } from "@/lib/portal";
+import { getPortalUser, patchUser, deletePortalUser } from "@/lib/portal";
 
 export async function DELETE(
   _req: Request,
@@ -40,7 +40,7 @@ export async function PUT(
     roleIds?: string[];
   };
   const db = getDb();
-  const updated = updatePortalUser(db, id, body);
+  const updated = patchUser(db, id, body);
   if ("error" in updated) return NextResponse.json(updated, { status: 400 });
   appendAudit(db, auth.session.email, "portal.user.update", id, {
     email: updated.email,

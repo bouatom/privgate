@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { migratePortal, listRoles, listPortalUsers, createRole, createPortalUser, updatePortalUser, getPortalPasswordHash, countMasterAdmins } from "./portal";
+import { migratePortal, listRoles, listPortalUsers, createRole, createPortalUser, patchUser, getPortalPasswordHash, countMasterAdmins } from "./portal";
 import { hashPassword, verifyPassword } from "./passwords";
 import { hasPermission, isMasterPermissions, ALL_PERMISSIONS, PREDEFINED_ROLES } from "./permissions";
 
@@ -162,7 +162,7 @@ describe("last-master protection", () => {
   it("cannot disable the only Master Admin", () => {
     const db = freshDb();
     const master = addMaster(db);
-    const result = updatePortalUser(db, master.id, { disabled: true });
+    const result = patchUser(db, master.id, { disabled: true });
     expect("error" in result).toBe(true);
     if (!("error" in result)) return;
     expect(result.error).toMatch(/master admin/i);
@@ -171,7 +171,7 @@ describe("last-master protection", () => {
   it("cannot strip Master Admin role from the only master", () => {
     const db = freshDb();
     const master = addMaster(db);
-    const result = updatePortalUser(db, master.id, { roleIds: ["role-approver"] });
+    const result = patchUser(db, master.id, { roleIds: ["role-approver"] });
     expect("error" in result).toBe(true);
   });
 
@@ -179,7 +179,7 @@ describe("last-master protection", () => {
     const db = freshDb();
     const first = addMaster(db);
     addMaster(db, "master2@contoso.test");
-    const result = updatePortalUser(db, first.id, { disabled: true });
+    const result = patchUser(db, first.id, { disabled: true });
     expect("error" in result).toBe(false);
   });
 });
