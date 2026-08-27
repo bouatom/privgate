@@ -41,10 +41,27 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# [Console]::Out instead of Write-Host: with a detached spawn there is no
-# console attached, so host-UI writes are not guaranteed to reach the
-# redirected stdout handle. Direct handle writes always land in the log fd.
-function Write-Line([string]$Message) { [Console]::Out.WriteLine($Message) }
+# --- File-based logging (bypasses broken stdout with detached:true) ---
+# On Windows, spawning with detached:true (CREATE_NEW_PROCESS_GROUP) breaks
+# stdio handle inheritance — the child process starts but its stdout/stderr
+# never reach the parent's log fd.  Opening apply.log directly from the
+# PowerShell side guarantees every Step()/error line is durable regardless of
+# how the process was spawned.  stdout still gets a copy for interactive runs.
+$script:logWriter = $null
+try {
+  $logDir = Join-Path $DataDir 'updates'
+  if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+  $logFile = Join-Path $logDir 'apply.log'
+  $script:logWriter = [System.IO.StreamWriter]::new($logFile, $true)
+  $script:logWriter.AutoFlush = $true
+} catch {
+  # non-critical: fall back to stdout only (interactive / dev runs)
+}
+
+function Write-Line([string]$Message) {
+  if ($script:logWriter) { $script:logWriter.WriteLine($Message) }
+  [Console]::Out.WriteLine($Message)
+}
 function Step([string]$Message) {
   $elapsed = [int]((Get-Date) - $watchdogStarted).TotalSeconds
   Write-Line ("==> [{0}s] {1}" -f $elapsed, $Message)
@@ -375,6 +392,7 @@ Rollback (only if needed):
   & '$installDir\service-ctl.cmd' start
 Data ($DataDir) was never touched by this update.
 "@
+  if ($script:logWriter) { $script:logWriter.Close(); $script:logWriter = $null }
   exit 0
 } catch {
   # ANY terminating failure lands here — including Fail(), cmdlet errors and
@@ -384,5 +402,6 @@ Data ($DataDir) was never touched by this update.
     Write-EventLog -LogName Application -Source $eventSource -EventId 1003 `
       -EntryType Error -Message "PrivGate self-update failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
   } catch { /* non-critical */ }
+  if ($script:logWriter) { $script:logWriter.Close(); $script:logWriter = $null }
   exit 1
 }

@@ -51,23 +51,28 @@ export function buildUpdaterCommand(opts: {
   scriptPath: string;
   sha256: string;
   systemRoot?: string;
+  dataDir?: string;
 }): { file: string; args: string[] } {
   const platform = opts.platform ?? process.platform;
   if (platform === "win32") {
+    const args = [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      opts.scriptPath,
+      "-Installer",
+      opts.installerPath,
+      "-Sha256",
+      opts.sha256,
+    ];
+    if (opts.dataDir) {
+      args.push("-DataDir", opts.dataDir);
+    }
     return {
       file: resolveWindowsPowershell(opts.systemRoot),
-      args: [
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        opts.scriptPath,
-        "-Installer",
-        opts.installerPath,
-        "-Sha256",
-        opts.sha256,
-      ],
+      args,
     };
   }
   const flag = path.extname(opts.installerPath).toLowerCase() === ".deb" ? "--deb" : "--pkg";
@@ -259,6 +264,7 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
       scriptPath,
       sha256: verifiedSha256,
       systemRoot: env.SystemRoot ?? env.windir,
+      dataDir: paths.workDir ? path.dirname(paths.workDir) : undefined,
     });
 
     if (deps.db) {
