@@ -1,16 +1,15 @@
-# Security scanning — Track 4 gate. Three independent checks ensure no vulnerable
-# dependency, no hardcoded secret, and no known-code SSA finding ships:
+# Security scanning — Track 4 gate. Two independent checks ensure no vulnerable
+# dependency and no hardcoded secret ships:
 #   * npm-audit — full dependency tree (runtime AND dev tooling) fails on any
 #                 high/critical advisory. Complements the production-only gate
 #                 in the installer workflows' `verify` job, which directly blocks
 #                 the installers this pipeline ships.
-#   * codeql    — GitHub CodeQL static analysis over JavaScript/TypeScript; SARIF
-#                 is uploaded to the repo's Security > Code scanning tab.
 #   * secrets   — gitleaks scans git history for hardcoded secrets before merge.
-# Runs on push/PR to main plus manual dispatch, mirroring the installer flows'
-# trigger/concurrency conventions. Recommended: require this workflow (or at
-# least its `npm-audit` and `secrets` jobs) as a required check in branch
-# protection so a red scan blocks the merge.
+# 
+# Note: CodeQL static analysis is handled by GitHub's **default setup**
+# (enabled in repository Settings > Code security & analysis > Code scanning).
+# Advanced CodeQL workflows conflict with the default setup; this workflow
+# intentionally omits an explicit CodeQL job.
 
 name: Security scan
 
@@ -69,43 +68,12 @@ jobs:
 
       # Full-tree hard gate: catches high/critical advisories in BOTH runtime and
       # dev dependencies (build tooling, linters, test runners) that the
-      # production-only gate in the installer flows intentionally skips. `npm ci`
-      # reused setup-node's npm cache, so this reuses the same install. Fails the
-      # job on any high/critical advisory; a red job is meant to block the merge
-      # via branch protection.
+      # production-only gate in the installer workflows intentionally skips.
+      # `npm ci` reused setup-node's npm cache, so this reuses the same install.
+      # Fails the job on any high/critical advisory; a red job is meant to block
+      # the merge via branch protection.
       - name: Audit all dependencies (high/critical gate)
         run: npm audit --audit-level=high
-
-  codeql:
-    name: CodeQL (JavaScript/TypeScript)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      security-events: write # upload SARIF to Security > Code scanning
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [javascript-typescript]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      # Initializes the CodeQL engine for JS/TS. `build-mode: none` analyzes the
-      # source directly — JavaScript/TypeScript needs no compile step, so this
-      # avoids a heavy Next.js build purely to scan. Findings land on the PR and
-      # in the Code scanning tab.
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: none
-
-      # Runs the default query suite and uploads results to Code Scanning.
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:${{matrix.language}}"
 
   secrets:
     name: Secret scan (gitleaks)
