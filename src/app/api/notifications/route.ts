@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, getNotificationSettings, saveNotificationSettings } from "@/lib/db";
 import { isResponse, requireAdmin, requireAny } from "@/lib/http";
-import { dispatchNotification } from "@/lib/notify";
+import { dispatchNotification, isPrivateOrReservedHost } from "@/lib/notify";
 
 export async function GET() {
   const auth = await requireAny(["notifications.view", "notifications.manage"]);
@@ -13,6 +13,22 @@ export async function PUT(req: Request) {
   const auth = await requireAdmin("notifications.manage");
   if (isResponse(auth)) return auth;
   const body = (await req.json()) as Record<string, unknown>;
+  const webhookUrl = String(body.webhookUrl || "");
+  // SSRF guard at save time (matches the dispatch-time guard in notify.ts).
+  if (webhookUrl) {
+    let hostname: string;
+    try {
+      hostname = new URL(webhookUrl).hostname;
+    } catch {
+      return NextResponse.json({ error: "Invalid webhook URL" }, { status: 400 });
+    }
+    if (isPrivateOrReservedHost(hostname)) {
+      return NextResponse.json(
+        { error: "Webhook URL must point to a public address" },
+        { status: 400 },
+      );
+    }
+  }
   saveNotificationSettings(getDb(), {
     emailEnabled: Boolean(body.emailEnabled),
     smtpHost: String(body.smtpHost || ""),
@@ -23,7 +39,7 @@ export async function PUT(req: Request) {
     recipients: String(body.recipients || ""),
     smtpPass: body.smtpPass ? String(body.smtpPass) : undefined,
     webhookEnabled: Boolean(body.webhookEnabled),
-    webhookUrl: String(body.webhookUrl || ""),
+    webhookUrl,
     onPending: Boolean(body.onPending),
     onApproved: Boolean(body.onApproved),
     onDenied: Boolean(body.onDenied),

@@ -6,7 +6,7 @@ import { getNotificationSecrets, getNotificationSettings, getUser, getDevice } f
 import { sendSmtp } from "./smtp";
 
 /** Block SSRF against private / loopback / link-local / internal addresses. */
-function isPrivateOrReservedHost(host: string): boolean {
+export function isPrivateOrReservedHost(host: string): boolean {
   const h = host.toLowerCase();
   if (h === "localhost" || h === "") return true;
   // IPv6 loopback / link-local / mapped
