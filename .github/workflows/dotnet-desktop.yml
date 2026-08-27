@@ -89,6 +89,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # Security gate: a vulnerable PRODUCTION dependency must never ship inside
+      # an installer. This installers pipeline needs: verify, so failing here
+      # blocks the release. `--omit=dev` scopes to runtime deps that actually end
+      # up in the built artifacts and `--audit-level=high` fails the job on any
+      # high/critical advisory. setup-node's npm cache makes this near-instant.
+      # Dev-only tooling advisories are surfaced by the dedicated `security`
+      # workflow so they never silently block shipping.
+      - name: Audit production dependencies (high/critical gate)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Test, typecheck, lint
         run: npm test && npm run typecheck && npm run lint
 

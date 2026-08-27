@@ -26,3 +26,15 @@ export function verifyPassword(plain: string, packed: string): boolean {
   if (actual.length !== expected.length) return false;
   return timingSafeEqual(actual, expected);
 }
+
+/**
+ * Burn work equivalent to one scrypt verification so that a login attempt for
+ * a nonexistent user takes a similar amount of time to a real password check.
+ * Guards against user enumeration over a timing side-channel.
+ */
+const DUMMY_SALT = Buffer.from("0000000000000000", "hex"); // 16 bytes, fixed
+const DUMMY_HASH = Buffer.alloc(32);
+export function dummyVerify(plain: string): void {
+  const computed = scryptSync(plain, DUMMY_SALT, 32);
+  timingSafeEqual(computed, DUMMY_HASH); // constant-time compare; result unused
+}

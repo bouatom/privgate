@@ -1,8 +1,10 @@
 import { getSession } from "@/lib/auth";
-import { subscribeConsole } from "@/lib/realtime/bus";
+import { replayConsole, subscribeConsole, type ConsoleTopic } from "@/lib/realtime/bus";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const ALL_TOPICS: ConsoleTopic[] = ["requests", "devices", "jit", "audit", "updates"];
 
 export async function GET(req: Request) {
   const session = await getSession();
@@ -18,6 +20,11 @@ export async function GET(req: Request) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       send("hello", { ok: true });
+      // Catch the client up on anything it missed while disconnected, so the
+      // dashboard re-paints on reconnect instead of forcing a manual refresh.
+      for (const topic of ALL_TOPICS) {
+        replayConsole(topic, (event) => send("mutate", event));
+      }
       unsubscribe = subscribeConsole((event) => send("mutate", event));
       ping = setInterval(() => send("ping", {}), 15_000);
       req.signal.addEventListener("abort", () => {

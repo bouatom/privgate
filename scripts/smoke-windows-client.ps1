@@ -73,7 +73,7 @@ Check "Unsigned / missing publisher path is not silently allowed" {
   $temp = Join-Path $env:TEMP "privgate-smoke-$(Get-Random).exe"
   Copy-Item "$env:SystemRoot\System32\notepad.exe" $temp -Force
   try {
-    $out = & $helper --elevate $temp | Out-String
+    $out = & $helper --elevate $temp --json | Out-String
     if ($out -match '"decision"\s*:\s*"allow"' -and $out -notmatch '"jit"\s*:\s*true') {
       throw "copied notepad was allowlisted as a new hash? output=$out"
     }

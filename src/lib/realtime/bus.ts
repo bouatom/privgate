@@ -19,6 +19,8 @@ type Hub = {
   sockets: Map<string, Set<DeviceSocket>>;
   console: Set<(event: ConsoleEvent) => void>;
   ui: Map<string, UiBeat>;
+  /** Bounded per-topic replay buffer so short SSE drops can be caught up. */
+  replay: Map<ConsoleTopic, ConsoleEvent[]>;
 };
 
 const root = globalThis as unknown as { __privgateRealtime?: Hub };
@@ -28,6 +30,7 @@ function hub(): Hub {
     sockets: new Map(),
     console: new Set(),
     ui: new Map(),
+    replay: new Map(),
   };
   return root.__privgateRealtime;
 }
@@ -36,6 +39,8 @@ function hub(): Hub {
 const UI_TTL_MS = 10 * 60_000;
 /** Freshness a beat must have (plus a live socket) for uiAlive. */
 const UI_ALIVE_MS = 5 * 60_000;
+/** Max per-topic events retained for SSE replay (memory-bounded, Low/Med). */
+const REPLAY_CAP = 50;
 
 export function registerDeviceSocket(deviceId: string, socket: DeviceSocket): () => void {
   const sockets = hub().sockets;
@@ -85,8 +90,26 @@ export function subscribeConsole(listener: (event: ConsoleEvent) => void): () =>
 }
 
 export function publishConsole(topic: ConsoleTopic) {
+  const h = hub();
   const event: ConsoleEvent = { type: "mutate", topic };
-  for (const listener of hub().console) listener(event);
+  // Buffer for replay: a client that reconnects after a gap will be caught up.
+  const buf = h.replay.get(topic) ?? [];
+  buf.push(event);
+  if (buf.length > REPLAY_CAP) buf.splice(0, buf.length - REPLAY_CAP);
+  h.replay.set(topic, buf);
+  for (const listener of h.console) listener(event);
+}
+
+/**
+ * Replay any buffered console events for a topic to a freshly-connected SSE
+ * subscriber. Simple, memory-bounded (vs REPLAY_CAP per topic), and best-effort:
+ * it cures the common "missed an update during a brief disconnect" case without
+ * attempting durable/at-least-once delivery. Events older than the cap are gone.
+ */
+export function replayConsole(topic: ConsoleTopic, deliver: (event: ConsoleEvent) => void): void {
+  const buf = hub().replay.get(topic);
+  if (!buf) return;
+  for (const event of buf) deliver(event);
 }
 
 /** Record the newest GUI heartbeat for a device (in-memory only, tiny payload). */
@@ -137,4 +160,5 @@ export function resetRealtimeForTests() {
   h.sockets.clear();
   h.console.clear();
   h.ui.clear();
+  h.replay.clear();
 }

@@ -41,6 +41,16 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <AppConfig>App.config</AppConfig>
   </PropertyGroup>
+  <!--
+    Release builds must not ship debug symbols: the packaged agent (MSI / zip /
+    deployment script) includes everything under agent/dist, so a PDB there
+    would land inside production installs. Turn symbol generation off for
+    Release so the published payload carries only what the broker needs.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
   <Target Name="CopyExplicitBindingRedirects" AfterTargets="CopyFilesToOutputDirectory">
     <Copy SourceFiles="$(MSBuildThisFileDirectory)App.config"
           DestinationFiles="$(TargetPath).config"

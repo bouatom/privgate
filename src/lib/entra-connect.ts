@@ -1,21 +1,19 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { decryptSecret, encryptSecret } from "./crypto-secret";
+import { encryptSecret } from "./crypto-secret";
 import {
   appendAudit,
   deleteOauthState,
   getDirectorySettings,
   getOauthState,
-  getUserByUpn,
-  replaceGroups,
   saveDirectorySettings,
   saveOauthState,
   takeOauthState,
-  upsertUsers,
   type DirectorySettings,
 } from "./db";
 import type { DatabaseSync } from "node:sqlite";
 import { setupRedirectUris } from "./origin";
+import { syncDirectory, syncDirectoryWithRetry } from "./entra-connect-sync";
 import {
   APP_ROLES,
   DAEMON_DISPLAY_NAME,
@@ -23,14 +21,12 @@ import {
   SETUP_DISPLAY_NAME,
   assertGlobalAdmin,
   authorizeUrl,
-  clientCredentialToken,
   ensureServicePrincipal,
   exchangeCode,
   findApplication,
   graphFetch,
   graphList,
   inflightMap,
-  isRetryableSyncError,
   pkcePair,
   pollDeviceCode,
   secretKey,
@@ -38,6 +34,10 @@ import {
   daemonApplicationBody,
   setupApplicationBody,
 } from "./entra-graph";
+
+// Re-export the sync/status helpers so existing importers of entra-connect
+// (entra.ts) keep working unchanged.
+export { syncDirectory, syncDirectoryWithRetry, publicDirectoryStatus } from "./entra-connect-sync";
 
 export async function provisionFromAdminToken(
   db: DatabaseSync,
@@ -130,98 +130,6 @@ export async function provisionFromAdminToken(
   });
   const synced = await syncDirectoryWithRetry(db, settings);
   return { reused: false as const, tenantName, tenantId, admin: me.userPrincipalName || me.displayName, ...synced };
-}
-
-async function syncDirectoryWithRetry(db: DatabaseSync, settings: DirectorySettings) {
-  let last = new Error("directory sync failed");
-  for (let attempt = 0; attempt < 6; attempt++) {
-    try {
-      return await syncDirectory(db, settings);
-    } catch (error) {
-      last = error as Error;
-      if (!isRetryableSyncError(last.message) && attempt > 0) throw last;
-      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-    }
-  }
-  throw last;
-}
-
-export async function syncDirectory(db: DatabaseSync, settings?: DirectorySettings) {
-  const cfg = settings ?? getDirectorySettings(db);
-  if (!cfg?.daemonAppId || !cfg.secretEnc) throw new Error("Entra ID is not connected");
-  const secret = decryptSecret(cfg.secretEnc, secretKey());
-  const token = await clientCredentialToken(cfg.tenantId, cfg.daemonAppId, secret);
-
-  const graphUsers = await graphList<{
-    id: string;
-    displayName?: string;
-    userPrincipalName?: string;
-    onPremisesSecurityIdentifier?: string;
-    accountEnabled?: boolean;
-  }>(
-    token,
-    "/users?$select=id,displayName,userPrincipalName,onPremisesSecurityIdentifier,accountEnabled&$top=999",
-  );
-  const users = graphUsers
-    .filter((user) => user.accountEnabled !== false && user.userPrincipalName)
-    .map((user) => ({
-      displayName: String(user.displayName || user.userPrincipalName),
-      userPrincipalName: String(user.userPrincipalName),
-      entraOid: String(user.id),
-      adSid: user.onPremisesSecurityIdentifier || undefined,
-    }));
-  upsertUsers(db, users);
-
-  const oidToLocal = new Map<string, string>();
-  for (const user of users) {
-    const local = getUserByUpn(db, user.userPrincipalName);
-    if (local) oidToLocal.set(user.entraOid, local.id);
-  }
-
-  const graphGroups = await graphList<{
-    id: string;
-    displayName?: string;
-    securityEnabled?: boolean;
-  }>(token, "/groups?$select=id,displayName,securityEnabled&$top=999");
-  const groups: Array<{ id: string; name: string; objectId: string; memberUserIds: string[] }> = [];
-  for (const group of graphGroups) {
-    if (group.securityEnabled === false) continue;
-    let members: Array<{ id: string }> = [];
-    try {
-      members = await graphList<{ id: string }>(
-        token,
-        `/groups/${group.id}/transitiveMembers?$select=id&$top=999`,
-      );
-    } catch {
-      members = await graphList<{ id: string }>(token, `/groups/${group.id}/members?$select=id&$top=999`);
-    }
-    groups.push({
-      id: group.id,
-      name: group.displayName || group.id,
-      objectId: group.id,
-      memberUserIds: members.map((m) => oidToLocal.get(m.id)).filter((id): id is string => Boolean(id)),
-    });
-  }
-  replaceGroups(db, groups);
-  const nextSettings = { ...cfg, lastSyncAt: new Date().toISOString() };
-  saveDirectorySettings(db, nextSettings);
-  appendAudit(db, "system", "entra.sync", cfg.tenantId, { users: users.length, groups: groups.length });
-  return { users: users.length, groups: groups.length, lastSyncAt: nextSettings.lastSyncAt };
-}
-
-export function publicDirectoryStatus(db: DatabaseSync) {
-  const cfg = getDirectorySettings(db);
-  if (!cfg?.daemonAppId) {
-    return { connected: false as const };
-  }
-  return {
-    connected: true as const,
-    tenantName: cfg.tenantName,
-    tenantId: cfg.tenantId,
-    setupClientId: cfg.setupClientId,
-    lastSyncAt: cfg.lastSyncAt,
-    connectedBy: cfg.connectedBy,
-  };
 }
 
 export function beginPkceSetup(db: DatabaseSync, origin: string, clientId: string, tenant: string) {

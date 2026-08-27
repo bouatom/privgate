@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getDb, listPolicies, insertPolicy, appendAudit } from "@/lib/db";
-import { assertAllowPolicyInput, type Policy } from "@/lib/policy";
+import { assertAllowPolicyInput, assertPolicyTargetfield, type Policy } from "@/lib/policy";
 import { argumentPatternError, effectError } from "@/lib/policy-draft-preview";
 import { isResponse, requireAdmin } from "@/lib/http";
 
@@ -34,6 +34,16 @@ export async function POST(req: Request) {
   if ((bindType === "group" || bindType === "device" || bindType === "user") && !body.bindId) {
     return NextResponse.json({ error: `${bindType} bind requires bindId` }, { status: 400 });
   }
+  const targetError = assertPolicyTargetfield({
+    name: body.name,
+    bindType,
+    bindId: body.bindId,
+    fileName: body.fileName,
+    fileHash: body.fileHash,
+    publisher: body.publisher,
+    argumentPattern: body.argumentPattern,
+  });
+  if (targetError) return NextResponse.json({ error: targetError }, { status: 400 });
   const policy: Policy = {
     id: randomUUID(),
     name: body.name,

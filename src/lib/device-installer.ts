@@ -96,6 +96,10 @@ if ($svc) {
 
 New-Service -Name PrivGateBroker -BinaryPathName ('"' + $bin + '"') -DisplayName "PrivGate Elevation Broker" -StartupType Automatic | Out-Null
 sc.exe description PrivGateBroker "PrivGate SYSTEM elevation broker. Does not disable UAC or store admin passwords." | Out-Null
+# Auto-restart on crash: without recovery the broker service stays stopped
+# after a crash (GAP-001). Restart after 10s, again after 30s, then 60s; the
+# failure counter resets once the service has run for a day.
+sc.exe failure PrivGateBroker reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
 try {
   Start-Service PrivGateBroker
 } catch {
@@ -206,7 +210,12 @@ export function buildInstallerEntries(args: {
   ];
   const dist = path.join(args.agentRoot, "dist");
   if (fs.existsSync(dist)) {
+    // Ship only production payload from dist: keep the same excludes as the
+    // MSI packager so debug symbols (PDB) and other build/config artifacts
+    // never land inside the device installer (GAP-002).
+    const skip = /\.(msi|wxs|pdb|xml|nupkg)$/i;
     for (const name of fs.readdirSync(dist)) {
+      if (skip.test(name)) continue;
       const abs = path.join(dist, name);
       if (!fs.statSync(abs).isFile()) continue;
       entries.push({ name, data: fs.readFileSync(abs) });

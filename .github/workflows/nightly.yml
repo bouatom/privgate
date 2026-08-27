@@ -134,6 +134,15 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # Security gate, identical to the official flow: a vulnerable PRODUCTION
+      # dependency must never ship inside an installer. The nightly installers
+      # pipeline is gated on this job (needs: verify), so a high/critical
+      # advisory fails the run. `--omit=dev` covers only runtime deps that land
+      # in the built artifacts; dev-tooling advisories are reported separately
+      # by the `security` workflow.
+      - name: Audit production dependencies (high/critical gate)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Test, typecheck, lint
         run: npm test && npm run typecheck && npm run lint
 

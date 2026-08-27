@@ -131,6 +131,55 @@ export function evaluateElevation(
   return { decision: "pending", reason: "no matching allow policy" };
 }
 
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+/** Reject path traversal (`../`, `..\`, absolute drive/root paths) and NUL. */
+function hasTraversal(value: string): boolean {
+  return /(^|[\\/])\.\.?([\\/]|$)/.test(value) || /^[a-zA-Z]:[\\/]/.test(value) || value.includes("\u0000");
+}
+
+/**
+ * Server-authoritative validation of a policy's free-text target/bind fields.
+ * Returns a human-readable error string when invalid, or null when acceptable.
+ * Guards the M-2 finding: malformed bind/fileName values (including path
+ * traversal like `../../etc/passwd`) must never reach the policy store.
+ */
+export function assertPolicyTargetfield(input: {
+  name?: string;
+  bindType?: Policy["bindType"];
+  bindId?: string;
+  fileName?: string;
+  fileHash?: string;
+  publisher?: string;
+  argumentPattern?: string;
+}): string | null {
+  const { name, bindType, bindId } = input;
+
+  if (name !== undefined) {
+    if (!name.trim()) return "name is required";
+    if (name.length > 200) return "name must be 200 characters or fewer";
+    if (CONTROL_CHARS.test(name)) return "name cannot contain control characters";
+  }
+
+  if ((bindType === "user" || bindType === "group" || bindType === "device") && bindId !== undefined) {
+    if (!bindId.trim()) return `${bindType} bind requires a bindId`;
+    if (hasTraversal(bindId)) return `${bindType} bindId cannot contain path traversal`;
+    // Require a UUID where one is expected; otherwise fall back to a safe
+    // non-empty string (e.g. a device hostname or directory group name).
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRe.test(bindId) && !/^[A-Za-z0-9_.\- ]+$/.test(bindId)) {
+      return `${bindType} bindId must be a UUID or a safe string`;
+    }
+  }
+
+  if (input.fileName !== undefined && hasTraversal(input.fileName)) {
+    return "fileName cannot contain path traversal or NUL bytes";
+  }
+
+  return null;
+}
+
 export function assertAllowPolicyInput(input: {
   effect: PolicyEffect;
   fileHash: string;

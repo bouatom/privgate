@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertAllowPolicyInput, evaluateElevation, type Policy } from "./policy";
+import { assertAllowPolicyInput, assertPolicyTargetfield, evaluateElevation, type Policy } from "./policy";
 
 const subject = {
   userId: "u1",
@@ -99,5 +99,54 @@ describe("evaluateElevation", () => {
       false,
     );
     expect(outsider.decision).toBe("pending");
+  });
+});
+
+describe("assertPolicyTargetfield", () => {
+  it("accepts a well-formed full policy input", () => {
+    expect(
+      assertPolicyTargetfield({
+        name: "Allow Widget",
+        bindType: "device",
+        bindId: "ws-soho-03",
+        fileName: "WidgetSetup.msi",
+      }),
+    ).toBeNull();
+  });
+
+  it("accepts a UUID bindId", () => {
+    expect(
+      assertPolicyTargetfield({ bindType: "device", bindId: "b58797ae-baf1-4f51-be8f-bb3e1eb0d77a" }),
+    ).toBeNull();
+  });
+
+  it("rejects an empty/whitespace name", () => {
+    expect(assertPolicyTargetfield({ name: "   " })).toBe("name is required");
+  });
+
+  it("rejects a name with control characters", () => {
+    expect(assertPolicyTargetfield({ name: "bad\nname" })).toBe("name cannot contain control characters");
+  });
+
+  it("rejects an over-long name", () => {
+    expect(assertPolicyTargetfield({ name: "x".repeat(201) })).toBe(
+      "name must be 200 characters or fewer",
+    );
+  });
+
+  it("rejects path traversal in a device bindId", () => {
+    expect(assertPolicyTargetfield({ bindType: "device", bindId: "../../etc/passwd" })).toContain(
+      "path traversal",
+    );
+  });
+
+  it("rejects a bindId that is neither UUID nor safe string", () => {
+    expect(assertPolicyTargetfield({ bindType: "user", bindId: "bad id!" })).toContain("UUID");
+  });
+
+  it("rejects path traversal in fileName", () => {
+    expect(assertPolicyTargetfield({ fileName: "..\\..\\windows\\system32\\evil.exe" })).toContain(
+      "path traversal",
+    );
   });
 });

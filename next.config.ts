@@ -60,6 +60,10 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // Neutralize Next.js' default X-Powered-By header; Next sets it at a
+          // lower layer than headers(), so the middleware below is the reliable
+          // enforcement point. This entry is a belt-and-suspenders fallback.
+          { key: "X-Powered-By", value: "PrivGate" },
         ],
       },
     ];

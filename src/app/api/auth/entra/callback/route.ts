@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   const db = getDb();
   const saved = takeOauthState(db, state);
-  let meta: { tenant?: string; clientId?: string; redirectUri?: string } = {};
+  let meta: { tenant?: string; clientId?: string; redirectUri?: string; nonce?: string } = {};
   if (saved) {
     try {
       meta = JSON.parse(saved.meta || "{}") as typeof meta;
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "invalid oauth state" }, { status: 400 });
     }
   }
+  const nonce = saved ? meta.nonce : undefined;
   const tenant = (saved ? meta.tenant : process.env.AZURE_AD_TENANT_ID) as string | undefined;
   const clientId = (saved ? meta.clientId : process.env.AZURE_AD_CLIENT_ID) as string | undefined;
   const redirect = (saved ? meta.redirectUri : undefined) as string | undefined;
@@ -64,6 +65,12 @@ export async function GET(req: Request) {
   try {
     const JWKS = createRemoteJWKSet(new URL(entraJwksUrl(tenant)));
     const { payload } = await jwtVerify(tokens.id_token, JWKS, entraIdTokenVerifyOptions(tenant, clientId));
+    // Replay/CSRF protection: the ID token must carry back the exact nonce we
+    // issued with the authorize request. A missing or mismatched nonce means
+    // the token is not a fresh response to our request — fail closed.
+    if (!nonce || payload.nonce !== nonce) {
+      return NextResponse.json({ error: "invalid id_token nonce" }, { status: 400 });
+    }
     email = String(payload.preferred_username || payload.email || "");
     oid = String(payload.oid || "");
     name = String(payload.name || "");

@@ -95,6 +95,10 @@ if ($svc) {
 
 New-Service -Name PrivGateBroker -BinaryPathName ('"' + $bin + '"') -DisplayName "PrivGate Elevation Broker" -StartupType Automatic | Out-Null
 sc.exe description PrivGateBroker "PrivGate SYSTEM elevation broker. Does not disable UAC or store admin passwords." | Out-Null
+# Auto-restart on crash: without recovery the broker service stays stopped
+# after a crash (GAP-001). Restart after 10s, again after 30s, then 60s; the
+# failure counter resets once the service has run for a day.
+sc.exe failure PrivGateBroker reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
 try {
   Start-Service PrivGateBroker
 } catch {

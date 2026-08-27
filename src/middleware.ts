@@ -10,6 +10,15 @@ import { sessionSecret } from "./lib/secrets";
  * boundary — do not treat a middleware pass as authorization.
  */
 export async function middleware(req: NextRequest) {
+  const res = await authorize(req);
+  // Next.js injects X-Powered-By: Next.js at a layer below headers(). Neutralize
+  // it here so the installed product does not advertise its web framework.
+  res.headers.delete("X-Powered-By");
+  res.headers.set("X-Powered-By", "PrivGate");
+  return res;
+}
+
+async function authorize(req: NextRequest): Promise<NextResponse> {
   const token = req.cookies.get("privgate_session")?.value;
   if (!token) {
     const login = new URL("/login", req.url);

@@ -16,8 +16,9 @@ export async function GET(req: Request) {
   }
 
   const state = randomUUID();
+  const nonce = randomBytes(16).toString("hex");
   const { verifier, challenge } = pkcePair();
-  saveOauthState(db, state, verifier, "login", { clientId, tenant, redirectUri: redirect });
+  saveOauthState(db, state, verifier, "login", { clientId, tenant, redirectUri: redirect, nonce });
 
   const url = new URL(`https://login.microsoftonline.com/${tenant}/oauth2/v2.0/authorize`);
   url.searchParams.set("client_id", clientId);
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("nonce", randomBytes(16).toString("hex"));
+  url.searchParams.set("nonce", nonce);
   const res = NextResponse.redirect(url);
   res.cookies.set("privgate_oauth_state", state, { httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 });
   return res;

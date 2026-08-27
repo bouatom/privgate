@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import { localLoginEnabled } from "@/lib/auth-mode";
 import { issueSession, sessionCookie } from "@/lib/auth";
 import { getPortalPasswordHash, getPortalUserByEmail } from "@/lib/portal";
-import { verifyPassword } from "@/lib/passwords";
+import { verifyPassword, dummyVerify } from "@/lib/passwords";
 import { checkLoginRateLimit } from "@/lib/rate-limit";
 
 export async function loginPost(req: Request) {
@@ -24,18 +24,28 @@ export async function loginPost(req: Request) {
   const email = body.email?.trim();
   const password = body.password || "";
   if (!email || !password) return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
-  const user = getPortalUserByEmail(getDb(), email);
-  if (!user || user.disabled || !user.permissions.length) {
+
+  // Constant-time login: run a dummy scrypt whenever the user is missing so the
+  // timing of a nonexistent email matches that of a real-but-wrong-password
+  // attempt. Prevents user enumeration via response latency.
+  const db = getDb();
+  const user = getPortalUserByEmail(db, email);
+  const usable = user && !user.disabled && user.permissions.length && user.kind !== "sso";
+  const packed = usable ? getPortalPasswordHash(db, user.id) : null;
+
+  let ok = false;
+  if (packed) {
+    ok = verifyPassword(password, packed);
+  } else {
+    dummyVerify(password); // burn the same ~N ms as a real scrypt
+    ok = false;
+  }
+
+  if (!usable || !ok) {
     return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
   }
-  if (user.kind === "sso") {
-    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
-  }
-  const packed = getPortalPasswordHash(getDb(), user.id);
-  if (!packed || !verifyPassword(password, packed)) {
-    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
-  }
-  const token = await issueSession({ id: user.id, email: user.email, name: user.displayName });
+
+  const token = await issueSession({ id: user!.id, email: user!.email, name: user!.displayName });
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(sessionCookie(token, req));
   return res;
