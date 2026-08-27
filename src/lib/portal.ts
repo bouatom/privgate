@@ -300,3 +300,20 @@ export function updatePortalUser(
   if (input.roleIds) setUserRoles(db, id, input.roleIds);
   return getPortalUser(db, id)!;
 }
+
+export function deletePortalUser(
+  db: DatabaseSync,
+  id: string,
+): { ok: true } | { error: string } {
+  const current = getPortalUser(db, id);
+  if (!current) return { error: "unknown user" };
+  if (current.kind === "local" && current.id === id) {
+    return { error: "cannot delete yourself via API" };
+  }
+  if (wouldLeaveNoMaster(db, id, { disabled: true })) {
+    return { error: "keep at least one enabled Master Admin" };
+  }
+  db.prepare("DELETE FROM portal_user_roles WHERE user_id = ?").run(id);
+  db.prepare("DELETE FROM portal_users WHERE id = ?").run(id);
+  return { ok: true };
+}
