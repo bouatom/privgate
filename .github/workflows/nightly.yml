@@ -44,26 +44,20 @@ jobs:
     outputs:
       version: ${{ steps.set.outputs.version }}
       release_tag: ${{ steps.set.outputs.release_tag }}
+      base_version: ${{ steps.set.outputs.base_version }}
+      nightly_number: ${{ steps.set.outputs.nightly_number }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Compute patch-incremented version and unique tag
+      - name: Compute nightly version (base_version + build counter)
         id: set
         env:
           REPO: ${{ github.repository }}
-          # Test seam: fixed timestamp for local stub runs. Empty in CI.
-          PRIVGATE_NIGHTLY_TS: ""
         run: |
           set -euo pipefail
 
-          taken() {
-            gh api "repos/${REPO}/git/ref/tags/$1" >/dev/null 2>&1 && return 0
-            gh api "repos/${REPO}/releases/tags/$1" >/dev/null 2>&1 && return 0
-            return 1
-          }
-
           # Highest EXACT x.y.z across tags and releases (drafts/prereleases
-          # included). Strict ^v?N.N.N$ match rejects vX.Y.Z-n.TS nightlies,
+          # included). Strict ^v?N.N.N$ match rejects vX.Y.Z-n.N nightlies,
           # partial versions, and anything non-numeric. Numeric segment
           # compare (not lexicographic) so v0.2.10 beats v0.2.9.
           hm=0 hmin=0 hp=-1
@@ -89,30 +83,42 @@ jobs:
             echo "No x.y.z tag or release found on ${REPO}; refusing to invent a base version." >&2
             exit 1
           fi
-          echo "Highest existing version: ${hm}.${hmin}.${hp}"
+          BASE_VERSION="${hm}.${hmin}.${hp}"
+          echo "Highest official version (base): ${BASE_VERSION}"
 
-          ts="${PRIVGATE_NIGHTLY_TS:-$(date -u +%Y%m%d%H%M)}"
-          patch=$((hp + 1))
-          free=0
-          for _ in $(seq 1 25); do
-            version="${hm}.${hmin}.${patch}"
-            candidate="v${version}-n.${ts}"
-            if taken "$candidate"; then
-              echo "Tag ${candidate} already exists; incrementing patch." >&2
-              patch=$((patch + 1))
-            else
-              free=1
-              break
+          # Count existing nightlies for this base version.
+          # Nightly tag pattern: vX.Y.Z.n.N (where N is the nightly build number)
+          nightly_count=0
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            v="${tag#v}"
+            # Match v0.3.2.n.1, v0.3.2.n.2, etc.
+            if [[ "$v" =~ ^${hm}\.${hmin}\.${hp}\.n\.([0-9]+)$ ]]; then
+              n="${BASH_REMATCH[1]}"
+              if (( n > nightly_count )); then
+                nightly_count=$n
+              fi
             fi
-          done
-          if (( free != 1 )); then
-            echo "Exhausted 25 patch candidates for timestamp ${ts}; aborting." >&2
-            exit 1
-          fi
+          done < <(
+            {
+              gh api --paginate "repos/${REPO}/releases" --jq '.[].tag_name' || true
+              gh api --paginate "repos/${REPO}/git/matching-refs/tags/v" \
+                --jq '.[].ref' | sed 's|^refs/tags/||' || true
+            }
+          )
+          next_nightly=$((nightly_count + 1))
 
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "release_tag=v${version}-n.${ts}" >> "$GITHUB_OUTPUT"
-          echo "Nightly version: ${version}, tag: v${version}-n.${ts}"
+          NIGHTLY_VERSION="${BASE_VERSION}.${next_nightly}"
+          RELEASE_TAG="v${BASE_VERSION}.n.${next_nightly}"
+
+          echo "Nightly build number: ${next_nightly}"
+          echo "Nightly version (user-visible): ${NIGHTLY_VERSION}"
+          echo "Release tag: ${RELEASE_TAG}"
+
+          echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "base_version=${BASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "nightly_number=${next_nightly}" >> "$GITHUB_OUTPUT"
 
       # No checkout needed above: everything is answered from the remote API,
       # which also sees tags pushed after this workflow's commit was cut.
@@ -506,42 +512,75 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          cutoff="$(date -u -d '30 days ago' +%Y%m%d%H%M)"
-          pattern='^v[0-9]+\.[0-9]+\.[0-9]+-n\.[0-9]{12}$'
-          echo "Pruning nightly artifacts tagged before ${cutoff} UTC."
+          # Nightly tag pattern: vX.Y.Z.n.N (N = nightly build number)
+          pattern='^v([0-9]+\.[0-9]+\.[0-9]+)\.n\.([0-9]+)$'
+          keep=30  # keep last 30 nightlies per base version
+          echo "Pruning nightly artifacts, keeping last ${keep} per base version (pattern: ${pattern})."
           failures=0
 
+          # Get all releases
           live="$(gh api --paginate "repos/${REPO}/releases" --jq '.[].tag_name' | LC_ALL=C sort || true)"
+
+          # Group nightlies by base version, find those beyond the keep limit
+          declare -A base_counts
+          declare -A to_delete
+
           while IFS= read -r tag; do
-            [[ "$tag" =~ $pattern ]] || continue
-            ts="${tag##*-n.}"
-            # Fixed-width digit strings order correctly lexicographically.
-            if [[ ! "$ts" < "$cutoff" ]]; then
-              continue
+            [[ -z "$tag" ]] && continue
+            if [[ "$tag" =~ $pattern ]]; then
+              base="${BASH_REMATCH[1]}"
+              num="${BASH_REMATCH[2]}"
+              base_counts["$base"]=$(( ${base_counts["$base"]:-0} + 1 ))
             fi
+          done <<<"${live}"
+
+          # Determine which nightlies to delete (those with number <= count - keep)
+          for base in "${!base_counts[@]}"; do
+            count=${base_counts[$base]}
+            if (( count > keep )); then
+              delete_up_to=$((count - keep))
+              echo "Base ${base}: ${count} nightlies, deleting up to ${delete_up_to}"
+              while IFS= read -r tag; do
+                [[ -z "$tag" ]] && continue
+                if [[ "$tag" =~ $pattern ]]; then
+                  b="${BASH_REMATCH[1]}"
+                  n="${BASH_REMATCH[2]}"
+                  if [[ "$b" == "$base" && "$n" -le "$delete_up_to" ]]; then
+                    to_delete["$tag"]=1
+                  fi
+                fi
+              done <<<"${live}"
+            fi
+          done
+
+          # Delete marked nightly releases
+          for tag in "${!to_delete[@]}"; do
             echo "Deleting expired nightly release+tag: ${tag}"
             if ! gh release delete "$tag" --yes --cleanup-tag; then
               echo "Could not delete release ${tag}; continuing." >&2
               failures=$((failures + 1))
             fi
-          done <<<"${live}"
+          done
 
-          # Orphan tags: nightly-shaped refs with no live release, older than
-          # the cutoff (fresh refs may belong to the run currently publishing).
+          # Orphan tags: nightly-shaped refs with no live release
           while IFS= read -r ref; do
             tag="${ref#refs/tags/}"
             [[ "$tag" =~ $pattern ]] || continue
             if grep -Fxq "$tag" <<<"${live}"; then
               continue
             fi
-            ts="${tag##*-n.}"
-            if [[ ! "$ts" < "$cutoff" ]]; then
-              continue
-            fi
-            echo "Deleting orphan nightly tag: ${tag}"
-            if ! gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}"; then
-              echo "Could not delete tag ${tag}; continuing." >&2
-              failures=$((failures + 1))
+            # Check if this orphan tag's nightly number is within the keep window
+            if [[ "$tag" =~ $pattern ]]; then
+              base="${BASH_REMATCH[1]}"
+              num="${BASH_REMATCH[2]}"
+              count=${base_counts["$base"]:-0}
+              if (( count > keep && num <= count - keep )); then
+                echo "Deleting orphan nightly tag: ${tag}"
+                if ! gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}"; then
+                  echo "Could not delete tag ${tag}; continuing." >&2
+                  failures=$((failures + 1))
+                fi
+              fi
             fi
           done < <(gh api --paginate "repos/${REPO}/git/matching-refs/tags/v" --jq '.[].ref')
 
