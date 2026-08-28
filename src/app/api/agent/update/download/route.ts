@@ -2,8 +2,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { verifyDeviceRequest } from "@/lib/device-auth";
 import { appendAudit, getDb } from "@/lib/db";
-import { requestOrigin } from "@/lib/origin";
-import { agentOriginFromWebOrigin } from "@/lib/listen";
+import { consoleAgentOrigin } from "@/lib/listen";
 import { buildClientMsi, safeApiBase } from "@/lib/client-package";
 
 const DOWNLOAD_PATH = "/api/agent/update/download";
@@ -22,7 +21,13 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const apiBase = safeApiBase(url.searchParams.get("apiBase") || undefined, agentOriginFromWebOrigin(requestOrigin(req)));
+  // NEVER derive the ApiBase from the agent's request origin: the broker
+  // requests the update from whatever ApiBase it is currently holding, so
+  // echoing that back can preserve a stale/wildcard value (the field-test
+  // `0.0.0.0:3001` self-reinforcing loop). Bake the console's own advertised
+  // agent origin instead; the request-supplied value is still hardened by
+  // safeApiBase as a last resort.
+  const apiBase = safeApiBase(url.searchParams.get("apiBase") || undefined, consoleAgentOrigin());
   let msi: Buffer;
   try {
     msi = buildClientMsi(apiBase);

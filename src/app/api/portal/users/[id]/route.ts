@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb, appendAudit } from "@/lib/db";
 import { isResponse, requireAdmin } from "@/lib/http";
-import { getPortalUser, patchUser, deletePortalUser } from "@/lib/portal";
+import { getPortalUser, getPortalPasswordHash, patchUser, deletePortalUser } from "@/lib/portal";
+import { checkStepUpPassword } from "@/lib/stepup";
 
 export async function DELETE(
   _req: Request,
@@ -31,15 +32,36 @@ export async function PUT(
   const auth = await requireAdmin("portal.users.manage");
   if (isResponse(auth)) return auth;
   const { id } = await params;
-  const body = (await req.json()) as {
+  const { stepUpPassword, ...body } = (await req.json()) as {
     displayName?: string;
     kind?: "local" | "sso";
     password?: string;
     entraOid?: string;
     disabled?: boolean;
     roleIds?: string[];
+    stepUpPassword?: string;
   };
+
+  // Step-up security: a Master Admin can reset ANY account's password
+  // (including another Master Admin's) using only a session cookie. Before we
+  // apply a password change we require the acting admin to re-confirm their own
+  // current password, so a single stolen/left-open session is not enough to
+  // change credentials. See checkStepUpPassword for the full rule set.
   const db = getDb();
+  const settingPassword = Boolean(body.password && body.password.length > 0);
+  if (settingPassword) {
+    const acting = getPortalUser(db, auth.session.id);
+    const decision = checkStepUpPassword({
+      settingPassword,
+      actingKind: acting?.kind,
+      actingPasswordHash: acting ? getPortalPasswordHash(db, acting.id) : "",
+      stepUpPassword,
+    });
+    if (!decision.ok) {
+      return NextResponse.json({ error: decision.error }, { status: decision.status });
+    }
+  }
+
   const updated = patchUser(db, id, body);
   if ("error" in updated) return NextResponse.json(updated, { status: 400 });
   appendAudit(db, auth.session.email, "portal.user.update", id, {

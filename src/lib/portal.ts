@@ -307,9 +307,6 @@ export function deletePortalUser(
 ): { ok: true } | { error: string } {
   const current = getPortalUser(db, id);
   if (!current) return { error: "unknown user" };
-  if (current.kind === "local" && current.id === id) {
-    return { error: "cannot delete yourself via API" };
-  }
   if (wouldLeaveNoMaster(db, id, { disabled: true })) {
     return { error: "keep at least one enabled Master Admin" };
   }

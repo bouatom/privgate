@@ -38,6 +38,7 @@ export {
   listDevices,
   registerOrReuseDevice,
   setDeviceAgentVersion,
+  setDeviceLastIp,
   setDeviceUpdateRequestedAt,
   touchDeviceLastSeen,
 } from "./devices";

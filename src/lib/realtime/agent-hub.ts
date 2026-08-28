@@ -8,7 +8,8 @@ import { registerDeviceSocket, publishConsole, dropClientStatus } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
 import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
-import { touchDeviceLastSeen } from "../db/devices";
+import { touchDeviceLastSeen, setDeviceLastIp } from "../db/devices";
+import { resolveClientIp } from "../client-ip";
 import { drainQueuedUpdateOnReconnect } from "../agent-update";
 import { registerShutdownHook } from "../lifecycle/shutdown";
 
@@ -43,6 +44,21 @@ function pathnameOf(url: string | undefined): string {
     return decodeURIComponent(String(url || "/").split("?")[0]);
   } catch {
     return "/";
+  }
+}
+
+/**
+ * Attach a no-op 'error' listener to a socket that is about to be rejected, so
+ * an RST/ECONNRESET racing the close(4401/1008) frame cannot be re-emitted as
+ * an unhandled 'error' event and crash the process. In the `ws` library an
+ * unhandled socket error on the WebSocket object is fatal. Guards against
+ * duplicate listener additions.
+ */
+function silenceRejectSocket(ws: WebSocket): void {
+  if (ws && typeof ws.on === "function") {
+    ws.on("error", () => {
+      /* swallow — intentionally no-op */
+    });
   }
 }
 
@@ -89,6 +105,7 @@ function accept(req: IncomingMessage, ws: WebSocket) {
     rawBody: "",
   });
   if (!auth.ok) {
+    silenceRejectSocket(ws);
     ws.close(4401, auth.error);
     return;
   }
@@ -109,6 +126,7 @@ function accept(req: IncomingMessage, ws: WebSocket) {
       origin: requestOrigin,
       expected: expectedAgentOrigin(process.env),
     });
+    silenceRejectSocket(ws);
     ws.close(1008, "origin mismatch");
     return;
   }
@@ -117,6 +135,17 @@ function accept(req: IncomingMessage, ws: WebSocket) {
   const forgetSocket = () => openSockets.delete(ws);
   ws.on("close", forgetSocket);
   ws.on("error", forgetSocket);
+
+  // Capture the connecting source IP from the handshake while the underlying
+  // TCP peer is still known, and persist it on the device record. Honors
+  // PRIVGATE_TRUST_PROXY for X-Forwarded-For; otherwise uses the socket remote
+  // address (see src/lib/client-ip.ts).
+  const db = getDb();
+  setDeviceLastIp(
+    db,
+    auth.deviceId,
+    resolveClientIp({ remoteAddress: req.socket.remoteAddress, forwardedFor: header(req, "x-forwarded-for") }),
+  );
 
   const unregister = registerTrackedDeviceSocket(auth.deviceId, {
     send: (data) => {

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { compareVersions, currentClientVersion, sanitizeClientVersion, updateAvailable } from "./client-version";
 import { resetDbForTests } from "./db";
+import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
 
 afterEach(() => {
-  delete process.env.PRIVGATE_VERSION;
+  resetVersionEnv();
   resetDbForTests(":memory:");
 });
 
@@ -56,10 +57,9 @@ describe("compareVersions", () => {
 });
 
 describe("currentClientVersion", () => {
-  it("reads PRIVGATE_VERSION from the environment", () => {
+  it("reads PRIVGATE_VERSION from the environment when no version.json is present", () => {
+    disableRepoVersionManifest();
     process.env.PRIVGATE_VERSION = "9.8.7";
     expect(currentClientVersion()).toBe("9.8.7");
-    delete process.env.PRIVGATE_VERSION;
-    expect(currentClientVersion()).toBe("0.2.1");
   });
 });

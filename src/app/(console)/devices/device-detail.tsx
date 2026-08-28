@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { displayPath, formatDetails } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
+import { UpdatePolicyControl } from "./update-policy-control";
 
 export type DeviceEventRow = {
   id: string;
@@ -43,10 +44,20 @@ export type DeviceDetailModel = {
   id: string;
   hostname: string;
   enrolledAt: string;
+  lastIp: string;
   agentVersion: string;
   events: DeviceEventRow[];
   requests: DeviceRequestRow[];
   jit: DeviceJitRow[];
+  /** Device-level update policy: '' means inherit from group / default. */
+  updateMode: string;
+  /** Daily scheduled time 'HH:MM' when updateMode === 'scheduled'. */
+  updateSchedule: string;
+  /** Effective policy resolved by the server (device > group > default). */
+  effMode: string;
+  effSchedule: string;
+  effSource: "device" | "group" | "default";
+  effSourceName?: string;
 };
 
 function reasonsOf(raw: string): string[] {
@@ -63,12 +74,15 @@ export function DeviceDetail({
   policies,
   canManageAllowlists,
   canApproveRequests = false,
+  canUpdate = false,
 }: {
   detail: DeviceDetailModel;
   policies: Policy[];
   canManageAllowlists: boolean;
   /** Enables the "Rule saved — also approve?" follow-up for pending request rows. */
   canApproveRequests?: boolean;
+  /** Enables the per-device update-policy override control. */
+  canUpdate?: boolean;
 }) {
   const [logFilter, setLogFilter] = useState<"blocked" | "all">("blocked");
   const blocked = useMemo(
@@ -86,6 +100,12 @@ export function DeviceDetail({
         <strong>{detail.hostname}</strong>
         <p className="lede" style={{ fontSize: 13, marginTop: 6 }}>
           First seen {new Date(detail.enrolledAt).toLocaleString()}
+          {detail.lastIp ? (
+            <>
+              {" · IP "}
+              <span className="mono">{detail.lastIp}</span>
+            </>
+          ) : null}
           {detail.agentVersion ? (
             <>
               {" · agent "}
@@ -94,6 +114,18 @@ export function DeviceDetail({
           ) : null}
         </p>
       </div>
+      {canUpdate ? (
+        <UpdatePolicyControl
+          deviceId={detail.id}
+          hostname={detail.hostname}
+          deviceMode={detail.updateMode}
+          deviceSchedule={detail.updateSchedule}
+          effMode={detail.effMode}
+          effSchedule={detail.effSchedule}
+          effSource={detail.effSource}
+          effSourceName={detail.effSourceName}
+        />
+      ) : null}
       <h2 className="section-title">Could not elevate</h2>
       <p className="lede" style={{ fontSize: 13, marginBottom: 8 }}>
         Programs this PC asked to run elevated that were not always-allow. Always-allow copies the recorded hash,

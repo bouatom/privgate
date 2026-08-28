@@ -3,12 +3,18 @@ import { getDb, appendAudit } from "@/lib/db";
 import { evaluateForDevice } from "@/lib/evaluate";
 import { verifyDeviceRequest } from "@/lib/device-auth";
 import { checkDeviceRateLimit } from "@/lib/rate-limit";
+import { bodyTooLarge, maxBodyBytes } from "@/lib/request-guard";
 
 // Rate limit: 30 requests per 60 seconds = ~1 req/sec sustained
 const RATE_LIMIT_WINDOW_MS = 60000;
 const RATE_LIMIT_MAX_REQUESTS = 30;
 
 export async function POST(req: Request) {
+  // Reject oversized payloads (by declared Content-Length) before buffering
+  // them for HMAC verification.
+  if (bodyTooLarge(req, maxBodyBytes())) {
+    return NextResponse.json({ error: "request body too large" }, { status: 413 });
+  }
   const raw = await req.text();
   const auth = verifyDeviceRequest({
     deviceId: req.headers.get("x-device-id"),

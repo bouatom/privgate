@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { migratePortal, listRoles, listPortalUsers, createRole, createPortalUser, patchUser, getPortalPasswordHash, countMasterAdmins } from "./portal";
+import { migratePortal, listRoles, listPortalUsers, createRole, createPortalUser, patchUser, deletePortalUser, getPortalPasswordHash, countMasterAdmins } from "./portal";
 import { hashPassword, verifyPassword } from "./passwords";
 import { hasPermission, isMasterPermissions, ALL_PERMISSIONS, PREDEFINED_ROLES } from "./permissions";
 
@@ -246,5 +246,41 @@ describe("countMasterAdmins", () => {
     addMaster(db);
     addMaster(db, "second@contoso.test");
     expect(countMasterAdmins(db)).toBe(2);
+  });
+});
+
+describe("deletePortalUser", () => {
+  it("deletes a non-self local user", () => {
+    const db = freshDb();
+    const master = addMaster(db);
+    const target = createPortalUser(db, {
+      displayName: "Target",
+      email: "target@contoso.test",
+      kind: "local",
+      password: PASS,
+      roleIds: ["role-approver"],
+    });
+    if ("error" in target) throw new Error(target.error);
+    const res = deletePortalUser(db, target.id);
+    expect(res).toEqual({ ok: true });
+    expect(listPortalUsers(db).some((u) => u.id === target.id)).toBe(false);
+    expect(listPortalUsers(db).some((u) => u.id === master.id)).toBe(true);
+  });
+
+  it("rejects deleting the only enabled Master Admin", () => {
+    const db = freshDb();
+    const master = addMaster(db);
+    const res = deletePortalUser(db, master.id);
+    expect("error" in res).toBe(true);
+    if (!("error" in res)) return;
+    expect(res.error).toMatch(/master admin/i);
+  });
+
+  it("returns unknown user for a missing id", () => {
+    const db = freshDb();
+    const res = deletePortalUser(db, "missing-id");
+    expect("error" in res).toBe(true);
+    if (!("error" in res)) return;
+    expect(res.error).toBe("unknown user");
   });
 });

@@ -115,6 +115,7 @@ partial class BrokerHost
                 ?? throw new InvalidOperationException("appsettings.json missing"));
         cfg.DeviceId ??= "";
         cfg.EnrollmentToken ??= "";
+        RejectNonRoutableApiBase(cfg);
         if (string.IsNullOrWhiteSpace(cfg.DeviceId) || !string.IsNullOrWhiteSpace(cfg.EnrollmentToken))
         {
             BrokerLog.Write($"registering with {cfg.ApiBase}");
@@ -171,6 +172,33 @@ partial class BrokerHost
 
     // BrokerHost.Handle (named-pipe request dispatch) lives in the sibling
     // partial file BrokerHost.Handle.cs.
+
+    /// <summary>
+    /// A broker must dial the console by a routable address. An ApiBase of a
+    /// wildcard (`0.0.0.0`/`::`) is never reachable from another machine — it
+    /// means an installer was served with a bogus origin and would otherwise
+    /// crash-loop with "The requested address is not valid in its context"
+    /// (the WS-SOHO-03 update failure). Refuse loudly instead of crash-looping;
+    /// a loopback ApiBase is still allowed for the local `npm run dev` lab.
+    /// </summary>
+    static void RejectNonRoutableApiBase(Cfg cfg)
+    {
+        var baseHost = "";
+        try
+        {
+            baseHost = new Uri(cfg.ApiBase).Host.Trim().ToLowerInvariant();
+        }
+        catch
+        {
+            // Leave empty; the registration call below reports a clear error.
+        }
+        if (baseHost == "0.0.0.0" || baseHost == "::" || baseHost == "[::]")
+        {
+            throw new InvalidOperationException(
+                $"ApiBase '{cfg.ApiBase}' is not routable from this PC (wildcard address). " +
+                "The console must be reached by its real host/IP. Fix ApiBase and re-run.");
+        }
+    }
 
     /// <summary>
     /// Fire-and-forget launch-outcome telemetry to the console (F2). Never

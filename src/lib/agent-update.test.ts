@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listAudit, resetDbForTests } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { handleAgentRpc } from "./realtime/rpc";
 import { agentUpdateMessage, requestAgentUpdate } from "./agent-update";
+import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
 
 const device = "dev-lab-01";
 
@@ -15,8 +16,12 @@ function connectDevice() {
   return { sent, stop };
 }
 
+beforeEach(() => {
+  disableRepoVersionManifest();
+});
+
 afterEach(() => {
-  delete process.env.PRIVGATE_VERSION;
+  resetVersionEnv();
   resetRealtimeForTests();
   resetDbForTests(":memory:");
 });

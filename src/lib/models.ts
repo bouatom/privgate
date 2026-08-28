@@ -89,3 +89,17 @@ export type AdSettings = {
   lastSyncAt: string | null;
   lastError: string;
 };
+
+/** Device group shape the Devices client needs to manage update policies. */
+export type DeviceGroupModel = {
+  id: string;
+  name: string;
+  /** Higher number wins when a device belongs to multiple groups with policies. */
+  priority: number;
+  /** Group-level update policy mode: 'auto' | 'scheduled' | 'manual' | '' (inherit). */
+  updateMode: string;
+  /** Daily scheduled time 'HH:MM' when updateMode === 'scheduled'; '' otherwise. */
+  updateSchedule: string;
+  /** Device ids in this group. */
+  deviceIds: string[];
+};

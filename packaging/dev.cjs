@@ -93,6 +93,12 @@ function startAgentProxy() {
       socket.write(`${lines.join("\r\n")}\r\n\r\n`);
       if (upHead && upHead.length) upSocket.write(upHead);
       if (head && head.length) socket.write(head);
+      // An RST on either side during teardown must not throw: raw socket streams
+      // are piped without a default 'error' handler, so an ECONNRESET here would
+      // otherwise be an unhandled 'error' event and crash the dev process.
+      const errNoop = () => {};
+      upSocket.on("error", errNoop);
+      socket.on("error", errNoop);
       upSocket.pipe(socket);
       socket.pipe(upSocket);
     });

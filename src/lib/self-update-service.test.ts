@@ -9,8 +9,11 @@ import {
   startUpdateSweep,
   stopUpdateSweep,
 } from "./self-update-service";
+import { missingVersionManifestPath } from "@/test/version-manifest";
 
-const INSTALLED_ENV = { PRIVGATE_VERSION: "0.2.1" };
+// Point the manifest away from any repo-root version.json so these tests are
+// hermetic and INSTALLED_ENV's version is what resolution reports.
+const INSTALLED_ENV = { PRIVGATE_VERSION: "0.2.1", PRIVGATE_VERSION_FILE: missingVersionManifestPath() };
 
 function githubReleasesResponse(releases: unknown, status = 200): Response {
   return new Response(JSON.stringify(releases), {

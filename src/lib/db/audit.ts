@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { AuditEvent } from "./types";
 
+/** Default number of days of audit history to keep when a retention is configured. */
+export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
+
 export function appendAudit(
   db: DatabaseSync,
   actor: string,
@@ -99,6 +102,34 @@ export function listAuditForDevice(db: DatabaseSync, deviceId: string): AuditEve
     )
     .all(actor, deviceId, `%${deviceId}%`, deviceId) as Record<string, unknown>[];
   return rows.map(auditFromRow);
+}
+
+/**
+ * Resolve the effective audit retention in days from raw input (an env string
+ * or already-parsed number). Falls back to `DEFAULT_AUDIT_RETENTION_DAYS` when
+ * the input is not a positive number. Returns 0 only for an explicitly negative
+ * "disabled" value, never for unset/invalid input — so an absent or malformed
+ * config defaults to a sane retention rather than deleting everything.
+ */
+export function resolveAuditRetention(raw: number | string | undefined): number {
+  const parsed = typeof raw === "number" ? raw : Number.parseInt(String(raw ?? ""), 10);
+  if (Number.isFinite(parsed) && parsed < 0) return 0; // explicit disable
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_AUDIT_RETENTION_DAYS;
+}
+
+/**
+ * Delete audit rows strictly older than `retentionDays`. Returns the number of
+ * rows removed. A retention that is not a positive finite number of days is a
+ * NO-OP (returns 0) — callers can never wipe the whole log by passing 0, a
+ * negative value, NaN, or forgetting to set a retention.
+ */
+export function pruneAudit(db: DatabaseSync, retentionDays: number): number {
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return 0;
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = new Date(cutoffMs).toISOString();
+  const result = db.prepare("DELETE FROM audit_events WHERE at < ?").run(cutoff);
+  return Number(result.changes);
 }
 
 function auditFromRow(row: Record<string, unknown>): AuditEvent {

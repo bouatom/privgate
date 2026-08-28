@@ -64,8 +64,14 @@ export type Device = {
   agentVersion: string;
   /** ISO timestamp of the last socket connect/close; '' when never seen. */
   lastSeenAt: string;
+  /** Last connecting source IP (from the WS handshake); '' when never captured. */
+  lastIp: string;
   /** ISO timestamp of a queued update request; '' when none is pending. */
   updateRequestedAt: string;
+  /** Update policy mode set directly on this device: 'auto'|'scheduled'|'manual'|'' (inherit). */
+  updateMode: string;
+  /** Daily scheduled time 'HH:MM' when updateMode==='scheduled'; '' otherwise. */
+  updateSchedule: string;
 };
 
 export type DeviceSummary = {
@@ -80,10 +86,29 @@ export type DeviceSummary = {
   agentVersion: string;
   lastSeenAt: string | null;
   updateRequestedAt: string | null;
+  /** Last connecting source IP (from the WS handshake); '' when never captured. */
+  lastIp: string;
   /** True while the device socket is live AND its GUI heartbeat is fresh. */
   uiAlive: boolean | null;
   /** ISO timestamp of the newest GUI heartbeat; null when none ever arrived. */
   uiLastSeenAt: string | null;
+  /** Update policy mode set directly on this device: 'auto'|'scheduled'|'manual'|'' (inherit). */
+  updateMode: string;
+  /** Daily scheduled time 'HH:MM' when updateMode==='scheduled'; '' otherwise. */
+  updateSchedule: string;
+};
+
+export type DeviceGroup = {
+  id: string;
+  name: string;
+  /** Higher number wins when a device belongs to multiple groups with policies. */
+  priority: number;
+  /** Group-level update policy mode: 'auto'|'scheduled'|'manual'|'' (not set → inherit). */
+  updateMode: string;
+  /** Daily scheduled time 'HH:MM' when updateMode==='scheduled'; '' otherwise. */
+  updateSchedule: string;
+  /** Device ids in this group. */
+  deviceIds: string[];
 };
 
 export type DirectorySettings = {

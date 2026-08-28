@@ -3,18 +3,25 @@ import { getDb } from "@/lib/db";
 import { issueSession, sessionCookie } from "@/lib/auth";
 import { assertPassword } from "@/lib/passwords";
 import { createPortalUser, portalNeedsSetup } from "@/lib/portal";
+import { bodyTooLarge, maxBodyBytes, readJsonWithLimit } from "@/lib/request-guard";
 
 export async function POST(req: Request) {
+  const maxBytes = maxBodyBytes();
+  if (bodyTooLarge(req, maxBytes)) {
+    return NextResponse.json({ error: "request body too large" }, { status: 413 });
+  }
   const db = getDb();
   if (!portalNeedsSetup(db)) {
     return NextResponse.json({ error: "already configured" }, { status: 409 });
   }
-  let body: { email?: string; password?: string; displayName?: string };
-  try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  const read = await readJsonWithLimit<{ email?: string; password?: string; displayName?: string }>(req, maxBytes);
+  if (!read.ok) {
+    return NextResponse.json(
+      { error: read.reason === "too_large" ? "request body too large" : "invalid json" },
+      { status: read.reason === "too_large" ? 413 : 400 },
+    );
   }
+  const body = read.value;
   const email = (body.email || "").trim();
   const displayName = (body.displayName || "").trim() || email.split("@")[0] || "Administrator";
   const problem = assertPassword(body.password);

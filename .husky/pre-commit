@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Bump patch version on commit (local development)
+node scripts/bump-version.js
+git add package.json version.json

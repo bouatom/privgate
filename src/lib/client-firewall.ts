@@ -61,6 +61,30 @@ exit /b 0
 }
 
 /**
+ * Canonical stop-stray.cmd shipped inside both client MSI flavors.
+ *
+ * The MSI ServiceControl stops the PrivGateBroker *service*, but the broker
+ * exe (PrivGate.Agent.exe) is also launched as a per-user tray process (Run\
+ * PrivGateTray). That tray keeps the exe image loaded/locked, so an in-place
+ * MajorUpgrade's file swap fails with error 1603 and the new exes never land —
+ * the exact WS-SOHO-03 failure. This helper force-terminates both images
+ * before the swap; the service is re-started afterwards by ServiceControl
+ * Start="install" and the tray relaunches on next sign-in. taskkill failures
+ * (nothing running) are tolerated via Return="ignore".
+ */
+export function stopStrayCmdContent(): string {
+  return `@echo off
+setlocal
+rem Kills PrivGate.Agent.exe and PrivGate.Helper.exe so the MSI can replace
+rem the binary files in place. Invoked by StopPrivGateStray on upgrade only.
+taskkill /f /im PrivGate.Agent.exe >nul 2>&1
+taskkill /f /im PrivGate.Helper.exe >nul 2>&1
+timeout /t 1 /nobreak >nul 2>&1
+exit /b 0
+`;
+}
+
+/**
  * PowerShell: create/refresh the outbound allow rule. Callers define
  * $InstallDir first (both emitted install scripts do).
  */

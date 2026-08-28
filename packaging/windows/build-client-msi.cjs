@@ -11,6 +11,12 @@ const AGENT_EXE = "PrivGate.Agent.exe";
 // firewall-agent.cmd next to this script; src/lib/client-msi.ts embeds the
 // same bytes for the live-built flavor so both behave identically).
 const FIREWALL_CMD_NAME = "firewall-agent.cmd";
+// Stray-terminator helper shipped inside the MSI (canonical content lives in
+// stop-stray.cmd next to this script; src/lib/client-msi.ts embeds the same
+// bytes via stopStrayCmdContent() for the live-built flavor so both behave
+// identically). It force-kills the tray/broker images that ServiceControl
+// cannot reach, letting the MajorUpgrade swap the exes in place.
+const STOP_CMD_NAME = "stop-stray.cmd";
 const API_BASE_SLOT = "http://privgate-api-base.invalid/".padEnd(256, "A");
 const TOKEN_SLOT = "privgate-enrollment-token.".padEnd(128, "T");
 
@@ -76,9 +82,23 @@ try {
     path.join(stage, FIREWALL_CMD_NAME),
     fs.readFileSync(path.join(__dirname, FIREWALL_CMD_NAME), "utf8").replace(/\r?\n/g, "\r\n"),
   );
+  // Stray-terminator run by StopPrivGateStray on upgrade (see stop-stray.cmd).
+  // cmd.exe misparses goto labels with LF-only endings, so ship CRLF too.
+  fs.writeFileSync(
+    path.join(stage, STOP_CMD_NAME),
+    fs.readFileSync(path.join(__dirname, STOP_CMD_NAME), "utf8").replace(/\r?\n/g, "\r\n"),
+  );
   const staged = fs.readdirSync(stage);
-  const compId = (name, i) => (name === FIREWALL_CMD_NAME ? "cmpFirewallAgent" : `cmp${i + 1}`);
-  const fileId = (name, i) => (name === FIREWALL_CMD_NAME ? "filFirewallAgent" : `fil${i + 1}`);
+  const compId = (name, i) => {
+    if (name === FIREWALL_CMD_NAME) return "cmpFirewallAgent";
+    if (name === STOP_CMD_NAME) return "cmpStopStray";
+    return `cmp${i + 1}`;
+  };
+  const fileId = (name, i) => {
+    if (name === FIREWALL_CMD_NAME) return "filFirewallAgent";
+    if (name === STOP_CMD_NAME) return "filStopStray";
+    return `fil${i + 1}`;
+  };
   const components = staged.map((name, i) => {
     const source = xmlEscape(path.join(stage, name));
     if (name === AGENT_EXE) {
@@ -93,6 +113,12 @@ try {
       // custom actions below (wixl supports only FileKey-based custom
       // actions; the WiX fire: extension is not available in wixl).
       return `          <Component Id="${compId(name, i)}" Guid="9d2c5b7e-6a4f-4e3b-8c1d-2f0a5b6c7d8e">
+            <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
+          </Component>`;
+    }
+    if (name === STOP_CMD_NAME) {
+      // Stable id referenced by the StopPrivGateStray custom action below.
+      return `          <Component Id="${compId(name, i)}" Guid="3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90">
             <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
           </Component>`;
     }
@@ -132,9 +158,11 @@ ${refs}
     </Feature>
     <CustomAction Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add" Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="RemoveAgentFirewall" FileKey="filFirewallAgent" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="StopPrivGateStray" FileKey="filStopStray" ExeCommand="" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"</Custom>
       <Custom Action="AddAgentFirewall" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>

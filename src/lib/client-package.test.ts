@@ -200,12 +200,42 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(cjs).toContain('Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add"');
     expect(cjs).toMatch(/<Custom Action="AddAgentFirewall" After="InstallFiles">NOT REMOVE~="ALL"<\/Custom>/);
     expect(cjs).toMatch(/<Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"<\/Custom>/);
+    // Both client MSI flavors must stop stray tray/broker images (Run\
+    // PrivGateTray keeps PrivGate.Agent.exe locked, so a MajorUpgrade's file
+    // swap fails with 1603 unless the images are killed first). The helper
+    // must use After="InstallValidate" (NOT Before) or wixl raises 2731
+    // "Selection Manager not initialized" because the FileKey resolves too
+    // early. Keep the stable component/file ids in sync with client-msi.ts.
+    expect(cjs).toContain("stop-stray.cmd");
+    expect(cjs).toContain('Id="StopPrivGateStray" FileKey="filStopStray" ExeCommand="" Execute="deferred" Impersonate="no" Return="ignore"');
+    expect(cjs).toMatch(/<Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"<\/Custom>/);
+    // Stable ids + Component GUID for the stop-stray helper (id strings are
+    // interpolated into the component template, so assert the id literals and
+    // the GUID that pairs stop-stray with StopPrivGateStray).
+    expect(cjs).toContain('"cmpStopStray"');
+    expect(cjs).toContain('"filStopStray"');
+    expect(cjs).toContain("3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90");
+    // Taskkills both the broker and helper images, tolerating absence.
+    const stopCmd = readFileSync(
+      path.resolve(__dirname, "../../packaging/windows/stop-stray.cmd"),
+      "utf8",
+    );
+    expect(stopCmd).toContain("taskkill /f /im PrivGate.Agent.exe");
+    expect(stopCmd).toContain("taskkill /f /im PrivGate.Helper.exe");
+    expect(stopCmd).toContain("timeout /t 1 /nobreak");
     const msiTs = readFileSync(path.resolve(__dirname, "./client-msi.ts"), "utf8");
     expect(msiTs).toContain("PrivGateTray");
     expect(msiTs).toContain("CurrentVersion\\\\Run");
     expect(msiTs).toContain("firewall-agent.cmd");
     expect(msiTs).toContain('Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add"');
     expect(msiTs).toMatch(/<Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"<\/Custom>/);
+    // Live flavor parity: identical stop-stray custom action and stable ids.
+    expect(msiTs).toContain("stop-stray.cmd");
+    expect(msiTs).toContain('Id="StopPrivGateStray" FileKey="filStopStray" ExeCommand="" Execute="deferred" Impersonate="no" Return="ignore"');
+    expect(msiTs).toMatch(/<Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"<\/Custom>/);
+    expect(msiTs).toContain('"cmpStopStray"');
+    expect(msiTs).toContain('"filStopStray"');
+    expect(msiTs).toContain("3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90");
   });
 
   it("treats MSI as available only when the packaged file exists", () => {

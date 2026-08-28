@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { GET } from "@/app/api/healthz/route";
+import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
+
+beforeEach(() => {
+  disableRepoVersionManifest();
+});
 
 afterEach(() => {
-  delete process.env.PRIVGATE_VERSION;
+  resetVersionEnv();
   resetRealtimeForTests();
   resetDbForTests(":memory:");
 });

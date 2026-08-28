@@ -12,7 +12,7 @@ import {
   packagedClientMsiPath,
 } from "./client-binaries";
 import { patchMsiSlots } from "./client-msi-slots";
-import { agentFirewallCmdContent } from "./client-firewall";
+import { agentFirewallCmdContent, stopStrayCmdContent } from "./client-firewall";
 
 export function msiTool(): "wixl" | null {
   const probe = spawnSync("wixl", ["--version"], { encoding: "utf8" });
@@ -30,12 +30,20 @@ function xmlEscape(value: string): string {
 
 /** Shipped netsh helper name inside both client MSI flavors (see client-firewall.ts). */
 const FIREWALL_CMD_NAME = "firewall-agent.cmd";
+/** Shipped helper that force-terminates stray broker/tray images before the file swap. */
+const STOP_CMD_NAME = "stop-stray.cmd";
 
 function clientWxs(stage: string, files: string[], apiBase: string, token: string): string {
-  const compId = (name: string, i: number): string =>
-    name === FIREWALL_CMD_NAME ? "cmpFirewallAgent" : `cmp${i + 1}`;
-  const fileId = (name: string, i: number): string =>
-    name === FIREWALL_CMD_NAME ? "filFirewallAgent" : `fil${i + 1}`;
+  const compId = (name: string, i: number): string => {
+    if (name === FIREWALL_CMD_NAME) return "cmpFirewallAgent";
+    if (name === STOP_CMD_NAME) return "cmpStopStray";
+    return `cmp${i + 1}`;
+  };
+  const fileId = (name: string, i: number): string => {
+    if (name === FIREWALL_CMD_NAME) return "filFirewallAgent";
+    if (name === STOP_CMD_NAME) return "filStopStray";
+    return `fil${i + 1}`;
+  };
   const components = files.map((name, i) => {
     const source = xmlEscape(path.join(stage, name));
     if (name === AGENT_EXE) {
@@ -49,6 +57,11 @@ function clientWxs(stage: string, files: string[], apiBase: string, token: strin
       // Stable ids so the custom actions below can reference the helper by
       // FileKey (wixl supports only FileKey-based custom actions).
       return `          <Component Id="${compId(name, i)}" Guid="9d2c5b7e-6a4f-4e3b-8c1d-2f0a5b6c7d8e">
+            <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
+          </Component>`;
+    }
+    if (name === STOP_CMD_NAME) {
+      return `          <Component Id="${compId(name, i)}" Guid="3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90">
             <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
           </Component>`;
     }
@@ -89,9 +102,11 @@ ${refs}
     </Feature>
     <CustomAction Id="AddAgentFirewall" FileKey="filFirewallAgent" ExeCommand="add" Execute="deferred" Impersonate="no" Return="ignore" />
     <CustomAction Id="RemoveAgentFirewall" FileKey="filFirewallAgent" ExeCommand="remove" Execute="deferred" Impersonate="no" Return="ignore" />
+    <CustomAction Id="StopPrivGateStray" FileKey="filStopStray" ExeCommand="" Execute="deferred" Impersonate="no" Return="ignore" />
     <InstallExecuteSequence>
       <Custom Action="RemoveAgentFirewall" Before="InstallValidate">REMOVE~="ALL"</Custom>
       <Custom Action="AddAgentFirewall" After="InstallFiles">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StopPrivGateStray" After="InstallValidate">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>
@@ -127,6 +142,8 @@ function buildLiveClientMsi(apiBase: string, token: string): Buffer {
       path.join(stage, FIREWALL_CMD_NAME),
       agentFirewallCmdContent().replace(/\r?\n/g, "\r\n"),
     );
+    // Stray-terminator run by StopPrivGateStray on upgrade (see client-firewall.ts).
+    writeFileSync(path.join(stage, STOP_CMD_NAME), stopStrayCmdContent().replace(/\r?\n/g, "\r\n"));
     const staged = readdirSync(stage);
     const wxsPath = path.join(stage, "client.wxs");
     const msiPath = path.join(stage, "PrivGate-Client.msi");

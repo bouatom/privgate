@@ -3,10 +3,12 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { Policy } from "@/lib/policy";
+import type { DeviceGroupModel } from "@/lib/models";
 import { DeviceDetail, type DeviceDetailModel } from "./device-detail";
 import { DeviceDrawer } from "./device-drawer";
 import { DeployToggle } from "./deploy-toggle";
 import { FleetTable, type FleetDevice } from "./fleet-table";
+import { UpdateGroupsPanel } from "./update-groups-panel";
 
 type BulkSummary = {
   pushed: number;
@@ -30,6 +32,7 @@ export function DevicesClient({
   canUpdate,
   currentVersion,
   policies,
+  groups,
   consoleUrl,
   binariesReady,
   msiReady,
@@ -43,6 +46,7 @@ export function DevicesClient({
   canUpdate: boolean;
   currentVersion: string;
   policies: Policy[];
+  groups: DeviceGroupModel[];
   consoleUrl: string;
   binariesReady: boolean;
   msiReady: boolean;
@@ -131,6 +135,8 @@ export function DevicesClient({
         </div>
       ) : null}
 
+      {canUpdate ? <UpdateGroupsPanel groups={groups} devices={devices} /> : null}
+
       <div className="panel" style={{ padding: 0 }}>
         <FleetTable
           devices={devices}
@@ -150,6 +156,7 @@ export function DevicesClient({
             policies={policies}
             canManageAllowlists={canManageAllowlists}
             canApproveRequests={canApproveRequests}
+            canUpdate={canUpdate}
           />
         ) : (
           <p className="lede">Loading this computer&apos;s details…</p>

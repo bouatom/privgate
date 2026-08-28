@@ -5,12 +5,28 @@ import type { ZipEntry } from "./zip";
 import { registerArpSnippet, uninstallScript } from "./client-uninstall";
 import { agentFirewallAllowSnippet } from "./client-firewall";
 
+// Hosts that an enrolled broker on another machine can never reach. If a
+// candidate ApiBase resolves here it is useless to a remote agent (it is either
+// the console listening on a wildcard address or a loopback bind), so we must
+// not bake it into an installer — doing so is what wedged WS-SOHO-03 into a
+// self-reinforcing `0.0.0.0:3001` config loop (see the update-sweep field test).
+const NON_ROUTABLE_HOSTS = new Set(["0.0.0.0", "::", "[::]", "127.0.0.1", "::1", "localhost"]);
+
+/**
+ * Coerce a candidate ApiBase into a routable http(s) origin.
+ *
+ * `origin` is the ultimate fallback. `raw` is a caller/request-supplied value
+ * (e.g. echoed from the agent's own config) that must never win when it is
+ * empty, non-http(s), or points at a wildcard/loopback host — in those cases we
+ * drop it and use `origin`.
+ */
 export function safeApiBase(raw: string | undefined, origin: string): string {
   const fallback = origin.replace(/\/$/, "");
-  const candidate = (raw || fallback).trim();
+  const candidate = (raw || "").trim() || fallback;
   try {
     const url = new URL(candidate);
     if (url.protocol !== "http:" && url.protocol !== "https:") return fallback;
+    if (NON_ROUTABLE_HOSTS.has(url.hostname.toLowerCase())) return fallback;
     return url.origin;
   } catch {
     return fallback;

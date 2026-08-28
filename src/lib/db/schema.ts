@@ -46,6 +46,19 @@ export function migrate(db: DatabaseSync) {
       secret_enc TEXT NOT NULL,
       enrolled_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS device_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      priority INTEGER NOT NULL DEFAULT 0,
+      update_mode TEXT NOT NULL DEFAULT '',
+      update_schedule TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS device_group_members (
+      group_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      PRIMARY KEY (group_id, device_id)
+    );
     CREATE TABLE IF NOT EXISTS requests (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -139,6 +152,9 @@ export function migrate(db: DatabaseSync) {
   ensureColumn(db, "devices", "agent_version", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "devices", "last_seen_at", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "devices", "update_requested_at", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "devices", "update_mode", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "devices", "update_schedule", "TEXT NOT NULL DEFAULT ''");
+  ensureColumn(db, "devices", "last_ip", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "requests", "risk_level", "TEXT NOT NULL DEFAULT 'medium'");
   ensureColumn(db, "requests", "risk_reasons", "TEXT NOT NULL DEFAULT '[]'");
   ensureColumn(db, "oauth_state", "kind", "TEXT NOT NULL DEFAULT 'pkce'");
@@ -161,6 +177,7 @@ export function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_jit_grants_device ON jit_grants(device_id);
     CREATE INDEX IF NOT EXISTS idx_jit_grants_user ON jit_grants(user_id);
     CREATE INDEX IF NOT EXISTS idx_jit_grants_expires ON jit_grants(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_device_group_members_device ON device_group_members(device_id);
   `);
 }
 

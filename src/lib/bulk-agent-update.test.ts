@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { listAudit, resetDbForTests, enrollDevice, setDeviceAgentVersion } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { handleAgentRpc } from "./realtime/rpc";
 import { deviceSecretKey } from "./secrets";
 import { issueSession } from "./auth";
 import { createPortalUser } from "./portal";
+import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
 
 const jar = vi.hoisted(() => ({ value: "" }));
 vi.mock("next/headers", () => ({
@@ -30,9 +31,13 @@ async function login(email: string) {
   jar.value = await issueSession({ email, name: "Test Admin" });
 }
 
+beforeEach(() => {
+  disableRepoVersionManifest();
+});
+
 afterEach(async () => {
   jar.value = "";
-  delete process.env.PRIVGATE_VERSION;
+  resetVersionEnv();
   resetRealtimeForTests();
   resetDbForTests(":memory:");
 });

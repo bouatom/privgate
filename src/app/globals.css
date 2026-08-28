@@ -573,6 +573,143 @@ th.sortable:hover { color: var(--amber-2); }
 }
 .fleet-host:hover { color: var(--amber-2); }
 
+/* Per-row effective update-policy subtitle under the agent pill (Devices). */
+.policy-note {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Update policy value display (device drawer + group cards). */
+.policy-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.policy-editor {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.policy-editor label {
+  display: block;
+  margin-bottom: 6px;
+}
+.policy-editor-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.policy-editor-row select,
+.policy-editor-row input[type="time"] {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.policy-editor .ok { margin: 8px 0 0; }
+.policy-editor .err { margin: 8px 0 0; }
+
+/* Device-group editor (update policies). */
+.group-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.group-create-row {
+  display: flex;
+  gap: 8px;
+}
+.group-create-row input {
+  width: min(260px, 60vw);
+}
+.group-list { margin-top: 12px; }
+.group-card {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.group-card:first-child { border-top: 0; }
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.group-head > input[type="text"] {
+  width: auto;
+  flex: 1 1 160px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.inline-field input[type="number"] {
+  width: 72px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.group-head .spacer { flex: 1; }
+.group-policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.group-policy .policy-caption {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.group-policy select,
+.group-policy input[type="time"] {
+  width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.group-members {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+.member-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.member-add select {
+  width: 100%;
+  max-width: 320px;
+}
+.member-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.member-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.member-list li:last-child { border-bottom: 0; }
+
 /* Compact deploy bar: method chips + download, details behind a disclosure. */
 .deploy-bar {
   display: flex;

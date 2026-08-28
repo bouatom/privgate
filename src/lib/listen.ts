@@ -86,6 +86,51 @@ export function advertisedIpv4Addresses(): string[] {
   return [...new Set(out)].sort();
 }
 
+/**
+ * The agent origin the console should bake into installers and update MSIs.
+ *
+ * This is intentionally derived from the console's OWN configuration, never
+ * from an inbound request: an enrolled broker requests the update from
+ * whatever ApiBase it happens to hold, so echoing the request origin back can
+ * perpetuate a stale/wildcard value (the WS-SOHO-03 `0.0.0.0:3001` loop).
+ * Priority: explicit PRIVGATE_AGENT_ORIGIN → PRIVGATE_PUBLIC_ORIGIN rewritten
+ * to the agent port → first advertised LAN IPv4 + agent port → bind host →
+ * loopback.
+ */
+export function consoleAgentOrigin(env: Env = process.env): string {
+  const explicit = (env.PRIVGATE_AGENT_ORIGIN || "").trim();
+  if (explicit) {
+    try {
+      return new URL(explicit).origin;
+    } catch {
+      // Fall through to lower-priority derivation.
+    }
+  }
+  const cfg = listenConfig(env);
+
+  const publicOrigin = (env.PRIVGATE_PUBLIC_ORIGIN || "").trim();
+  if (publicOrigin) {
+    try {
+      const url = new URL(publicOrigin);
+      url.port = String(cfg.agentPort);
+      return url.origin;
+    } catch {
+      // Fall through.
+    }
+  }
+
+  if (isWildcardBind(cfg.bind)) {
+    const first = advertisedIpv4Addresses()[0];
+    if (first) return `http://${first}:${cfg.agentPort}`;
+  }
+  const host = cfg.bind.trim();
+  if (host && host !== "0.0.0.0" && host !== "::" && !isLoopbackBind(host)) {
+    const bracketed = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+    return `http://${bracketed}:${cfg.agentPort}`;
+  }
+  return `http://127.0.0.1:${cfg.agentPort}`;
+}
+
 export function advertisedUrls(port: number, bind: string): string[] {
   const urls = [`http://127.0.0.1:${port}`];
   if (isLoopbackBind(bind)) return urls;

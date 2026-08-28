@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { listAudit, listAuditActions, listAuditCount, resetDbForTests } from "./index";
+import { DEFAULT_AUDIT_RETENTION_DAYS, pruneAudit, resolveAuditRetention } from "./audit";
 
 function insertEvent(
   db: ReturnType<typeof resetDbForTests>,
@@ -127,5 +128,68 @@ describe("listAuditCount", () => {
       seen += listAudit(db, { limit: pageSize, offset: page * pageSize }).length;
     }
     expect(seen).toBe(total);
+  });
+});
+
+describe("pruneAudit", () => {
+  function dayAgo(days: number): string {
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  it("removes rows older than the retention and keeps newer ones", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    insertEvent(db, dayAgo(400), "ada", "old.a");
+    insertEvent(db, dayAgo(200), "bob", "mid.b");
+    insertEvent(db, dayAgo(10), "cat", "recent.c");
+
+    const removed = pruneAudit(db, 365);
+
+    expect(removed).toBe(1);
+    const remaining = listAudit(db).map((e) => e.action);
+    expect(remaining).toEqual(["recent.c", "mid.b"]); // newest-first ordering preserved
+  });
+
+  it("keeps rows younger than the retention and removes clearly-older ones", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    insertEvent(db, dayAgo(364), "a", "just-under"); // < 365 days old → survives
+    insertEvent(db, dayAgo(366), "b", "just-over"); // > 365 days old → pruned
+
+    expect(pruneAudit(db, 365)).toBe(1);
+    expect(listAudit(db).map((e) => e.action)).toEqual(["just-under"]);
+  });
+
+  it("returns 0 and deletes nothing when retention is unset (0), negative, or NaN", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    insertEvent(db, dayAgo(1000), "ada", "keeper");
+    expect(pruneAudit(db, 0)).toBe(0);
+    expect(pruneAudit(db, -5)).toBe(0);
+    expect(pruneAudit(db, Number.NaN)).toBe(0);
+    expect(listAudit(db).length).toBe(1); // nothing was ever removed
+  });
+
+  it("removes nothing when there are no rows old enough", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    insertEvent(db, dayAgo(1), "ada", "fresh");
+    expect(pruneAudit(db, 30)).toBe(0);
+    expect(listAudit(db).length).toBe(1);
+  });
+});
+
+describe("resolveAuditRetention", () => {
+  it("defaults to a sane retention when input is missing or invalid", () => {
+    expect(resolveAuditRetention(undefined)).toBe(DEFAULT_AUDIT_RETENTION_DAYS);
+    expect(resolveAuditRetention("")).toBe(DEFAULT_AUDIT_RETENTION_DAYS);
+    expect(resolveAuditRetention("not-a-number")).toBe(DEFAULT_AUDIT_RETENTION_DAYS);
+    expect(resolveAuditRetention(Number.NaN)).toBe(DEFAULT_AUDIT_RETENTION_DAYS);
+  });
+
+  it("honors a configured positive value (number or string)", () => {
+    expect(resolveAuditRetention(30)).toBe(30);
+    expect(resolveAuditRetention("90")).toBe(90);
+  });
+
+  it("returns 0 only for an explicit negative 'disabled' value", () => {
+    expect(resolveAuditRetention(-1)).toBe(0);
+    expect(resolveAuditRetention("-1")).toBe(0);
   });
 });

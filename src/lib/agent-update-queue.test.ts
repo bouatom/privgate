@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listAudit, resetDbForTests } from "./db";
 import { setDeviceAgentVersion, setDeviceUpdateRequestedAt } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
@@ -12,6 +12,7 @@ import {
   reconcileReportedVersion,
 } from "./agent-update";
 import { sanitizeClientVersion } from "./client-version";
+import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
 
 const device = "dev-lab-01";
 
@@ -29,8 +30,12 @@ function deviceRow(db: ReturnType<typeof resetDbForTests>, id = device) {
   return db.prepare("SELECT * FROM devices WHERE id = ?").get(id) as Record<string, string>;
 }
 
+beforeEach(() => {
+  disableRepoVersionManifest();
+});
+
 afterEach(() => {
-  delete process.env.PRIVGATE_VERSION;
+  resetVersionEnv();
   resetRealtimeForTests();
   resetDbForTests(":memory:");
 });
