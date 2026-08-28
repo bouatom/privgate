@@ -1,21 +1,16 @@
-import { compareVersions, sanitizeClientVersion } from "./client-version";
+import { compareVersions, sanitizeClientVersion, compareFullVersions } from "./client-version";
 
 /**
  * Self-update domain logic — pure, network-free, fully unit-testable.
  *
- * Versioning discipline (starts now):
- *  - 3-segment versions only (0.2.1, 0.2.13). No build metadata in tags.
- *  - OFFICIAL channel: GitHub releases with prerelease = false.
- *  - NIGHTLY channel: every release including prereleases; nightlies are
- *    published as PRERELEASES, so this channel sees them first.
- *  - A nightly may be published under a ROLLING tag (the git ref is literally
- *    "nightly"). Such releases carry no number in the tag, so their version
- *    comes from the x.y.z stamped into their asset filenames instead.
- *  - Release assets follow packaging/build.sh naming:
- *      PrivGate-Console-<v>-win-x64.msi / .exe
- *      PrivGate-Console-<v>-macos-{x64|arm64}.pkg
- *      privgate-console_<v>_amd64.deb
- *    plus a sha256sums.txt covering all artifacts of that release.
+ * Versioning discipline:
+ *  - Official channel: 3-segment versions (0.3.2, 0.3.3, 0.3.4) from non-prerelease GitHub releases.
+ *  - Nightly channel: 4-segment versions (0.3.2.1, 0.3.2.2, 0.3.2.3) from prerelease GitHub releases.
+ *    Nightlies are published as PRERELEASES so this channel sees them first.
+ *  - Asset naming:
+ *      Official: PrivGate-Console-<x.y.z>-win-x64.msi / .exe
+ *      Nightly:  PrivGate-Console-<x.y.z.n>-win-x64.msi / .exe
+ *      Plus sha256sums.txt covering all artifacts of that release.
  */
 
 export const GITHUB_REPO = "bouatom/privgate";
@@ -63,12 +58,14 @@ function archToken(arch: string): "x64" | "arm64" | null {
 }
 
 /**
- * Numeric core of a tag ("v0.2.13", "0.2.1"). Returns null for non-version
+ * Numeric core of a tag ("v0.3.2", "v0.3.2.1", "0.3.2"). Returns null for non-version
  * tags so label-only releases never win a channel pick.
+ * Accepts both 3-segment (official) and 4-segment (nightly) versions.
  */
 export function tagVersion(tag: unknown): string | null {
   const raw = String(tag ?? "").trim();
-  const match = /^v?(\d+\.\d+(\.\d+)?)([.-].*)?$/i.exec(raw);
+  // Match vX.Y.Z or vX.Y.Z.N (optional 4th segment for nightlies)
+  const match = /^v?(\d+\.\d+\.\d+(?:\.\d+)?)(?:[.-].*)?$/i.exec(raw);
   if (!match) return null;
   return sanitizeClientVersion(match[1]);
 }
@@ -103,12 +100,12 @@ function matchPlatformAsset(release: GitHubRelease, platform: PlatformKey, arch:
   const patterns: Array<{ re: RegExp; prefer?: number }> =
     platform === "windows"
       ? [
-          { re: /^PrivGate-Console-(\d+\.\d+\.\d+)-win-x64\.msi$/, prefer: 0 },
-          { re: /^PrivGate-Console-(\d+\.\d+\.\d+)-win-x64\.exe$/, prefer: 1 },
+          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.msi$/, prefer: 0 },
+          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.exe$/, prefer: 1 },
         ]
       : platform === "macos"
-        ? [{ re: new RegExp(`^PrivGate-Console-(\\d+\\.\\d+\\.\\d+)-macos-${arch}\\.pkg$`) }]
-        : [{ re: /^privgate-console_(\d+\.\d+\.\d+)_amd64\.deb$/ }];
+        ? [{ re: new RegExp(`^PrivGate-Console-(\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)-macos-${arch}\\.pkg$`) }]
+        : [{ re: /^privgate-console_(\d+\.\d+\.\d+(?:\.\d+)?)_amd64\.deb$/ }];
 
   let best: { match: AssetMatch; prefer: number } | null = null;
   for (const asset of assets) {
@@ -128,10 +125,9 @@ function matchPlatformAsset(release: GitHubRelease, platform: PlatformKey, arch:
  * running platform/arch. Drafts are invisible to unauthenticated API calls but
  * are still excluded defensively.
  *
- * Per-release version resolution: the tag first ("v0.2.2-n.202608250429");
- * when the tag is not version-shaped (rolling "nightly" ref), the x.y.z
- * stamped into the platform asset filename decides. Releases carrying neither
- * stay invisible, so label-only releases never win a channel pick.
+ * Per-release version resolution: the tag first ("v0.3.2.n.1");
+ * when the tag is not version-shaped, the version stamped into the platform
+ * asset filename decides. Releases carrying neither stay invisible.
  */
 export function pickLatestForPlatform(
   releases: unknown,
@@ -160,11 +156,17 @@ export function pickLatestForPlatform(
         row.version !== null && row.matched !== null,
     );
 
-  // Highest version first; on equal numbers the prerelease wins for nightly
-  // (the nightly rebuild of the same base version is the fresher artifact).
+  // Sort by version: highest first. For nightly channel, use full version comparison
+  // (includes nightly build counter). For official, use base version comparison.
   rows.sort((a, b) => {
-    const byVersion = compareVersions(b.version, a.version);
+    let byVersion: number;
+    if (opts.channel === "nightly") {
+      byVersion = compareFullVersions(b.version, a.version);
+    } else {
+      byVersion = compareVersions(b.version, a.version);
+    }
     if (byVersion !== 0) return byVersion;
+    // For nightly, prerelease (true) wins for equal base (newer nightly rebuild)
     return Number(b.release.prerelease === true) - Number(a.release.prerelease === true);
   });
 
@@ -188,6 +190,9 @@ export function pickLatestForPlatform(
 }
 
 /** True when the candidate is strictly newer than the installed console. */
-export function isUpdateAvailable(candidateVersion: string, installedVersion: string): boolean {
+export function isUpdateAvailable(candidateVersion: string, installedVersion: string, channel: UpdateChannel = "official"): boolean {
+  if (channel === "nightly") {
+    return compareFullVersions(candidateVersion, installedVersion) > 0;
+  }
   return compareVersions(candidateVersion, installedVersion) > 0;
 }

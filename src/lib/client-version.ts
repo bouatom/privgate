@@ -5,9 +5,20 @@ import path from "node:path";
 /**
  * The agent build this server ships. Must match the MSI ProductVersion so
  * MajorUpgrade treats a pushed update as a newer install (see wxs MajorUpgrade).
+ * Returns 3-segment version for MSI compatibility (e.g., "0.3.2").
  */
 export function currentClientVersion(): string {
   return sanitizeClientVersion(getEffectiveVersion());
+}
+
+/**
+ * Returns the full version string including nightly build counter if present
+ * (e.g., "0.3.2.1" for nightly, "0.3.2" for official).
+ */
+export function currentFullVersion(): string {
+  const raw = getEffectiveVersion();
+  const cleaned = String(raw ?? "").replace(/^v/i, "").split(/[-+]/)[0].trim();
+  return cleaned || "0.2.1";
 }
 
 /**
@@ -47,7 +58,7 @@ function getEffectiveVersion(): string {
   return "0.2.1";
 }
 
-/** Keep only x[.y[.z]] — mirrors packaging/windows sanitization. */
+/** Keep only x[.y[.z]] — mirrors packaging/windows sanitization for MSI. */
 export function sanitizeClientVersion(raw: unknown): string {
   const cleaned = String(raw ?? "")
     .replace(/^v/i, "")
@@ -57,6 +68,11 @@ export function sanitizeClientVersion(raw: unknown): string {
   if (parts.length === 0) return "0.2.1";
   while (parts.length < 3) parts.push("0");
   return parts.slice(0, 3).join(".");
+}
+
+/** Returns the base version (first 3 segments) for a version string. */
+export function getBaseVersion(raw: unknown): string {
+  return sanitizeClientVersion(raw);
 }
 
 /** -1 when a < b, 0 when equal, 1 when a > b. Numeric per segment. */
@@ -69,6 +85,26 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+/**
+ * Compare full versions including nightly build counter (4th segment).
+ * Returns -1 when a < b, 0 when equal, 1 when a > b.
+ * For nightly versions, compares base version first, then nightly number.
+ */
+export function compareFullVersions(a: string, b: string): number {
+  const pa = parseFullVersionParts(a);
+  const pb = parseFullVersionParts(b);
+  
+  // Compare base version (first 3 segments)
+  for (let i = 0; i < 3; i += 1) {
+    if (pa[i] !== pb[i]) return pa[i] < pb[i] ? -1 : 1;
+  }
+  
+  // Compare nightly build counter (4th segment) if both have it
+  if (pa[3] !== pb[3]) return pa[3] < pb[3] ? -1 : 1;
+  
+  return 0;
+}
+
 function parseVersionParts(value: string): [number, number, number] {
   const parts = sanitizeClientVersion(value)
     .split(".")
@@ -76,8 +112,29 @@ function parseVersionParts(value: string): [number, number, number] {
   return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
 }
 
+function parseFullVersionParts(value: string): [number, number, number, number] {
+  const cleaned = String(value ?? "").replace(/^v/i, "").split(/[-+]/)[0].trim();
+  const parts = cleaned.split(".").filter((p) => /^\d+$/.test(p));
+  while (parts.length < 4) parts.push("0");
+  return [
+    Number.parseInt(parts[0] || "0", 10),
+    Number.parseInt(parts[1] || "0", 10),
+    Number.parseInt(parts[2] || "0", 10),
+    Number.parseInt(parts[3] || "0", 10),
+  ];
+}
+
 /** True when the device should be offered the update the server can serve. */
 export function updateAvailable(deviceVersion: string, availableVersion: string): boolean {
   if (!deviceVersion.trim()) return false; // unknown → never auto-flag; admin decides
   return compareVersions(sanitizeClientVersion(deviceVersion), sanitizeClientVersion(availableVersion)) < 0;
+}
+
+/**
+ * For nightly channel: checks if a nightly build is newer than the installed nightly.
+ * Compares full version (including nightly counter).
+ */
+export function nightlyUpdateAvailable(deviceVersion: string, availableVersion: string): boolean {
+  if (!deviceVersion.trim() || !availableVersion.trim()) return false;
+  return compareFullVersions(deviceVersion, availableVersion) < 0;
 }
