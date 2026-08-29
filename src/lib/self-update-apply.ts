@@ -15,6 +15,7 @@ import {
 } from "./self-update-status";
 import { parseSha256Sums, type UpdateCandidate } from "./self-update";
 import { buildUpdaterCommand, resolveUpdaterScript } from "./self-update-command";
+import { handoffViaScheduledTask, WINDOWS_UPDATE_TASK, type RunProcess } from "./self-update-handoff";
 
 // Re-export the command builders so existing importers of self-update-apply
 // (updates page, tests) keep working unchanged.
@@ -24,8 +25,10 @@ export { buildUpdaterCommand, resolveUpdaterScript, resolveWindowsPowershell } f
  * Self-update APPLY flow (one click).
  *
  *   verify sums → download asset → re-verify sha256 → respond 202 →
- *   spawn the platform updater DETACHED → web process dies mid-apply →
- *   updater stops the service, swaps files, starts it again, health-checks.
+ *   hand off to the platform updater (Windows: SYSTEM scheduled task so
+ *   `taskkill /T` on the WinSW wrapper cannot kill it; Unix: detached
+ *   child) → web process dies mid-apply → updater stops the service, swaps
+ *   files, starts it again, health-checks.
  *
  * Every step appends `==>` progress lines to <dataDir>/updates/apply.log so a
  * silent handoff is diagnosable afterwards (the web process is a casualty by
@@ -36,15 +39,30 @@ export { buildUpdaterCommand, resolveUpdaterScript, resolveWindowsPowershell } f
  */
 
 const DOWNLOAD_CAP_BYTES = 600 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 8 * 60_000;
+const PROGRESS_EVERY_BYTES = 8 * 1024 * 1024;
 
-async function streamToFile(url: string, destPath: string, fetchImpl: FetchLike): Promise<number> {
-  const res = await fetchImpl(url, { headers: { "User-Agent": "privgate-console-self-update" } });
+async function streamToFile(
+  url: string,
+  destPath: string,
+  fetchImpl: FetchLike,
+  onProgress?: (bytes: number) => void,
+): Promise<number> {
+  const res = await fetchImpl(url, {
+    headers: { "User-Agent": "privgate-console-self-update" },
+    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+  });
   if (!res.ok || !res.body) throw new Error(`download failed (HTTP ${res.status})`);
   const source = Readable.fromWeb(res.body as import("node:stream/web").ReadableStream);
   let total = 0;
+  let lastReported = 0;
   source.on("data", (chunk: Buffer) => {
     total += chunk.length;
     if (total > DOWNLOAD_CAP_BYTES) source.destroy(new Error("download exceeds size cap"));
+    if (onProgress && total - lastReported >= PROGRESS_EVERY_BYTES) {
+      lastReported = total;
+      onProgress(total);
+    }
   });
   await new Promise<void>((resolve, reject) => {
     source.on("error", reject);
@@ -79,9 +97,11 @@ export type ApplyDeps = {
   actor: string;
   candidate: UpdateCandidate;
   spawnImpl?: SpawnLike;
+  runImpl?: RunProcess;
   fetchImpl?: FetchLike;
   env?: Record<string, string | undefined>;
   now?: () => number;
+  platform?: NodeJS.Platform;
 };
 
 /** Progress lines share the updater's log fd; logging must never break the apply. */
@@ -105,6 +125,7 @@ function errorMessage(error: unknown): string {
 export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> {
   const env = deps.env ?? process.env;
   const now = deps.now ?? Date.now;
+  const platform = deps.platform ?? process.platform;
   const paths = applyPaths(env);
 
   if (!deps.candidate.sumsUrl) {
@@ -153,11 +174,27 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     logFd = fs.openSync(paths.logFile, "a");
     fs.writeSync(logFd, `==> PrivGate self-update to ${deps.candidate.version} (${deps.candidate.assetName})\n`);
     logLine(logFd, `==> download start ${deps.candidate.url}`);
+    await fsp.writeFile(
+      paths.stateFile,
+      JSON.stringify(
+        {
+          target: deps.candidate.version,
+          asset: deps.candidate.assetName,
+          sha256: "",
+          startedAt: new Date().toISOString(),
+          logFile: paths.logFile,
+        } satisfies ApplyState,
+        null,
+        2,
+      ),
+    );
 
     let verifiedSha256 = "";
     try {
       const dlStart = Date.now();
-      const bytes = await streamToFile(deps.candidate.url, installerPath, deps.fetchImpl ?? fetch);
+      const bytes = await streamToFile(deps.candidate.url, installerPath, deps.fetchImpl ?? fetch, (n) =>
+        logLine(logFd!, `==> download progress ${n} bytes`),
+      );
       const dlMs = Date.now() - dlStart;
       logLine(logFd, `==> downloaded ${bytes} bytes in ${dlMs}ms (${deps.candidate.assetName})`);
       await streamToFile(deps.candidate.sumsUrl, sumsPath, deps.fetchImpl ?? fetch);
@@ -191,7 +228,7 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
       };
     }
 
-    const scriptPath = resolveUpdaterScript(process.cwd());
+    const scriptPath = resolveUpdaterScript(process.cwd(), platform);
     if (!scriptPath) {
       closeLog();
       await fsp.rm(paths.stateFile, { force: true }).catch(() => {});
@@ -205,7 +242,7 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     }
 
     const command = buildUpdaterCommand({
-      platform: process.platform,
+      platform,
       installerPath,
       scriptPath,
       sha256: verifiedSha256,
@@ -230,27 +267,37 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
     };
     await fsp.writeFile(paths.stateFile, JSON.stringify(newState, null, 2));
 
-    // Explicit cwd + full env passthrough: services may run with a minimal
-    // default working directory, and the child needs the service environment.
-    //
-    // Detach on Unix (the updater must outlive the web process it stops), but
-    // NEVER on Windows: DETACHED_PROCESS (CREATE_NEW_PROCESS_GROUP) breaks the
-    // PowerShell child — it starts but emits nothing and never writes its
-    // required "==> updater start" line, so apply.log is left stuck at the
-    // handoff marker and status drops to "stale" (proven on prod box 10.0.2.25:
-    // identical spawn with detached:false works end-to-end). A Windows parent
-    // kill does NOT reap its children, so the updater still survives the
-    // console service being stopped mid-apply.
-    const child = (deps.spawnImpl ?? spawnReal)(command.file, command.args, {
-      detached: process.platform !== "win32",
-      cwd: path.dirname(scriptPath),
-      env: { ...env } as NodeJS.ProcessEnv,
-      stdio: ["ignore", logFd, logFd],
-      windowsHide: true,
-    });
-    child.unref();
-    if (typeof child.pid === "number") {
-      logLine(logFd, `==> handing off to updater (pid ${child.pid})`);
+    if (logFd === null) throw new Error("apply log is not open");
+    const dataDirPath = path.dirname(paths.workDir);
+    if (platform === "win32") {
+      const handed = await handoffViaScheduledTask({
+        xmlPath: path.join(paths.workDir, "update-task.xml"),
+        powershell: command.file,
+        scriptPath,
+        installerPath,
+        sha256: verifiedSha256,
+        dataDir: dataDirPath,
+        systemRoot: env.SystemRoot ?? env.windir,
+        cwd: path.dirname(scriptPath),
+        env: { ...env } as NodeJS.ProcessEnv,
+        logFd,
+        runImpl: deps.runImpl,
+      });
+      if (!handed.ok) throw new Error(handed.error);
+      logLine(logFd, `==> handing off to updater via scheduled task ${WINDOWS_UPDATE_TASK}`);
+    } else {
+      // Detach on Unix so the updater outlives the web process it stops.
+      const child = (deps.spawnImpl ?? spawnReal)(command.file, command.args, {
+        detached: true,
+        cwd: path.dirname(scriptPath),
+        env: { ...env } as NodeJS.ProcessEnv,
+        stdio: ["ignore", logFd, logFd],
+        windowsHide: true,
+      });
+      child.unref();
+      if (typeof child.pid === "number") {
+        logLine(logFd, `==> handing off to updater (pid ${child.pid})`);
+      }
     }
     closeLog();
   } catch (error) {
@@ -275,3 +322,5 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
 function spawnReal(file: string, args: string[], options: Parameters<typeof spawn>[2]) {
   return spawn(file, args, { ...options, shell: false });
 }
+
+export { resumeInterruptedApply } from "./self-update-resume";

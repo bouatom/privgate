@@ -5,10 +5,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetDbForTests } from "./db";
 import { listAudit } from "./db";
-import { applyConsoleUpdate, buildUpdaterCommand, resolveWindowsPowershell } from "./self-update-apply";
+import { applyConsoleUpdate, buildUpdaterCommand, resolveWindowsPowershell, resumeInterruptedApply } from "./self-update-apply";
 import {
   APPLY_STALE_MS,
   UPDATER_START_WINDOW_MS,
+  abandonApplyLock,
   applyPaths,
   parseApplyStatus,
   currentApplyStatus,
@@ -212,6 +213,29 @@ describe("parseApplyStatus / currentApplyStatus", () => {
     const env = envFixture();
     expect(currentApplyStatus(env).phase).toBe("idle");
   });
+
+  it("is abandonable when stale or failed, but not while the updater has started", () => {
+    const runningNoStart = parseApplyStatus({
+      state: state(),
+      logText: "==> download start",
+      nowMs: Date.now(),
+    });
+    expect(runningNoStart.abandonable).toBe(true);
+
+    const live = parseApplyStatus({
+      state: state(),
+      logText: "==> updater start pid=7\n==> Installing",
+      nowMs: Date.now(),
+    });
+    expect(live.abandonable).toBe(false);
+
+    const failed = parseApplyStatus({
+      state: state(),
+      logText: "error: msiexec exited 1603\n",
+      nowMs: Date.now(),
+    });
+    expect(failed.abandonable).toBe(true);
+  });
 });
 
 describe("applyConsoleUpdate", () => {
@@ -228,14 +252,16 @@ describe("applyConsoleUpdate", () => {
       spawnImpl: fakeSpawn(spawned),
       fetchImpl: okFetch(),
       env,
+      platform: "linux",
     });
 
     expect(result.ok).toBe(true);
     // Detached + output redirected into the data dir log; verified hash passed through.
     expect(spawned).toHaveLength(1);
-    // Detach on Unix so the updater outlives the web process; NEVER on Windows,
-    // where DETACHED_PROCESS breaks PowerShell (updater emits nothing → stale).
-    expect(spawned[0].options.detached).toBe(process.platform !== "win32");
+    // Unix: detach so the updater outlives the web process. Windows uses a
+    // scheduled task instead (see the win32 handoff test) so this Darwin run
+    // always takes the detached-child path.
+    expect(spawned[0].options.detached).toBe(true);
     expect(spawned[0].args).toContain(sha256(ASSET_BODY));
     expect(readFileSync(paths.stateFile, "utf8")).toContain("0.2.13");
 
@@ -271,6 +297,7 @@ describe("applyConsoleUpdate", () => {
       spawnImpl: throwingSpawn,
       fetchImpl: okFetch(),
       env,
+      platform: "linux",
     });
 
     expect(result).toMatchObject({ ok: false, status: 500 });
@@ -307,6 +334,7 @@ describe("applyConsoleUpdate", () => {
       spawnImpl: fakeSpawn(spawned),
       fetchImpl,
       env,
+      platform: "linux",
     });
 
     expect(result).toMatchObject({ ok: false, status: 502 });
@@ -332,6 +360,7 @@ describe("applyConsoleUpdate", () => {
       spawnImpl: fakeSpawn(spawned),
       fetchImpl: okFetch(),
       env,
+      platform: "linux",
     });
 
     expect(result).toMatchObject({ ok: false, status: 502 });
@@ -349,6 +378,7 @@ describe("applyConsoleUpdate", () => {
       spawnImpl: fakeSpawn(spawned),
       fetchImpl: okFetch(),
       env,
+      platform: "linux" as const,
     };
 
     expect(await applyConsoleUpdate(deps)).toMatchObject({ ok: true });
@@ -379,8 +409,103 @@ describe("applyConsoleUpdate", () => {
       fetchImpl: okFetch(),
       env,
       now: () => Date.now(),
+      platform: "linux",
     });
     expect(result.ok).toBe(true);
+  });
+
+  it("hands Windows applies to schtasks, not a child of the console service", async () => {
+    const env = envFixture();
+    const spawned: Array<{ file: string; args: string[]; options: Record<string, unknown> }> = [];
+    const runs: Array<{ file: string; args: string[] }> = [];
+    const result = await applyConsoleUpdate({
+      db: null,
+      actor: "admin@contoso.test",
+      candidate: candidate(),
+      spawnImpl: fakeSpawn(spawned),
+      runImpl: async (file, args) => {
+        runs.push({ file, args });
+        return { code: 0, stderr: "" };
+      },
+      fetchImpl: okFetch(),
+      platform: "win32",
+      env: { ...env, SystemRoot: "C:\\Windows" },
+    });
+    expect(result.ok).toBe(true);
+    expect(spawned).toHaveLength(0);
+    expect(runs).toHaveLength(2);
+    expect(runs[0].file.toLowerCase()).toContain("schtasks.exe");
+    expect(runs[0].args).toContain("/Create");
+    expect(runs[1].args).toEqual(["/Run", "/TN", "PrivGate-Console-Update"]);
+    expect(readFileSync(applyPaths(env).logFile, "utf8")).toContain("via scheduled task PrivGate-Console-Update");
+  });
+
+  it("lets an admin abandon a stuck apply that never started the updater", () => {
+    const env = envFixture();
+    mkdirSync(path.join(env.PRIVGATE_DATA_DIR!, "updates"), { recursive: true });
+    const paths = applyPaths(env);
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({
+        target: "0.3.3",
+        asset: "x.exe",
+        sha256: "e".repeat(64),
+        startedAt: new Date().toISOString(),
+        logFile: paths.logFile,
+      } satisfies ApplyState),
+    );
+    writeFileSync(paths.logFile, "==> download start\n==> handing off to updater via scheduled task X\n");
+    expect(abandonApplyLock(env)).toEqual({ ok: true });
+    expect(currentApplyStatus(env).phase).toBe("idle");
+  });
+
+  it("refuses to abandon once the updater has printed its start line", () => {
+    const env = envFixture();
+    mkdirSync(path.join(env.PRIVGATE_DATA_DIR!, "updates"), { recursive: true });
+    const paths = applyPaths(env);
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({
+        target: "0.3.3",
+        asset: "x.exe",
+        sha256: "e".repeat(64),
+        startedAt: new Date().toISOString(),
+        logFile: paths.logFile,
+      } satisfies ApplyState),
+    );
+    writeFileSync(paths.logFile, "==> updater start pid=9 ps=5.1\n==> Installing\n");
+    expect(abandonApplyLock(env)).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("re-registers the Windows task when a verified installer is left behind", async () => {
+    const env = envFixture();
+    const paths = applyPaths(env);
+    mkdirSync(paths.workDir, { recursive: true });
+    const installerPath = path.join(paths.workDir, "PrivGate-Console-0.2.13-win-x64.msi");
+    writeFileSync(installerPath, ASSET_BODY);
+    writeFileSync(
+      paths.stateFile,
+      JSON.stringify({
+        target: "0.2.13",
+        asset: "PrivGate-Console-0.2.13-win-x64.msi",
+        sha256: sha256(ASSET_BODY),
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        logFile: paths.logFile,
+      } satisfies ApplyState),
+    );
+    writeFileSync(paths.logFile, "==> sha256 verified\n==> handing off to updater via scheduled task PrivGate-Console-Update\n");
+    const runs: Array<{ file: string; args: string[] }> = [];
+    const resumed = await resumeInterruptedApply({
+      env,
+      platform: "win32",
+      runImpl: async (file, args) => {
+        runs.push({ file, args });
+        return { code: 0, stderr: "" };
+      },
+    });
+    expect(resumed).toBe(true);
+    expect(runs).toHaveLength(2);
+    expect(readFileSync(paths.logFile, "utf8")).toContain("resume: re-registering");
   });
 });
 

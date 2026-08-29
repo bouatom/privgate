@@ -100,8 +100,10 @@ function matchPlatformAsset(release: GitHubRelease, platform: PlatformKey, arch:
   const patterns: Array<{ re: RegExp; prefer?: number }> =
     platform === "windows"
       ? [
-          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.msi$/, prefer: 0 },
-          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.exe$/, prefer: 1 },
+          // NSIS stop-all is stronger than MSI ServiceControl; MSI 1603 on
+          // locked files left prod on 0.3.1 while the EXE path can finish.
+          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.exe$/, prefer: 0 },
+          { re: /^PrivGate-Console-(\d+\.\d+\.\d+(?:\.\d+)?)-win-x64\.msi$/, prefer: 1 },
         ]
       : platform === "macos"
         ? [{ re: new RegExp(`^PrivGate-Console-(\\d+\\.\\d+\\.\\d+(?:\\.\\d+)?)-macos-${arch}\\.pkg$`) }]

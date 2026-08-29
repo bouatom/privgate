@@ -12,6 +12,8 @@ export async function register() {
     // env-disabled for tests; registers its own shutdown hook.
     const { startUpdateSweep } = await import("./lib/self-update-service");
     startUpdateSweep();
+    const { resumeInterruptedApply } = await import("./lib/self-update-resume");
+    void resumeInterruptedApply().catch(() => {});
     // Periodic agent update sweep (device update-policy push). Injectable and
     // env-disabled for tests; registers its own shutdown hook.
     const { startAgentUpdateSweep } = await import("./lib/agent-update-sweep");

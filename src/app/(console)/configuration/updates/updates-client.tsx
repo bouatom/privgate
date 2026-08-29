@@ -21,6 +21,7 @@ export type ApplyView = {
   lastLines: string[];
   /** Where to look next; names the on-server log file for stale/failed runs. */
   hint: string | null;
+  abandonable?: boolean;
 };
 
 type StatusBody = {
@@ -34,9 +35,9 @@ const APPLY_PHASE_LABEL: Record<ApplyView["phase"], string> = {
   idle: "No update has been applied from this console yet.",
   running: "Update in progress — the console service will restart. This page recovers on its own.",
   stale:
-    "The last update never reported an outcome (no terminal log entry). The console is still on the old version until an updater step proves otherwise.",
+    "The last update never reported an outcome. You can abandon it here and click Update again — no server login is required.",
   succeeded: "The last update completed successfully.",
-  failed: "The last update FAILED. Nothing was replaced if the failure was a checksum error; otherwise see the rollback notes in docs/updating.md.",
+  failed: "The last update FAILED. Nothing was replaced if the failure was a checksum error. Abandon the lock below and try again, or see the rollback notes in docs/updating.md.",
 };
 
 export function UpdatesClient({
@@ -73,11 +74,9 @@ export function UpdatesClient({
     setApply(body.apply);
   }, []);
 
-  // While an apply is in flight the web process may die mid-request; keep
-  // polling until the restarted service reports a terminal phase.
   useEffect(() => {
     if (apply.phase !== "running") return;
-    pollRef.current = setInterval(() => void refreshStatus(), 5000);
+    pollRef.current = setInterval(() => void refreshStatus(), 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -130,18 +129,41 @@ export function UpdatesClient({
     if (!confirmed) return;
     setBusy(true);
     setError("");
-    setMessage("Downloading and verifying… the installer starts once checksums pass.");
+    setMessage("Downloading and verifying… this page shows progress from the server log.");
+    setApply({
+      phase: "running",
+      target,
+      startedAt: new Date().toISOString(),
+      lastLines: [],
+      hint: null,
+      abandonable: true,
+    });
     const res = await fetch("/api/configuration/update/apply", { method: "POST" });
     const body = (await res.json().catch(() => ({}))) as { started?: boolean; target?: string; error?: string };
     setBusy(false);
     if (!res.ok) {
       setError(body.error || "Could not start the update");
       setMessage("");
+      await refreshStatus();
       return;
     }
     setMessage(`Updater launched for ${body.target}. The console will be briefly offline and come back on the new version.`);
-    setApply({ phase: "running", target: body.target ?? null, startedAt: new Date().toISOString(), lastLines: [], hint: null });
-    void refreshStatus();
+    await refreshStatus();
+  }
+
+  async function abandonApply() {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    const res = await fetch("/api/configuration/update/apply", { method: "DELETE" });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    setBusy(false);
+    if (!res.ok) {
+      setError(body.error || "Could not clear the stuck update");
+      return;
+    }
+    setMessage("Cleared the stuck update lock. You can click Update again.");
+    await refreshStatus();
   }
 
   return (
@@ -232,6 +254,11 @@ export function UpdatesClient({
               <button className="primary" type="button" disabled={busy || !canManage || !updaterPresent} onClick={() => void applyUpdate()}>
                 Update to {check.version}
               </button>
+              {apply.abandonable && canManage ? (
+                <button className="ghost" type="button" disabled={busy} onClick={() => void abandonApply()}>
+                  Abandon stuck update
+                </button>
+              ) : null}
               {!updaterPresent ? (
                 <span className="lede" style={{ fontSize: 12 }}>Updater script not found in this install (dev checkout?).</span>
               ) : null}
@@ -260,6 +287,13 @@ export function UpdatesClient({
           ) : null}
           {apply.lastLines.length > 0 ? (
             <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 12 }}>{apply.lastLines.join("\n")}</pre>
+          ) : null}
+          {apply.abandonable && canManage && !(check?.available && check.version) ? (
+            <div className="row-actions">
+              <button className="ghost" type="button" disabled={busy} onClick={() => void abandonApply()}>
+                Abandon stuck update
+              </button>
+            </div>
           ) : null}
         </div>
       ) : null}

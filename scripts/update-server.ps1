@@ -23,9 +23,11 @@
 #   -Sha256 <hex>      expected SHA-256 of -Installer (a directory payload
 #                      cannot be pinned by one hash; ship a sha256sums.txt
 #                      inside it instead)
-#   sha256sums.txt     if this file sits next to -Installer (or inside a
-#                      -Payload dir), every listed file is verified
-#                      automatically; any mismatch aborts with nothing changed
+#   sha256sums.txt     if this file sits next to -Installer AND -Sha256 was
+#                      not given, every listed file is verified; a leftover
+#                      sibling from a previous channel (same filename, other
+#                      digest) is ignored when -Sha256 already pinned the file
+#                      -Payload dirs still verify an inner sha256sums.txt
 #
 # This script ships inside every console payload (C:\Program Files\PrivGate),
 # so it can also update an installed console from a later download.
@@ -40,6 +42,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Unregister-UpdateTask {
+  schtasks.exe /Delete /TN 'PrivGate-Console-Update' /F 2>$null | Out-Null
+}
 
 # --- File-based logging (bypasses broken stdout with detached:true) ---
 # On Windows, spawning with detached:true (CREATE_NEW_PROCESS_GROUP) breaks
@@ -82,6 +88,7 @@ function Assert-Watchdog([string]$Phase) {
 try {
   # REQUIRED first output (status parser looks for "^==> updater start").
   Step ("updater start pid={0} ps={1} at {2:u}" -f $PID, $PSVersionTable.PSVersion.ToString(), $watchdogStarted)
+  Unregister-UpdateTask
   Step ("cmdline: {0}" -f [Environment]::CommandLine)
 
   # Windows Event Log — durable audit trail that survives apply.log rotation.
@@ -180,7 +187,7 @@ try {
   function Backup-Current {
     if ($SkipBackup) { return }
     Step "Backing up current install to $backupDir"
-    robocopy $installDir $backupDir /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    robocopy $installDir $backupDir /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { Fail "robocopy backup failed with exit code $LASTEXITCODE" }
   }
 
@@ -268,9 +275,11 @@ try {
       }
     }
     $sibling = Join-Path (Split-Path $Installer -Parent) 'sha256sums.txt'
-    if (Test-Path $sibling) {
+    if (-not $expectedSha256 -and (Test-Path $sibling)) {
       Step "Verifying $(Split-Path $Installer -Leaf) against $sibling"
       Assert-SumsEntry $sibling $Installer
+    } elseif ($expectedSha256 -and (Test-Path $sibling)) {
+      Step "Skipping sibling sha256sums.txt; -Sha256 already verified the installer"
     }
   }
 
@@ -296,7 +305,7 @@ try {
 
       Assert-Watchdog 'swap'
       Step "Swapping files in $installDir"
-      robocopy $Payload $installDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+      robocopy $Payload $installDir /MIR /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
       if ($LASTEXITCODE -ge 8) { Fail "robocopy swap failed with exit code $LASTEXITCODE" }
 
       Assert-Watchdog 'write-env'
@@ -328,12 +337,12 @@ try {
 
       Assert-Watchdog 'backup'
       Backup-Current
-      # Both installers are self-sufficient on the stop path: the MSI stops the
-      # service natively (ServiceControl) and runs stray-kill before file
-      # costing; the NSIS exe extracts its own current service-ctl.cmd (never
-      # the older on-disk copy), polls for STOPPED and escalates to taskkill /F.
-      # Neither deletes/recreates the service identity. The health check below
-      # is what actually proves the swap worked.
+      # The in-console updater is a SYSTEM scheduled task, not a WinSW child,
+      # so stop-all cannot kill it. Stop first: NSIS /S otherwise shows a
+      # MessageBox when stop-all fails (Session 0 hang), and a leftover
+      # node.exe keeps serving the old version on :3000.
+      Assert-Watchdog 'stop'
+      Stop-Console
       Assert-Watchdog 'install'
       if ([IO.Path]::GetExtension($Installer) -eq '.msi') {
         Step "Installing $Installer (msiexec /qn)"
@@ -393,6 +402,7 @@ Rollback (only if needed):
 Data ($DataDir) was never touched by this update.
 "@
   if ($script:logWriter) { $script:logWriter.Close(); $script:logWriter = $null }
+  Unregister-UpdateTask
   exit 0
 } catch {
   # ANY terminating failure lands here — including Fail(), cmdlet errors and
@@ -402,6 +412,7 @@ Data ($DataDir) was never touched by this update.
     Write-EventLog -LogName Application -Source $eventSource -EventId 1003 `
       -EntryType Error -Message "PrivGate self-update failed: $($_.Exception.Message)" -ErrorAction SilentlyContinue
   } catch { /* non-critical */ }
+  Unregister-UpdateTask
   if ($script:logWriter) { $script:logWriter.Close(); $script:logWriter = $null }
   exit 1
 }

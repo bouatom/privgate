@@ -39,12 +39,12 @@ export const APPLY_STALE_MS = 45 * 60_000;
 /**
  * How long a log that shows NO sign the updater ever started stays "running"
  * before it is declared dead. The console writes the header + download lines
- * and then a `==> handing off to updater (pid …)` line right after spawn; the
+ * and then a `==> handing off to updater` line right after handoff; the
  * updater itself must print `==> updater start …` as its very first output.
- * If neither appears within this window the spawn failed silently and waiting
+ * If neither appears within this window the handoff failed silently and waiting
  * out the full APPLY_STALE_MS would only confuse the admin.
  */
-export const UPDATER_START_WINDOW_MS = 5 * 60_000;
+export const UPDATER_START_WINDOW_MS = 90_000;
 
 export function readApplyState(stateFile: string): ApplyState | null {
   try {
@@ -65,10 +65,10 @@ const FAILURE_MARKERS = [
   /did not become healthy/i,
 ];
 
-/** Console side: written by self-update-apply.ts immediately after spawn. */
-const HANDOFF_MARKER = /handing off to updater \(pid \d+\)/;
+/** Console side: written by self-update-apply.ts immediately after handoff. */
+const HANDOFF_MARKER = /handing off to updater/;
 /** Updater side: REQUIRED first line of update-server.ps1/.sh. */
-const UPDATER_START_MARKER = /^==> updater start\b/m;
+export const UPDATER_START_MARKER = /^==> updater start\b/m;
 
 export type ApplyStatusView = {
   phase: ApplyPhase;
@@ -77,6 +77,8 @@ export type ApplyStatusView = {
   lastLines: string[];
   /** Where to look next; always names the log file for non-idle phases. */
   hint: string | null;
+  /** True when an admin can clear the lock from the console (no live updater). */
+  abandonable: boolean;
 };
 
 function buildHint(
@@ -91,11 +93,13 @@ function buildHint(
       ? "the updater process was launched but produced no output"
       : "the updater likely never started";
     return (
-      `No updater output within ${Math.round(UPDATER_START_WINDOW_MS / 60_000)} minutes — ${detail}. ` +
-      `Inspect ${where} on the server.`
+      `No updater output within ${Math.round(UPDATER_START_WINDOW_MS / 1000)} seconds — ${detail}. ` +
+      `Use Abandon stuck update, then click Update again. Log: ${where}`
     );
   }
-  return phase === "failed" ? `Failure detail: ${where}` : `No outcome was logged. Inspect ${where} on the server.`;
+  return phase === "failed"
+    ? `Failure detail: ${where}`
+    : `No outcome was logged. Use Abandon stuck update, then click Update again. Log: ${where}`;
 }
 
 export function parseApplyStatus(
@@ -104,7 +108,9 @@ export function parseApplyStatus(
   const lastLines = input.logText
     ? input.logText.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean).slice(-15)
     : [];
-  if (!input.state) return { phase: "idle", target: null, startedAt: null, lastLines, hint: null };
+  if (!input.state) {
+    return { phase: "idle", target: null, startedAt: null, lastLines, hint: null, abandonable: false };
+  }
 
   const succeeded = /update complete\./i.test(input.logText);
   const failed = !succeeded && FAILURE_MARKERS.some((re) => re.test(input.logText));
@@ -123,12 +129,15 @@ export function parseApplyStatus(
   else if (!ageOk || noUpdaterOutput) phase = "stale";
   else phase = "running";
 
+  const abandonable = phase === "stale" || phase === "failed" || (phase === "running" && !updaterStarted);
+
   return {
     phase,
     target: input.state.target,
     startedAt: input.state.startedAt,
     lastLines,
     hint: buildHint(phase, input.state.logFile, { updaterStarted, handoffSeen }),
+    abandonable,
   };
 }
 
@@ -142,4 +151,33 @@ export function currentApplyStatus(env: Record<string, string | undefined> = pro
     /* no log yet */
   }
   return parseApplyStatus({ state: readApplyState(paths.stateFile), logText, nowMs: Date.now() });
+}
+
+/**
+ * Clear a stuck apply lock so the admin can click Update again from the
+ * console. Refuses when the updater has already printed its start line
+ * (killing that mid-install would leave a half-swapped payload).
+ */
+export function abandonApplyLock(
+  env: Record<string, string | undefined> = process.env,
+): { ok: true } | { ok: false; status: number; error: string } {
+  const paths = applyPaths(env);
+  const status = currentApplyStatus(env);
+  if (status.phase === "idle") return { ok: true };
+  if (!status.abandonable) {
+    return {
+      ok: false,
+      status: 409,
+      error:
+        status.phase === "succeeded"
+          ? "The last update already completed."
+          : "The updater is already running on the server. Wait for it to finish or fail.",
+    };
+  }
+  try {
+    fs.rmSync(paths.stateFile, { force: true });
+  } catch {
+    return { ok: false, status: 500, error: "Could not clear the apply lock file." };
+  }
+  return { ok: true };
 }

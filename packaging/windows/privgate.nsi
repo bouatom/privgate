@@ -148,12 +148,12 @@ Function SettingsPageLeave
 
   ${If} $WebPort < 1
   ${OrIf} $WebPort > 65535
-    MessageBox MB_ICONSTOP "Management web port must be between 1 and 65535."
+    MessageBox MB_ICONSTOP "Management web port must be between 1 and 65535." /SD IDOK
     Abort
   ${EndIf}
   ${If} $AgentPort < 1
   ${OrIf} $AgentPort > 65535
-    MessageBox MB_ICONSTOP "Client port must be between 1 and 65535."
+    MessageBox MB_ICONSTOP "Client port must be between 1 and 65535." /SD IDOK
     Abort
   ${EndIf}
 skip_leave:
@@ -220,12 +220,12 @@ Function StopExistingService
     ; target can never reach the helper silently (it would stop/kill nothing
     ; and later show as unrelated locked-file errors).
     MessageBox MB_ICONSTOP \
-      "Internal setup error: the installation folder is empty, so the running console cannot be stopped safely. Setup will close instead of touching an unknown folder. Re-run setup and choose an installation folder."
+      "Internal setup error: the installation folder is empty, so the running console cannot be stopped safely. Setup will close instead of touching an unknown folder. Re-run setup and choose an installation folder." /SD IDOK
     Abort
   ${EndIf}
   ${If} $PLUGINSDIR == ""
     MessageBox MB_ICONSTOP \
-      "Internal setup error: no temporary plugin folder is available ($TEMP may be unusable), so the service control helper cannot be extracted. Setup will close."
+      "Internal setup error: no temporary plugin folder is available ($TEMP may be unusable), so the service control helper cannot be extracted. Setup will close." /SD IDOK
     Abort
   ${EndIf}
   DetailPrint "Stopping the running console - helper: $PLUGINSDIR\service-ctl.cmd - target dir: $INSTDIR"
@@ -243,8 +243,11 @@ Function StopExistingService
   ${If} $0 != 0
     ; Locked leftovers would otherwise only surface as confusing "error
     ; writing to file" popups once copying starts.
+    ; Silent (/S) Session 0 has no UI. Without a silent default this box
+    ; hung the in-console updater forever (prod 10.0.2.25). Abort so the
+    ; scheduled-task updater fails closed instead of waiting on a dialog.
     MessageBox MB_ICONEXCLAMATION|MB_OKCANCEL \
-      "Stopping the running console failed with code $0. Helper output:$\n$\n$1$\n$\nIf the console is still running, the following file copies may report write errors.$\n$\nContinue anyway? Choosing No aborts the update now." \
+      "Stopping the running console failed with code $0. Helper output:$\n$\n$1$\n$\nIf the console is still running, the following file copies may report write errors.$\n$\nContinue anyway? Choosing No aborts the update now." /SD IDCANCEL \
       IDOK stop_warn_continue
     Abort
     stop_warn_continue:
@@ -343,7 +346,7 @@ Section "Uninstall"
   ; or a STOP_PENDING drain cannot leave files locked under RMDir /r.
   ${If} $INSTDIR == ""
     MessageBox MB_ICONSTOP \
-      "Internal uninstall error: the installation folder is empty, so uninstall cannot tell which folder to remove. Nothing was deleted."
+      "Internal uninstall error: the installation folder is empty, so uninstall cannot tell which folder to remove. Nothing was deleted." /SD IDOK
     Abort
   ${EndIf}
   DetailPrint "Stopping the running console - helper: $PLUGINSDIR\service-ctl.cmd - target dir: $INSTDIR"

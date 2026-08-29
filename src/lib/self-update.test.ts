@@ -76,9 +76,9 @@ describe("channel selection", () => {
     expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.5-win-x64.exe");
   });
 
-  it("prefers .msi over .exe for Windows", () => {
+  it("prefers .exe over .msi for Windows", () => {
     const picked = pickLatestForPlatform(RELEASE_FIXTURE(), { channel: "official", platform: "windows" });
-    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.12-win-x64.msi");
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.12-win-x64.exe");
   });
 
   it("matches macOS pkg per architecture", () => {
@@ -144,7 +144,7 @@ describe("nightly-shaped prerelease tags (vX.Y.Z-n.TS)", () => {
     const picked = pickLatestForPlatform([NIGHTLY, OFFICIAL_0_2_1], { channel: "nightly", platform: "windows" });
     expect(picked?.candidate.version).toBe("0.2.2");
     expect(picked?.candidate.prerelease).toBe(true);
-    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.msi");
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.exe");
     expect(picked?.candidate.sumsUrl).toContain("sha256sums.txt");
     expect(isUpdateAvailable(picked!.candidate.version, INSTALLED)).toBe(true);
   });
@@ -180,7 +180,7 @@ describe("rolling 'nightly' tag releases (no number in the git ref)", () => {
     });
     expect(picked?.release.tag_name).toBe("nightly");
     expect(picked?.candidate.version).toBe("0.2.2"); // …the assets say otherwise
-    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.msi");
+    expect(picked?.candidate.assetName).toBe("PrivGate-Console-0.2.2-win-x64.exe");
     expect(picked?.candidate.sumsUrl).toContain("sha256sums.txt");
     expect(isUpdateAvailable(picked!.candidate.version, INSTALLED)).toBe(true);
   });
