@@ -63,6 +63,24 @@ the device it is running on and the file it was asked to launch. `appsettings.js
 still holds secrets that a local admin can read — see the residual-risk section of
 [docs/threat-model.md](../docs/threat-model.md).
 
+## Auto-elevate (opt-in, off by default)
+
+Direct launches of **allowlisted** programs can skip the stock UAC prompt: the
+SYSTEM broker asks the console for a side-effect-free `silent-allow` verdict
+and, only when that is `allow:true`, terminates the unelevated instance and
+relaunches it with the existing `CreateProcessAsUser` path. The client never
+decides on its own. Pending approval, deny, hard-bans, unsigned files, and an
+active JIT window are left untouched (JIT stays its own sign-out/in flow).
+
+Enable on a device with any one of:
+
+* `appsettings.json`: `"AutoElevate": true`
+* Environment (service process): `PRIVGATE_AUTO_ELEVATE=1`
+* Registry: `HKLM\SOFTWARE\PrivGate\Client` DWORD `AutoElevate` = `1`
+
+Then restart **PrivGateBroker**. Watch for `auto-elevate enabled` /
+`auto-elevate watcher running` in `%ProgramData%\PrivGate\broker.log`.
+
 ## Logs and status (troubleshooting runbook)
 
 **Log file:** `%ProgramData%\PrivGate\broker.log` — one line per event, ISO-8601

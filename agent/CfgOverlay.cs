@@ -10,11 +10,6 @@ static class CfgOverlay
     {
         cfg.ApiBase = (cfg.ApiBase ?? "").Trim();
         if (cfg.EnrollmentToken != null) cfg.EnrollmentToken = cfg.EnrollmentToken.Trim();
-        if (!string.IsNullOrWhiteSpace(cfg.ApiBase) && !string.IsNullOrWhiteSpace(cfg.EnrollmentToken))
-        {
-            return cfg;
-        }
-
         ApplyRegistry(cfg, RegistryView.Registry64);
         ApplyRegistry(cfg, RegistryView.Registry32);
         return cfg;
@@ -34,6 +29,10 @@ static class CfgOverlay
             if (string.IsNullOrWhiteSpace(cfg.EnrollmentToken))
             {
                 cfg.EnrollmentToken = (key.GetValue("EnrollmentToken") as string ?? "").Trim();
+            }
+            if (!cfg.AutoElevate)
+            {
+                cfg.AutoElevate = AutoElevateWatch.Truthy(key.GetValue("AutoElevate")?.ToString());
             }
         }
         catch (Exception ex)

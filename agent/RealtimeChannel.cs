@@ -94,6 +94,14 @@ public sealed class RealtimeChannel : IDisposable
         return pushed.ValueKind == JsonValueKind.Undefined ? result : pushed;
     }
 
+    /// <summary>
+    /// Policy-only allowlist check. Returns immediately; never waits on a ticket.
+    /// </summary>
+    public Task<JsonElement> SilentAllowAsync(object body, CancellationToken ct)
+    {
+        return RpcAsync(new Dictionary<string, object?> { ["type"] = "silent-allow", ["body"] = body }, ct);
+    }
+
     public Task<JsonElement> JitStateAsync(string userSid, CancellationToken ct)
     {
         return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-state", ["userSid"] = userSid }, ct);

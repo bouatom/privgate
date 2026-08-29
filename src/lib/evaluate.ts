@@ -184,6 +184,46 @@ export function evaluateForDevice(
   };
 }
 
+/**
+ * Pure, side-effect-free "may this binary run elevated without prompting?"
+ * lookup used by the Windows broker's auto-elevate watcher. Unlike
+ * evaluateForDevice it never inserts request rows, queues notifications, or
+ * writes audit entries — it is a policy-only verdict, so polling it for every
+ * medium-integrity process the interactive user starts cannot spam the console.
+ *
+ * Returns allow:true only for an EXPLICIT allowlist policy ("Allow silently")
+ * for this user/device — never for an active JIT window (which is its own
+ * sign-out/in flow) and never for a denial/approval-required program.
+ */
+export function silentAllowForDevice(
+  db: DatabaseSync,
+  deviceId: string,
+  body: EvaluateBody,
+): { allow: boolean; policyId?: string } {
+  const user = findUserBySid(db, body.userSid, body.entraOid);
+  if (!user) return { allow: false };
+  const jit = activeJit(db, user.id, deviceId);
+  const decision = evaluateElevation(
+    {
+      userId: user.id,
+      userSid: user.adSid,
+      entraOid: user.entraOid,
+      groupIds: groupIdsForUser(db, user.id),
+      deviceId,
+    },
+    {
+      filePath: body.filePath,
+      fileHash: body.fileHash,
+      publisher: body.publisher,
+      arguments: body.arguments,
+    },
+    listPolicies(db),
+    Boolean(jit),
+  );
+  if (decision.decision !== "allow" || decision.policyId === "jit") return { allow: false };
+  return { allow: true, policyId: decision.policyId };
+}
+
 export function approvedTicket(db: DatabaseSync, requestId: string) {
   const req = getRequest(db, requestId);
   if (!req || req.status !== "approved") return undefined;

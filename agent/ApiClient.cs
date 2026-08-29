@@ -35,6 +35,20 @@ public sealed class ApiClient
         return await SendAsync(HttpMethod.Post, "/api/agent/evaluate", body, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Side-effect-free allowlist check for the auto-elevate watcher.
+    /// Realtime first; HTTP POST /api/agent/silent-allow if the socket is down.
+    /// </summary>
+    public async Task<JsonElement> SilentAllowAsync(object body, CancellationToken ct = default)
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try { return await realtime.SilentAllowAsync(body, ct).ConfigureAwait(false); }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime silent-allow: {ex.Message}"); }
+        }
+        return await SendAsync(HttpMethod.Post, "/api/agent/silent-allow", body, ct).ConfigureAwait(false);
+    }
+
     public async Task<JsonElement> JitStateAsync(string userSid, CancellationToken ct = default)
     {
         if (realtime is { IsConnected: true })

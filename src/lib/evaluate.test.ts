@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { resetDbForTests, decideRequest, listPolicies, getUserByUpn, createJit, revokeJit, getRequest, insertPolicy } from "./db";
-import { evaluateForDevice, ticketKeyForDevice } from "./evaluate";
+import { evaluateForDevice, silentAllowForDevice, ticketKeyForDevice } from "./evaluate";
 import { verifyTicket } from "./signing";
 
 const staffSid = "S-1-5-21-1000-1000-1000-1101";
@@ -125,5 +125,59 @@ describe("evaluate + approval + JIT", () => {
       publisher: "CN=Microsoft Windows",
     });
     expect(admin.decision).toBe("pending");
+  });
+
+  it("silent-allow is a side-effect-free allowlist-only verdict", () => {
+    const db = resetDbForTests(":memory:");
+    // Explicit allowlist policy → silently elevatable.
+    const widget = listPolicies(db)[0];
+    const ok = silentAllowForDevice(db, "dev-lab-01", {
+      userSid: staffSid,
+      filePath: "C:\\\\install\\\\WidgetSetup.msi",
+      fileHash: widget.fileHash,
+      publisher: widget.publisher,
+    });
+    expect(ok).toEqual({ allow: true, policyId: expect.any(String) });
+
+    // No matching allowlist → pending under evaluate, but NOT silently allowed.
+    const pending = silentAllowForDevice(db, "dev-lab-01", {
+      userSid: staffSid,
+      filePath: "C:\\\\Tools\\\\Rare.exe",
+      fileHash: createHash("sha256").update("rare").digest("hex"),
+      publisher: "CN=Rare",
+    });
+    expect(pending.allow).toBe(false);
+
+    // Denied under evaluate → NOT silently allowed, and NO request row is
+    // created (side-effect-free by design).
+    const denied = silentAllowForDevice(db, "dev-lab-01", {
+      userSid: staffSid,
+      filePath: "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe",
+      fileHash: createHash("sha256").update("ps").digest("hex"),
+      publisher: "CN=Microsoft Windows",
+    });
+    expect(denied.allow).toBe(false);
+    expect(getRequest(db, "")).toBeUndefined();
+  });
+
+  it("does not silently elevate during an active JIT window", () => {
+    const db = resetDbForTests(":memory:");
+    const staff = getUserByUpn(db, "riley@contoso.test")!;
+    const grant = createJit(db, {
+      userId: staff.id,
+      deviceId: "dev-lab-01",
+      durationMinutes: 15,
+      reason: "patch window",
+    });
+    expect("id" in grant).toBe(true);
+    // Under a JIT window evaluate says allow (policyId jit), but silent-allow
+    // must refuse: JIT is its own sign-out/in flow, never a silent relaunch.
+    const during = silentAllowForDevice(db, "dev-lab-01", {
+      userSid: staffSid,
+      filePath: "C:\\\\Windows\\\\System32\\\\cmd.exe",
+      fileHash: "00",
+      publisher: "CN=Microsoft Windows",
+    });
+    expect(during.allow).toBe(false);
   });
 });

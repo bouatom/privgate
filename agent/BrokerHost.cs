@@ -129,6 +129,11 @@ partial class BrokerHost
         var api = new ApiClient(cfg.ApiBase, cfg.DeviceId, cfg.DeviceSecret, realtime);
         var host = new BrokerHost(cfg, api, watchdog, ct);
         _ = Task.Run(() => realtime.RunAsync(), ct);
+        if (AutoElevateWatch.Enabled(cfg))
+        {
+            BrokerLog.Write("auto-elevate enabled");
+            _ = Task.Run(() => AutoElevateWatch.RunAsync(api, ct), ct);
+        }
         _ = Task.Run(async () =>
         {
             while (!ct.IsCancellationRequested)

@@ -1,6 +1,6 @@
 import "server-only";
 import { getDb, getJit, findUserBySid, activeJit, revokeJit } from "../db";
-import { evaluateForDevice, type EvaluateBody } from "../evaluate";
+import { evaluateForDevice, silentAllowForDevice, type EvaluateBody } from "../evaluate";
 import { reconcileReportedVersion } from "../agent-update";
 import { insertRequest } from "../db/requests";
 import { appendAudit } from "../db/audit";
@@ -10,6 +10,7 @@ import { noteClientStatus } from "./bus";
 export type AgentRpc =
   | { id?: string; type: "ping" }
   | { id?: string; type: "evaluate"; body: EvaluateBody }
+  | { id?: string; type: "silent-allow"; body: EvaluateBody }
   | { id?: string; type: "jit-state"; userSid: string }
   | { id?: string; type: "jit-expired"; grantId: string }
   | { id?: string; type: "version-report"; version: string }
@@ -73,6 +74,14 @@ export function handleAgentRpc(
       return { id: message.id, type: "result", ok: false, error: "userSid, filePath, fileHash, publisher required" };
     }
     const payload = evaluateForDevice(getDb(), deviceId, body);
+    return { id: message.id, type: "result", ok: true, payload };
+  }
+  if (message.type === "silent-allow") {
+    const body = message.body;
+    if (!body?.userSid || !body.filePath || !body.fileHash || !body.publisher) {
+      return { id: message.id, type: "result", ok: false, error: "userSid, filePath, fileHash, publisher required" };
+    }
+    const payload = silentAllowForDevice(getDb(), deviceId, body);
     return { id: message.id, type: "result", ok: true, payload };
   }
   if (message.type === "jit-state") {

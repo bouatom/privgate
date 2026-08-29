@@ -91,4 +91,34 @@ describe("agent realtime RPC", () => {
     notifyRequestApproved(decided!, ticket!);
     expect(sent.some((row) => row.includes(ticket!))).toBe(true);
   });
+
+  it("silent-allow is allowlist-only and never waits on a ticket", () => {
+    const db = resetDbForTests(":memory:");
+    const widget = listPolicies(db)[0]!;
+    const ok = handleAgentRpc("dev-lab-01", {
+      id: "3",
+      type: "silent-allow",
+      body: {
+        userSid: staffSid,
+        filePath: "C:\\\\install\\\\WidgetSetup.msi",
+        fileHash: widget.fileHash,
+        publisher: widget.publisher,
+      },
+    });
+    expect(ok).toMatchObject({ id: "3", type: "result", ok: true });
+    expect(ok.payload).toEqual({ allow: true, policyId: widget.id });
+    expect((ok.payload as { ticket?: string }).ticket).toBeUndefined();
+
+    const pending = handleAgentRpc("dev-lab-01", {
+      id: "4",
+      type: "silent-allow",
+      body: {
+        userSid: staffSid,
+        filePath: "C:\\\\Tools\\\\Rare.exe",
+        fileHash: createHash("sha256").update("rare-silent").digest("hex"),
+        publisher: "CN=Rare",
+      },
+    });
+    expect(pending.payload).toEqual({ allow: false });
+  });
 });
