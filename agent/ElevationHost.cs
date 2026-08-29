@@ -43,6 +43,23 @@ public static class Authenticode
         }
         return "Unknown";
     }
+
+    /// <summary>
+    /// Hash + publisher for telemetry. Empty when the path is missing or
+    /// unreadable so a closed UAC report still lands without a fingerprint.
+    /// </summary>
+    public static (string Hash, string Publisher) TryFingerprint(string path)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return ("", "");
+            return (Sha256File(path), Publisher(path));
+        }
+        catch
+        {
+            return ("", "");
+        }
+    }
 }
 
 public static class ElevationHost

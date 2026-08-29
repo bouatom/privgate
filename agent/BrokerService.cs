@@ -47,7 +47,16 @@ sealed class BrokerService : ServiceBase
             || change.Reason == SessionChangeReason.ConsoleConnect
             || change.Reason == SessionChangeReason.RemoteConnect)
         {
-            TraySessions.EnsureInSession(change.SessionId);
+            var sessionId = change.SessionId;
+            TraySessions.EnsureInSession(sessionId);
+            _ = Task.Run(async () =>
+            {
+                foreach (var ms in new[] { 200, 500, 1000, 2000 })
+                {
+                    await Task.Delay(ms).ConfigureAwait(false);
+                    TraySessions.EnsureInSession(sessionId);
+                }
+            });
         }
     }
 

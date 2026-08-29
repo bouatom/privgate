@@ -65,18 +65,40 @@ public sealed class ApiClient
     }
 
     /// <summary>
-    /// Reports a closed stock-UAC attempt with its classifier outcome over the
-    /// realtime channel. Telemetry only: when the websocket is down the report
-    /// is dropped (no HTTP fallback).
+    /// Reports that stock UAC appeared for a program. Realtime only; dropped
+    /// when the websocket is down (the close report still lands later).
     /// </summary>
-    public async Task<JsonElement> ReportUacCanceledAsync(
-        string filePath, string userSid, string outcome = "", CancellationToken ct = default)
+    public async Task<JsonElement> ReportUacSeenAsync(
+        string filePath, string userSid, string fileHash = "", string publisher = "",
+        string arguments = "", CancellationToken ct = default)
     {
         if (realtime is { IsConnected: true })
         {
             try
             {
-                return await realtime.UacCanceledAsync(filePath, userSid, ct, outcome).ConfigureAwait(false);
+                return await realtime.UacSeenAsync(filePath, userSid, ct, fileHash, publisher, arguments)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime uac-seen: {ex.Message}"); }
+        }
+        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+    }
+
+    /// <summary>
+    /// Reports a closed stock-UAC attempt with its classifier outcome over the
+    /// realtime channel. Telemetry only: when the websocket is down the report
+    /// is dropped (no HTTP fallback).
+    /// </summary>
+    public async Task<JsonElement> ReportUacCanceledAsync(
+        string filePath, string userSid, string outcome = "", CancellationToken ct = default,
+        string fileHash = "", string publisher = "", string arguments = "")
+    {
+        if (realtime is { IsConnected: true })
+        {
+            try
+            {
+                return await realtime.UacCanceledAsync(filePath, userSid, ct, outcome, fileHash, publisher, arguments)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime uac-canceled: {ex.Message}"); }
         }

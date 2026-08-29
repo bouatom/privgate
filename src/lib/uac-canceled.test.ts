@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { listAudit, resetDbForTests } from "./db";
+import { listAudit, listUacPrompts, resetDbForTests } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { handleAgentRpc } from "./realtime/rpc";
 import { insertRequest, listRequests } from "./db/requests";
@@ -49,6 +49,7 @@ describe("uac-canceled rpc", () => {
       userId: expect.any(String),
     });
     expect(listAudit(db).some((a) => a.action === "device.uac.canceled")).toBe(true);
+    expect(listUacPrompts(db)).toMatchObject([{ count: 1, lastOutcome: "canceled" }]);
     stop();
   });
 
@@ -124,6 +125,10 @@ describe("uac-canceled rpc", () => {
     });
     expect(res).toMatchObject({ ok: true, payload: { recorded: false } });
     expect(listRequests(db).filter((r) => r.status === "canceled")).toHaveLength(0);
+    expect(listUacPrompts(db)[0]).toMatchObject({
+      lastOutcome: "approved-self",
+      filePath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    });
     const approved = listAudit(db, { action: "device.uac.approved" });
     expect(approved).toHaveLength(1);
     expect(JSON.parse(approved[0].details)).toMatchObject({
@@ -146,6 +151,7 @@ describe("uac-canceled rpc", () => {
     });
     expect(res).toMatchObject({ ok: true, payload: { recorded: false } });
     expect(listRequests(db).filter((r) => r.status === "canceled")).toHaveLength(0);
+    expect(listUacPrompts(db)[0]?.lastOutcome).toBe("approved-other");
     const approved = listAudit(db, { action: "device.uac.approved" });
     expect(JSON.parse(approved[0].details)).toMatchObject({ outcome: "approved-other" });
     stop();

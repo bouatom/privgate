@@ -77,10 +77,11 @@ describe("offline update queueing", () => {
     expect(requestAgentUpdate(db, device, "ada@contoso.test")).toMatchObject({ ok: true, queued: true });
 
     const { sent, stop } = connectDevice(true);
-    expect(sent).toHaveLength(1);
-    const push = sent[0] as { type: string; version?: string };
-    expect(push.type).toBe("agent-update");
+    const updates = sent.filter((m) => (m as { type?: string }).type === "agent-update");
+    expect(updates).toHaveLength(1);
+    const push = updates[0] as { type: string; version?: string };
     expect(push.version).toBe("9.9.9");
+    expect(sent.some((m) => (m as { type?: string }).type === "uac-mode")).toBe(true);
 
     const row = deviceRow(db);
     expect(row.update_requested_at).toBe("");
@@ -99,7 +100,8 @@ describe("offline update queueing", () => {
     setDeviceAgentVersion(db, device, "9.9.9");
 
     const { sent, stop } = connectDevice(true);
-    expect(sent).toHaveLength(0);
+    expect(sent.filter((m) => (m as { type?: string }).type === "agent-update")).toHaveLength(0);
+    expect(sent.some((m) => (m as { type?: string }).type === "uac-mode")).toBe(true);
     expect(deviceRow(db).update_requested_at).toBe("");
 
     const pushes = listAudit(db).filter((e) => e.action === "device.update.pushed");

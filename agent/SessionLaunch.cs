@@ -22,11 +22,14 @@ static class SessionLaunch
     const int TokenSessionId = 12;
     const uint CreateUnicodeEnvironment = 0x00000400;
     const uint CreateNewConsole = 0x00000010;
+    const uint DetachedProcess = 0x00000008;
+    const uint CreateNoWindow = 0x08000000;
     const uint StartfUseShowWindow = 0x00000001;
     const short SwShownormal = 1;
 
     internal static Process? InSession(int sessionId, string filePath, string arguments)
     {
+        TokenPrivileges.EnableForService();
         if (sessionId <= 0) return null;
         if (!OpenProcessToken(Process.GetCurrentProcess().Handle,
                 TokenDuplicate | TokenQuery, out var existing))
@@ -64,6 +67,7 @@ static class SessionLaunch
     /// </summary>
     internal static Process? InSessionAsLoggedOnUser(int sessionId, string filePath)
     {
+        TokenPrivileges.EnableForService();
         if (sessionId <= 0) return null;
         if (!WTSQueryUserToken(sessionId, out var user))
         {
@@ -80,14 +84,14 @@ static class SessionLaunch
             }
             try
             {
-                return Launch(dup, sessionId, filePath, "");
+                return Launch(dup, sessionId, filePath, "", detached: true);
             }
             finally { CloseHandle(dup); }
         }
         finally { CloseHandle(user); }
     }
 
-    static Process? Launch(IntPtr token, int sessionId, string filePath, string arguments)
+    static Process? Launch(IntPtr token, int sessionId, string filePath, string arguments, bool detached = false)
     {
         var command = Quote(filePath) + (string.IsNullOrWhiteSpace(arguments) ? "" : " " + arguments);
         var start = new STARTUPINFO
@@ -95,12 +99,12 @@ static class SessionLaunch
             cb = Marshal.SizeOf<STARTUPINFO>(),
             lpDesktop = @"winsta0\default",
             dwFlags = StartfUseShowWindow,
-            wShowWindow = SwShownormal,
+            wShowWindow = detached ? (short)0 : SwShownormal,
         };
         CreateEnvironmentBlock(out var env, token, false);
         try
         {
-            var flags = CreateUnicodeEnvironment | CreateNewConsole;
+            var flags = CreateUnicodeEnvironment | (detached ? DetachedProcess | CreateNoWindow : CreateNewConsole);
             if (!CreateProcessAsUser(token, null, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero,
                     false, flags, env, Path.GetDirectoryName(filePath), ref start, out var info))
             {

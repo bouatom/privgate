@@ -19,9 +19,17 @@ static class Ui
     // untouched; the hexes above stay 1:1 with the console dark palette.
     public static readonly Color MutedStrong = Hex("#A5B1C4");
     public static readonly Color Amber = Hex("#E0A14A");
+    public static readonly Color Amber2 = Hex("#F3D19A");
     public static readonly Color AmberInk = Hex("#1A1208");
     public static readonly Color Ok = Hex("#4FBE8E");
     public static readonly Color Bad = Hex("#E06B5C");
+    public static readonly Color Info = Hex("#6AA6D8");
+    public static readonly Color Spot = Hex("#243049");
+    public static readonly Color NavActive = Hex("#222A38");
+    public static readonly Color Input = Hex("#121722");
+    public static readonly Color PillPendingLine = Hex("#7A5A28");
+    public static readonly Color PillOkLine = Hex("#2E6D52");
+    public static readonly Color PillBadLine = Hex("#7A3B34");
 
     /// <summary>Base themed dialog: navy background, fixed size, centered.</summary>
     public static Form Dialog(string title, Size size)
@@ -144,10 +152,11 @@ static class Ui
             FlatStyle = FlatStyle.Flat,
             BackColor = Amber,
             ForeColor = AmberInk,
-            Size = new Size(120, 30),
+            Size = new Size(120, 36),
             UseVisualStyleBackColor = false,
         };
         b.FlatAppearance.BorderColor = Amber;
+        RingOnFocus(b, Amber);
         return b;
     }
 
@@ -160,11 +169,29 @@ static class Ui
             FlatStyle = FlatStyle.Flat,
             BackColor = Panel,
             ForeColor = Ink,
-            Size = new Size(100, 30),
+            Size = new Size(100, 36),
             UseVisualStyleBackColor = false,
         };
         b.FlatAppearance.BorderColor = Line;
+        RingOnFocus(b, Amber);
         return b;
+    }
+
+    /// <summary>Console-style 2px amber focus ring (button.primary / :focus-visible).</summary>
+    internal static void RingOnFocus(Button b, Color ring)
+    {
+        var idle = b.FlatAppearance.BorderColor;
+        var idleSize = b.FlatAppearance.BorderSize;
+        b.GotFocus += (_, _) =>
+        {
+            b.FlatAppearance.BorderSize = 2;
+            b.FlatAppearance.BorderColor = ring;
+        };
+        b.LostFocus += (_, _) =>
+        {
+            b.FlatAppearance.BorderSize = idleSize;
+            b.FlatAppearance.BorderColor = idle;
+        };
     }
 
     static Color Hex(string html)

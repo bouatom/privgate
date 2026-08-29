@@ -1,10 +1,11 @@
 import { hasAnyPermission, type PermissionId } from "@/lib/permissions";
 
-export type ElevationTab = "requests" | "jit";
+export type ElevationTab = "requests" | "prompts" | "jit";
 
 /** Which permissions let an actor see each Elevations tab. */
 const TAB_ACCESS: Record<ElevationTab, PermissionId[]> = {
   requests: ["requests.view"],
+  prompts: ["requests.view"],
   jit: ["jit.view", "jit.grant"],
 };
 
@@ -24,6 +25,8 @@ export function defaultElevationTab(granted: readonly string[] | undefined): Ele
   return canSeeElevationTab(granted, "requests") ? "requests" : "jit";
 }
 
+const TAB_IDS: ElevationTab[] = ["requests", "prompts", "jit"];
+
 /**
  * Resolve the active tab from a raw searchParam. Unknown or disallowed values
  * fall back to the permission-aware default, so URLs stay shareable and a
@@ -33,12 +36,15 @@ export function resolveElevationTab(
   raw: string | string[] | undefined,
   granted: readonly string[] | undefined,
 ): ElevationTab {
-  if ((raw === "requests" || raw === "jit") && canSeeElevationTab(granted, raw)) return raw;
+  if (typeof raw === "string" && (TAB_IDS as string[]).includes(raw) && canSeeElevationTab(granted, raw as ElevationTab)) {
+    return raw as ElevationTab;
+  }
   return defaultElevationTab(granted);
 }
 
 export const ELEVATIONS_TABS: Array<{ id: ElevationTab; label: string }> = [
   { id: "requests", label: "Requests" },
+  { id: "prompts", label: "Windows prompts" },
   { id: "jit", label: "JIT access" },
 ];
 
@@ -48,5 +54,7 @@ export function visibleElevationTabs(granted: readonly string[] | undefined) {
 }
 
 export function elevationTabHref(tab: ElevationTab): string {
-  return tab === "jit" ? "/elevations?tab=jit" : "/elevations";
+  if (tab === "jit") return "/elevations?tab=jit";
+  if (tab === "prompts") return "/elevations?tab=prompts";
+  return "/elevations";
 }

@@ -80,6 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
           "integrations.manage",
           "notifications.view",
           "notifications.manage",
+          "policies.view",
+          "policies.manage",
           "configuration.update",
         ],
       },

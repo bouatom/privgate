@@ -170,10 +170,13 @@ partial class BrokerHost
             return;
         }
 
+        _ = Task.Run(() => ConsentBrokerWatch.RunAsync(api, ct), ct);
         ready?.TrySetResult(true);
         BrokerLog.Write("listening");
         var pipe = new NamedPipeHost(host.Handle);
-        await pipe.ListenAsync(ct);
+        var listen = pipe.ListenAsync(ct);
+        _ = Task.Run(() => TraySessions.WatchAsync(ct), ct);
+        await listen;
     }
 
     // BrokerHost.Handle (named-pipe request dispatch) lives in the sibling

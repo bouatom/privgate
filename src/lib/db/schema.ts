@@ -98,6 +98,24 @@ export function migrate(db: DatabaseSync) {
       nonce TEXT PRIMARY KEY,
       consumed_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS uac_prompts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_hash TEXT NOT NULL DEFAULT '',
+      publisher TEXT NOT NULL DEFAULT '',
+      arguments TEXT NOT NULL DEFAULT '',
+      first_at TEXT NOT NULL,
+      last_at TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 1,
+      last_outcome TEXT NOT NULL,
+      UNIQUE(device_id, user_id, file_path)
+    );
+    CREATE TABLE IF NOT EXISTS elevation_settings (
+      id TEXT PRIMARY KEY,
+      uac_mode TEXT NOT NULL DEFAULT 'prompt'
+    );
     CREATE TABLE IF NOT EXISTS directory_settings (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL DEFAULT '',
@@ -148,6 +166,7 @@ export function migrate(db: DatabaseSync) {
       updated_by TEXT NOT NULL DEFAULT ''
     );
   `);
+  db.exec(`INSERT OR IGNORE INTO elevation_settings (id, uac_mode) VALUES ('default', 'prompt');`);
   ensureColumn(db, "ad_settings", "last_sync_at", "TEXT");
   ensureColumn(db, "devices", "agent_version", "TEXT NOT NULL DEFAULT ''");
   ensureColumn(db, "devices", "last_seen_at", "TEXT NOT NULL DEFAULT ''");
@@ -178,6 +197,8 @@ export function migrate(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_jit_grants_user ON jit_grants(user_id);
     CREATE INDEX IF NOT EXISTS idx_jit_grants_expires ON jit_grants(expires_at);
     CREATE INDEX IF NOT EXISTS idx_device_group_members_device ON device_group_members(device_id);
+    CREATE INDEX IF NOT EXISTS idx_uac_prompts_last_at ON uac_prompts(last_at);
+    CREATE INDEX IF NOT EXISTS idx_uac_prompts_device ON uac_prompts(device_id);
   `);
 }
 

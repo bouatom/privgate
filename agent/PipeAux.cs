@@ -14,10 +14,10 @@ static class PipeAux
     /// Handles uac-seen and jit-open. Returns null for messages this class
     /// does not own so the caller can fall through to the main dispatcher.
     /// </summary>
-    internal static string? Handle(JsonElement msg, PipeIdentity caller, JitWatchdog watchdog)
+    internal static string? Handle(JsonElement msg, PipeIdentity caller, JitWatchdog watchdog, ApiClient api)
     {
         var mode = msg.TryGetProperty("mode", out var m) ? m.GetString() : "";
-        if (mode == "uac-seen") return RememberConsent(msg);
+        if (mode == "uac-seen") return RememberConsent(msg, caller, api);
         if (mode == "jit-open") return JitOpen(msg, caller, watchdog);
         return null;
     }
@@ -26,7 +26,7 @@ static class PipeAux
     /// Tray saw consent.exe PIDs appear; snapshot their command lines now,
     /// while the prompt is open, so a later cancel resolves the exact target.
     /// </summary>
-    static string RememberConsent(JsonElement msg)
+    static string RememberConsent(JsonElement msg, PipeIdentity caller, ApiClient api)
     {
         var pids = new List<int>();
         if (msg.TryGetProperty("pids", out var arr) && arr.ValueKind == JsonValueKind.Array)
@@ -37,6 +37,11 @@ static class PipeAux
             }
         }
         var targets = UacTargetCache.Remember(pids);
+        foreach (var target in targets)
+        {
+            var (hash, publisher) = Authenticode.TryFingerprint(target);
+            _ = api.ReportUacSeenAsync(target, caller.UserSid, hash, publisher);
+        }
         return JsonSerializer.Serialize(new { ok = true, remembered = pids.Count, targets });
     }
 

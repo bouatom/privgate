@@ -41,6 +41,9 @@ describe("Windows agent update and per-user tray", () => {
     expect(svc).toContain("SessionChangeReason.SessionLogon");
     expect(svc).toContain("TraySessions.EnsureAll");
     expect(agent("TraySessions.cs")).toContain("InSessionAsLoggedOnUser");
+    expect(agent("TraySessions.cs")).toContain("ReapDuplicates");
+    expect(agent("TraySessions.cs")).toContain("WatchAsync");
     expect(agent("SessionLaunch.cs")).toContain("WTSQueryUserToken");
+    expect(agent("SessionLaunch.cs")).toContain("TokenPrivileges.EnableForService");
   });
 });

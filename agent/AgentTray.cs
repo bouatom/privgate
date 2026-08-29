@@ -53,6 +53,8 @@ sealed class AgentTrayContext : ApplicationContext
         _consentTimer = new System.Windows.Forms.Timer { Interval = 300 };
         _consentTimer.Tick += (_, _) => ElevationPrompt.TickConsent();
         _consentTimer.Start();
+        // Do not wait a tick: logon-time UAC is often already on screen.
+        ElevationPrompt.TickConsent();
         Refresh();
         Heartbeat.Start();
         if (_seenNotice == 0)
@@ -201,6 +203,7 @@ sealed class AgentTrayContext : ApplicationContext
             if (ServiceInstalled() && !ServiceIsRunning()) TryStartService();
         }
         _form.Bind(snap);
+        UacOffer.NoteMode(snap.UacOfferMode);
         var state = snap.Realtime ? "connected" : "offline";
         if (snap.JitActive) state = "JIT on";
         else if (!string.IsNullOrEmpty(snap.Pending)) state = "waiting";

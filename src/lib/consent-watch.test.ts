@@ -39,5 +39,9 @@ describe("UAC consent watch", () => {
     expect(prompt).toContain("TickConsent");
     expect(prompt).toContain("Watch.ShouldPrompt");
     expect(prompt).toContain("Which program did you try to open?");
+    expect(prompt).toContain("UacOffer.ShouldAsk");
+    expect(readFileSync(join(__dirname, "../../agent/ConsentBrokerWatch.cs"), "utf8")).toContain(
+      "consent watch running (broker)",
+    );
   });
 });

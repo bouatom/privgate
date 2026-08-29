@@ -36,7 +36,12 @@ public static class UacTargetCache
         {
             try
             {
-                if (ByPid.ContainsKey(pid)) continue;
+                if (ByPid.TryGetValue(pid, out var existing))
+                {
+                    if (existing.Target.Length > 0 && !found.Contains(existing.Target))
+                        found.Add(existing.Target);
+                    continue;
+                }
                 if (!IsOwnedBySystem(pid)) continue;
                 var line = Native.CommandLineOf(pid);
                 var target = ExtractTarget(line);
@@ -119,14 +124,16 @@ public static class UacTargetCache
     }
 
     /// <summary>
-    /// Picks the program path out of a consent.exe command line: the first
-    /// quoted-or-bare argument after the executable itself that names an
-    /// existing .exe/.msc/.msi file.
+    /// Picks the program path out of a consent.exe command line. Prefers an
+    /// existing .msc/.msi over the host EXE (mmc.exe, msiexec.exe) and skips
+    /// shell wrappers so Disk Management is recorded as diskmgmt.msc, not
+    /// powershell.exe.
     /// </summary>
     internal static string ExtractTarget(string commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine)) return "";
         var argv = Native.SplitArgs(commandLine);
+        var candidates = new List<string>();
         foreach (var arg in argv.Skip(1))
         {
             var candidate = arg.Trim().Trim('"');
@@ -134,9 +141,30 @@ public static class UacTargetCache
             if (!(candidate.Contains(':') || candidate.StartsWith("\\\\"))) continue;
             var lower = candidate.ToLowerInvariant();
             if (!(lower.EndsWith(".exe") || lower.EndsWith(".msc") || lower.EndsWith(".msi"))) continue;
-            if (File.Exists(candidate)) return candidate;
+            if (File.Exists(candidate)) candidates.Add(candidate);
         }
-        return "";
+        return PreferTarget(candidates);
+    }
+
+    static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "powershell.exe", "pwsh.exe", "cmd.exe", "conhost.exe", "consent.exe", "explorer.exe",
+    };
+
+    /// <summary>Prefers snap-ins/installers, then non-wrapper EXEs.</summary>
+    internal static string PreferTarget(IReadOnlyList<string> candidates)
+    {
+        if (candidates.Count == 0) return "";
+        foreach (var c in candidates)
+        {
+            var lower = c.ToLowerInvariant();
+            if (lower.EndsWith(".msc") || lower.EndsWith(".msi")) return c;
+        }
+        foreach (var c in candidates)
+        {
+            if (!Wrappers.Contains(Path.GetFileName(c))) return c;
+        }
+        return candidates[0];
     }
 
     /// <summary>Native helpers shared by owner check and cmdline read.</summary>

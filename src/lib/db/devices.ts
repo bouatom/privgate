@@ -4,6 +4,7 @@ import { decryptSecret, encryptSecret } from "../crypto-secret";
 import { listAuditForDevice } from "./audit";
 import { listJit } from "./jit";
 import { listRequests } from "./requests";
+import { listUacPromptsForDevice } from "./uac-prompts";
 import type { Device, DeviceSummary } from "./types";
 
 export function listDevices(db: DatabaseSync): Array<Omit<Device, "secretEnc"> & { hostname: string }> {
@@ -84,6 +85,7 @@ export function deviceDetail(db: DatabaseSync, deviceId: string) {
       details: JSON.parse(e.details || "{}") as Record<string, unknown>,
     })),
     requests: listRequests(db).filter((r) => r.deviceId === deviceId),
+    uacPrompts: listUacPromptsForDevice(db, deviceId),
     jit: listJit(db).filter((g) => g.deviceId === deviceId),
   };
 }

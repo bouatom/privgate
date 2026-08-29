@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { displayPath, formatDetails } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
+import { UacPromptsClient, type UacPromptView } from "../elevations/uac-prompts-client";
 import { UpdatePolicyControl } from "./update-policy-control";
 
 export type DeviceEventRow = {
@@ -48,6 +49,7 @@ export type DeviceDetailModel = {
   agentVersion: string;
   events: DeviceEventRow[];
   requests: DeviceRequestRow[];
+  uacPrompts: UacPromptView[];
   jit: DeviceJitRow[];
   /** Device-level update policy: '' means inherit from group / default. */
   updateMode: string;
@@ -128,8 +130,8 @@ export function DeviceDetail({
       ) : null}
       <h2 className="section-title">Could not elevate</h2>
       <p className="lede" style={{ fontSize: 13, marginBottom: 8 }}>
-        Programs this PC asked to run elevated that were not always-allow. Always-allow copies the recorded hash,
-        publisher, and arguments — not the filename alone. Start Menu UAC prompts never appear here.
+        Programs this PC asked to run elevated through PrivGate that were not always-allow. Always-allow
+        copies the recorded hash, publisher, and arguments — not the filename alone.
       </p>
       <div className="filters" style={{ marginBottom: 8 }}>
         <button
@@ -211,6 +213,16 @@ export function DeviceDetail({
             )}
           </tbody>
         </table>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <UacPromptsClient
+          heading="Windows UAC prompts"
+          lede="Stock Windows credential prompts on this PC, including Start menu and Explorer. Counts how often each program appeared — including when the user typed admin credentials themselves."
+          rows={detail.uacPrompts}
+          canManageAllowlists={canManageAllowlists}
+          policies={policies}
+          showHost={false}
+        />
       </div>
       <h2 className="section-title">Events</h2>
       <div className="panel" style={{ marginBottom: 16 }}>

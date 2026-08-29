@@ -1,6 +1,6 @@
 import "server-only";
 import { getDb, grantIdentities, type ElevationRequest, type JitGrant } from "../db";
-import { publishConsole, publishDevice } from "./bus";
+import { publishConsole, publishDevice, connectedDeviceIds } from "./bus";
 
 export function notifyPendingRequest(request: ElevationRequest) {
   publishConsole("requests");
@@ -70,4 +70,11 @@ export function notifyJitRevoke(grant: JitGrant) {
 
 export function notifyDeviceChange() {
   publishConsole("devices");
+}
+
+export function notifyUacMode(mode: string) {
+  publishConsole("devices");
+  for (const deviceId of connectedDeviceIds()) {
+    publishDevice(deviceId, { type: "uac-mode", mode });
+  }
 }

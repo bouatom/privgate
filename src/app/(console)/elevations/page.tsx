@@ -6,12 +6,13 @@ import {
   resolveElevationTab,
   visibleElevationTabs,
 } from "@/lib/elevations-tabs";
-import { getDb, listDeviceSummaries, listGroups, listJit, listPolicies, listRequests, listUsers } from "@/lib/db";
+import { getDb, listDeviceSummaries, listGroups, listJit, listPolicies, listRequests, listUacPrompts, listUsers } from "@/lib/db";
 import { expireDueJit } from "@/lib/jit-expiry";
 import { presentUsers } from "@/lib/present";
 import { Forbidden } from "../forbidden";
 import { JitClient } from "../jit/jit-client";
 import { RequestsClient } from "../requests/requests-client";
+import { UacPromptsClient } from "./uac-prompts-client";
 
 type ElevationsSearchParams = { tab?: string };
 
@@ -33,8 +34,9 @@ export default async function ElevationsPage({
         <div>
           <h1>Elevations</h1>
           <p className="lede">
-            One place to grant and review elevated access: pending run-requests with risk scoring, plus
-            temporary local Administrators windows (15–60 minutes) that the broker revokes on schedule.
+            One place to grant and review elevated access: pending run-requests with risk scoring,
+            stock Windows UAC prompts with frequency, and temporary local Administrators windows
+            (15–60 minutes) that the broker revokes on schedule.
           </p>
         </div>
       </div>
@@ -55,6 +57,13 @@ export default async function ElevationsPage({
           rows={listRequests(db)}
           canApprove={can(session, "requests.approve")}
           canDeny={can(session, "requests.deny")}
+          canManageAllowlists={can(session, "policies.manage")}
+          policies={can(session, "policies.manage") ? listPolicies(db) : []}
+        />
+      ) : null}
+      {active === "prompts" ? (
+        <UacPromptsClient
+          rows={listUacPrompts(db)}
           canManageAllowlists={can(session, "policies.manage")}
           policies={can(session, "policies.manage") ? listPolicies(db) : []}
         />

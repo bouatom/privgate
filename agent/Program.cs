@@ -51,28 +51,32 @@ internal static class Program
     }
 
     /// <summary>
-    /// Single-instance guard. A previous tray killed while holding the mutex
-    /// leaves it abandoned; WaitOne recovers ownership instead of letting every
-    /// future start exit silently without a GUI.
+    /// Single-instance guard per interactive session (<c>Local\</c> namespace).
+    /// Ownership is always taken with WaitOne (or initiallyOwned: true on create).
+    /// Treating <c>createdNew</c> as success while creating the mutex unowned
+    /// let HKLM Run and the service's SessionLogon start both stay running — two
+    /// shields after a user switch.
+    /// A previous tray killed while holding the mutex leaves it abandoned;
+    /// WaitOne recovers ownership instead of letting every future start exit
+    /// silently without a GUI.
     /// </summary>
     static bool TryAcquireTrayMutex(out Mutex mutex)
     {
-        mutex = new Mutex(initiallyOwned: false, TrayMutexName, out var createdNew);
-        var acquired = createdNew;
-        if (!acquired)
+        mutex = new Mutex(initiallyOwned: true, TrayMutexName, out var createdNew);
+        if (createdNew) return true;
+        try
         {
-            try
-            {
-                acquired = mutex.WaitOne(TimeSpan.Zero);
-            }
-            catch (AbandonedMutexException)
-            {
-                BrokerLog.Write("tray mutex was abandoned by a previous instance; recovering");
-                acquired = true;
-            }
+            if (mutex.WaitOne(TimeSpan.Zero)) return true;
         }
-        if (!acquired) BrokerLog.Write("another PrivGate tray already owns " + TrayMutexName + "; exiting");
-        return acquired;
+        catch (AbandonedMutexException)
+        {
+            BrokerLog.Write("tray mutex was abandoned by a previous instance; recovering");
+            return true;
+        }
+        BrokerLog.Write("another PrivGate tray already owns " + TrayMutexName + "; exiting");
+        mutex.Dispose();
+        mutex = null!;
+        return false;
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]

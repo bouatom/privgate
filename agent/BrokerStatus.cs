@@ -31,6 +31,7 @@ public sealed class StatusSnapshot
     public string NoticeBody { get; set; } = "";
     public int NoticeSeq { get; set; }
     public StatusRequest[] Requests { get; set; } = Array.Empty<StatusRequest>();
+    public string UacOfferMode { get; set; } = "prompt";
 }
 
 /// <summary>Live broker snapshot for the tray UI and named-pipe status RPC.</summary>
@@ -59,6 +60,7 @@ public sealed class BrokerStatus
     string _noticeBody = "";
     int _noticeSeq;
     string _pending = "";
+    string _uacOfferMode = "prompt";
 
     public void Configure(string deviceId, string apiBase)
     {
@@ -127,6 +129,23 @@ public sealed class BrokerStatus
         }
     }
 
+    public void NoteUacOffer(string? mode)
+    {
+        var v = (mode ?? "").Trim().ToLowerInvariant();
+        if (v != "collect" && v != "prompt") return;
+        lock (_gate) { _uacOfferMode = v; }
+    }
+
+    public void NoteUacOfferFromRpc(JsonElement result)
+    {
+        if (result.ValueKind != JsonValueKind.Object) return;
+        var el = result;
+        if (result.TryGetProperty("payload", out var nested) && nested.ValueKind == JsonValueKind.Object)
+            el = nested;
+        if (!el.TryGetProperty("uacMode", out var modeEl) || modeEl.ValueKind != JsonValueKind.String) return;
+        NoteUacOffer(modeEl.GetString());
+    }
+
     public StatusSnapshot Snapshot(string source = "in-process")
     {
         lock (_gate)
@@ -150,6 +169,7 @@ public sealed class BrokerStatus
                 NoticeBody = _noticeBody,
                 NoticeSeq = _noticeSeq,
                 Requests = _requests.ToArray(),
+                UacOfferMode = _uacOfferMode,
             };
         }
     }

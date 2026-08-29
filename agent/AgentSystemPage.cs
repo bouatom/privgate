@@ -10,6 +10,7 @@ sealed class AgentSystemPage : Panel
     readonly Label _console = Value();
     readonly Label _version = Value();
     readonly Label _error = Value();
+    readonly Label _errorCap;
     readonly Label _updateHint = Value();
     readonly Button _check;
     readonly Button _install;
@@ -18,56 +19,60 @@ sealed class AgentSystemPage : Panel
     internal AgentSystemPage()
     {
         Dock = DockStyle.Fill;
-        BackColor = Ui.Panel;
-        Padding = new Padding(20, 12, 20, 16);
+        BackColor = Color.Transparent;
         _check = AgentChrome.Action("Check for updates");
         _install = AgentChrome.Action("Install update");
         _install.Visible = false;
         _check.Click += (_, _) => Check();
         _install.Click += (_, _) => Install();
 
-        var grid = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 8,
-            BackColor = Ui.Panel,
-        };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddRow(grid, 0, "Communication", _comm);
-        AddRow(grid, 1, "Console", _console);
-        AddRow(grid, 2, "Agent version", _version);
-        AddRow(grid, 3, "Last error", _error);
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        grid.Controls.Add(_updateHint, 0, 4);
-        grid.SetColumnSpan(_updateHint, 2);
+        var health = FieldCard("Status");
+        AddField(health, "Console connection", _comm);
+        AddField(health, "Console", _console);
+        AddField(health, "Agent version", _version);
+        _errorCap = AgentWidgets.MicroText("Last error", "Last error");
+        _errorCap.Padding = new Padding(0, 10, 0, 2);
+        _errorCap.Visible = false;
+        _error.Visible = false;
+        health.Controls.Add(_errorCap);
+        health.Controls.Add(_error);
+
+        var update = FieldCard("Client update");
+        _updateHint.ForeColor = Ui.Muted;
+        Set(_updateHint, "Check whether IT has published a newer client.");
+        update.Controls.Add(_updateHint);
         var actions = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
             BackColor = Color.Transparent,
-            AutoSize = true,
-            Padding = new Padding(0, 8, 0, 0),
+            Padding = new Padding(0, 10, 0, 0),
+            WrapContents = false,
         };
         actions.Controls.Add(_check);
         actions.Controls.Add(_install);
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        grid.Controls.Add(actions, 0, 5);
-        grid.SetColumnSpan(actions, 2);
-        Controls.Add(grid);
-        _updateHint.ForeColor = Ui.Muted;
-        Set(_updateHint, "Check whether the console has a newer client.");
+        update.Controls.Add(actions);
+
+        Controls.Add(update);
+        Controls.Add(health);
     }
 
     internal void Bind(StatusSnapshot snap)
     {
-        Set(_comm, snap.Realtime ? "Connected to the management console" : "Offline — no live session");
+        Set(_comm, snap.Realtime ? "Connected" : "Offline");
         _comm.ForeColor = snap.Realtime ? Ui.Ok : Ui.Bad;
         Set(_console, string.IsNullOrEmpty(snap.ApiBase) ? "No management server configured" : snap.ApiBase);
         var version = string.IsNullOrEmpty(snap.Version) ? UpdateManager.AgentVersion() : snap.Version;
         Set(_version, "v" + version);
-        Set(_error, string.IsNullOrEmpty(snap.LastError) ? "—" : snap.LastError);
+        var err = (snap.LastError ?? "").Trim();
+        var showErr = err.Length > 0;
+        _errorCap.Visible = showErr;
+        _error.Visible = showErr;
+        if (showErr)
+        {
+            Set(_error, err);
+            _error.ForeColor = Ui.Bad;
+        }
     }
 
     void Check()
@@ -145,19 +150,25 @@ sealed class AgentSystemPage : Panel
         });
     }
 
-    static void AddRow(TableLayoutPanel grid, int row, string title, Label value)
+    static Panel FieldCard(string title)
     {
-        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        grid.Controls.Add(new Label
+        var card = AgentWidgets.Card();
+        card.Paint += (s, e) =>
         {
-            Text = title,
-            Font = AgentChrome.Caption,
-            ForeColor = Ui.Muted,
-            AutoSize = true,
-            Padding = new Padding(0, 8, 12, 8),
-            AccessibleName = title,
-        }, 0, row);
-        grid.Controls.Add(value, 1, row);
+            if (s is Control c) AgentWidgets.DrawCardFrame(c, e);
+        };
+        var cap = AgentWidgets.MicroText(title, title);
+        cap.Padding = new Padding(0, 0, 0, 8);
+        card.Controls.Add(cap);
+        return card;
+    }
+
+    static void AddField(Panel card, string title, Label value)
+    {
+        var cap = AgentWidgets.MicroText(title, title);
+        cap.Padding = new Padding(0, 8, 0, 2);
+        card.Controls.Add(cap);
+        card.Controls.Add(value);
     }
 
     static Label Value() => new()
@@ -165,8 +176,9 @@ sealed class AgentSystemPage : Panel
         Font = AgentChrome.Body,
         ForeColor = Ui.Ink,
         AutoSize = true,
-        MaximumSize = new Size(420, 0),
-        Padding = new Padding(0, 8, 0, 8),
+        MaximumSize = new Size(640, 0),
+        Padding = new Padding(0, 0, 0, 4),
+        BackColor = Color.Transparent,
     };
 
     static void Set(Label label, string text)

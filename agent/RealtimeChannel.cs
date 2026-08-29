@@ -107,23 +107,6 @@ public sealed partial class RealtimeChannel : IDisposable
         return RpcAsync(new Dictionary<string, object?> { ["type"] = "jit-state", ["userSid"] = userSid }, ct);
     }
 
-    /// <summary>
-    /// Reports a closed stock-UAC prompt with its classifier verdict
-    /// (best-effort telemetry; empty <paramref name="outcome"/> keeps the
-    /// legacy canceled-report shape).
-    /// </summary>
-    public Task<JsonElement> UacCanceledAsync(string filePath, string userSid, CancellationToken ct, string outcome = "")
-    {
-        var payload = new Dictionary<string, object?>
-        {
-            ["type"] = "uac-canceled",
-            ["filePath"] = filePath,
-            ["userSid"] = userSid,
-        };
-        if (!string.IsNullOrWhiteSpace(outcome)) payload["outcome"] = outcome;
-        return RpcAsync(payload, ct);
-    }
-
     /// <summary>Tells the server an armed JIT window elapsed locally.</summary>
     public Task<JsonElement> JitExpiredAsync(string grantId, CancellationToken ct)
     {
@@ -262,6 +245,12 @@ public sealed partial class RealtimeChannel : IDisposable
         if (type == "agent-update")
         {
             updates.BeginUpdate(msg);
+            return;
+        }
+        if (type == "uac-mode")
+        {
+            ApplyUacModePush(msg);
+            return;
         }
     }
 

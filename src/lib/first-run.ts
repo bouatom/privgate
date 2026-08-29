@@ -16,11 +16,13 @@ const UNUSED_TABLES = [
   "users",
   "groups",
   "audit_events",
+  "uac_prompts",
   "consumed_nonces",
   "oauth_state",
   "directory_settings",
   "ad_settings",
   "notification_settings",
+  "elevation_settings",
 ] as const;
 
 function columnNames(db: DatabaseSync, table: string): string[] {

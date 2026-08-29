@@ -10,22 +10,27 @@ describe("agent status window", () => {
     const chrome = agent("AgentChrome.cs");
     expect(chrome).toContain("FormBorderStyle.None");
     expect(chrome).toContain("DwmwaUseImmersiveDarkMode");
+    expect(chrome).toContain("AppIcon.Create");
+    expect(chrome).toContain("PrivGate");
+    expect(chrome).toContain("Hide window");
     expect(agent("AgentStatusForm.cs")).toContain("AgentChrome.Apply");
-    expect(agent("AgentStatusForm.cs")).toContain("JIT ADMIN");
+    expect(agent("AgentStatusForm.cs")).toContain("Temporary admin");
   });
 
-  it("sections System (communication, version, update) and Requests", () => {
+  it("sections System (connection, version, update) and Requests", () => {
     const status = agent("AgentStatusForm.cs");
     expect(status).toContain("ShowTab");
     expect(status).toContain("AgentSystemPage");
     expect(status).toContain("AgentRequestsPage");
+    expect(status).toContain("BindLive");
     const system = agent("AgentSystemPage.cs");
     expect(system).toContain("Check for updates");
     expect(system).toContain("Agent version");
-    expect(system).toContain("Communication");
-    expect(system).toContain("Connected to the management console");
+    expect(system).toContain("Console connection");
+    expect(system).toContain("Connected");
     const requests = agent("AgentRequestsPage.cs");
-    expect(requests).toContain("Current");
-    expect(requests).toContain("Past");
+    expect(requests).toContain("Waiting for approval");
+    expect(requests).toContain("Recent");
+    expect(agent("AgentWidgets.cs")).toContain("DecisionPill");
   });
 });

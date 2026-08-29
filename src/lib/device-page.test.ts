@@ -23,6 +23,7 @@ describe("device events and installer", () => {
     const detail = deviceDetail(db, "dev-lab-01");
     expect(detail?.events.some((e) => e.action === "device.enroll")).toBe(true);
     expect(detail?.requests[0]?.filePath).toContain("Update.exe");
+    expect(detail?.uacPrompts).toEqual([]);
   });
 
   it("keeps the Windows client project next to the console", () => {

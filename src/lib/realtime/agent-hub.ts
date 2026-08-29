@@ -4,13 +4,14 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
 import { verifyDeviceRequest } from "../device-auth";
-import { registerDeviceSocket, publishConsole, dropClientStatus } from "./bus";
+import { registerDeviceSocket, publishConsole, publishDevice, dropClientStatus } from "./bus";
 import { handleAgentRpc, type AgentRpc } from "./rpc";
 import { expectedAgentOrigin, validateAgentOrigin } from "../agent-origin";
 import { getDb, appendAudit } from "../db";
 import { touchDeviceLastSeen, setDeviceLastIp } from "../db/devices";
 import { resolveClientIp } from "../client-ip";
 import { drainQueuedUpdateOnReconnect } from "../agent-update";
+import { getElevationSettings } from "../db/elevation-settings";
 import { registerShutdownHook } from "../lifecycle/shutdown";
 
 const WS_PATH = "/api/agent/ws";
@@ -33,6 +34,7 @@ export function registerTrackedDeviceSocket(
   touchDeviceLastSeen(db, deviceId);
   const unregister = registerDeviceSocket(deviceId, socket);
   drainQueuedUpdateOnReconnect(db, deviceId);
+  publishDevice(deviceId, { type: "uac-mode", mode: getElevationSettings(db).uacMode });
   return () => {
     unregister();
     touchDeviceLastSeen(getDb(), deviceId);

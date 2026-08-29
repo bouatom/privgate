@@ -26,6 +26,8 @@ describe("resolveElevationTab", () => {
   it("honours an explicit ?tab value the actor may see", () => {
     expect(resolveElevationTab("jit", FULL)).toBe("jit");
     expect(resolveElevationTab("requests", FULL)).toBe("requests");
+    expect(resolveElevationTab("prompts", FULL)).toBe("prompts");
+    expect(resolveElevationTab("prompts", ["requests.view"])).toBe("prompts");
   });
 
   it("falls back to the default for unknown, array-valued, or disallowed tab params", () => {
@@ -33,6 +35,7 @@ describe("resolveElevationTab", () => {
     expect(resolveElevationTab(["jit"], FULL)).toBe("requests");
     // JIT-only actor asking for ?tab=requests must not get the Requests panel.
     expect(resolveElevationTab("requests", ["jit.view"])).toBe("jit");
+    expect(resolveElevationTab("prompts", ["jit.view"])).toBe("jit");
     // Requests-only actor asking for ?tab=jit stays on Requests.
     expect(resolveElevationTab("jit", ["requests.view"])).toBe("requests");
   });
@@ -50,12 +53,15 @@ describe("resolveElevationTab", () => {
     expect(canSeeElevationTab(["requests.view"], "requests")).toBe(true);
     expect(canSeeElevationTab(["requests.view"], "jit")).toBe(false);
     expect(canSeeElevationTab(["jit.grant"], "jit")).toBe(true);
+    expect(canSeeElevationTab(["requests.view"], "prompts")).toBe(true);
+    expect(canSeeElevationTab(["jit.view"], "prompts")).toBe(false);
     expect(visibleElevationTabs(["jit.view"]).map((t) => t.id)).toEqual(["jit"]);
-    expect(visibleElevationTabs(FULL).map((t) => t.id)).toEqual(["requests", "jit"]);
+    expect(visibleElevationTabs(FULL).map((t) => t.id)).toEqual(["requests", "prompts", "jit"]);
   });
 
   it("maps tabs to shareable URLs", () => {
     expect(elevationTabHref("requests")).toBe("/elevations");
+    expect(elevationTabHref("prompts")).toBe("/elevations?tab=prompts");
     expect(elevationTabHref("jit")).toBe("/elevations?tab=jit");
   });
 });

@@ -26,6 +26,8 @@ export {
 } from "./users";
 export { deletePolicy, insertPolicy, listPolicies, updatePolicy } from "./policies";
 export { decideRequest, getRequest, insertRequest, listRequests } from "./requests";
+export { listUacPrompts, listUacPromptsForDevice, upsertUacPrompt } from "./uac-prompts";
+export type { UacPrompt, UacPromptRow } from "./uac-prompts";
 export { activeJit, createJit, expireDueGrants, getJit, grantIdentities, listJit, revokeJit } from "./jit";
 export {
   consumeNonce,
@@ -53,5 +55,7 @@ export {
   takeOauthState,
 } from "./directory";
 export { getNotificationSecrets, getNotificationSettings, saveNotificationSettings } from "./notifications";
+export { getElevationSettings, saveElevationSettings } from "./elevation-settings";
+export type { ElevationSettings } from "./elevation-settings";
 export { getAdSettings, saveAdSettings } from "./ad";
 export { fixturesAllowed, purgeDemoFixtures, seedDemo } from "./seed";

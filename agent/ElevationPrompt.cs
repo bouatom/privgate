@@ -91,10 +91,15 @@ static class ElevationPrompt
                 ElevationClient.ReportCanceled(_pendingTarget, UacClassifier.Wire(outcome));
                 return;
             }
+            ElevationClient.ReportCanceled(_pendingTarget);
+            if (!UacOffer.ShouldAsk)
+            {
+                BrokerLog.Write("uac.closed — collect mode, no PrivGate offer");
+                return;
+            }
             BrokerLog.Write(_pendingTarget.Length > 0
                 ? "uac.closed — offering PrivGate request for " + _pendingTarget
                 : "uac.closed — offering PrivGate request (program unidentified)");
-            ElevationClient.ReportCanceled(_pendingTarget);
             AskAfterUac(_pendingTarget);
         }
         finally

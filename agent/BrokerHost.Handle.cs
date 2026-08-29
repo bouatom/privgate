@@ -16,7 +16,7 @@ partial class BrokerHost
     {
         var mode = msg.GetProperty("mode").GetString();
         // Auxiliary modes (uac-seen, jit-open) live in PipeAux.cs.
-        var aux = PipeAux.Handle(msg, caller, _watchdog);
+        var aux = PipeAux.Handle(msg, caller, _watchdog, _api);
         if (aux is not null) return aux;
         if (mode == "status") return BrokerStatus.Current.ToJson();
         if (mode == "check-update")
@@ -54,13 +54,12 @@ partial class BrokerHost
         }
         if (mode == "uac-canceled")
         {
-            await _api.ReportUacCanceledAsync(
-                msg.TryGetProperty("filePath", out var canceledPath) ? canceledPath.GetString() ?? "" : "",
-                caller.UserSid,
-                msg.TryGetProperty("outcome", out var ocEl) && ocEl.ValueKind == JsonValueKind.String
-                    ? ocEl.GetString() ?? ""
-                    : "",
-                _ct);
+            var canceledFile = msg.TryGetProperty("filePath", out var canceledPath) ? canceledPath.GetString() ?? "" : "";
+            var canceledOutcome = msg.TryGetProperty("outcome", out var ocEl) && ocEl.ValueKind == JsonValueKind.String
+                ? ocEl.GetString() ?? ""
+                : "";
+            var finger = Authenticode.TryFingerprint(canceledFile);
+            await _api.ReportUacCanceledAsync(canceledFile, caller.UserSid, canceledOutcome, _ct, finger.Hash, finger.Publisher);
             return JsonSerializer.Serialize(new { ok = true });
         }
         if (mode == "uac-classify")
@@ -89,7 +88,8 @@ partial class BrokerHost
             var delivered = true;
             try
             {
-                await _api.ReportClientStatusAsync(uptime, pid, _ct);
+                var beat = await _api.ReportClientStatusAsync(uptime, pid, _ct);
+                BrokerStatus.Current.NoteUacOfferFromRpc(beat);
             }
             catch (Exception)
             {
