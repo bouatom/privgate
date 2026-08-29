@@ -4,6 +4,7 @@ import React, { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { PortalRole, PortalUser } from "@/lib/models";
 import { RolesPanel } from "./roles-panel";
+import { MIN_PASSWORD_LENGTH, assertClientPassword } from "@/lib/constants";
 
 export function AccessClient({
   users,
@@ -29,6 +30,48 @@ export function AccessClient({
     password: "",
     roleIds: [] as string[],
   });
+
+  // Password change form (for current user)
+  const [pwdForm, setPwdForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [pwdError, setPwdError] = useState("");
+  const [pwdMessage, setPwdMessage] = useState("");
+  const [pwdBusy, setPwdBusy] = useState(false);
+
+  async function changePassword(e: FormEvent) {
+    e.preventDefault();
+    setPwdError("");
+    setPwdMessage("");
+    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+      setPwdError("New passwords do not match");
+      return;
+    }
+    const problem = assertClientPassword(pwdForm.newPassword);
+    if (problem) {
+      setPwdError(problem);
+      return;
+    }
+    setPwdBusy(true);
+    try {
+      const res = await fetch("/api/auth/password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(pwdForm),
+      });
+      const body = (await res.json()) as { error?: string; ok?: boolean };
+      if (!res.ok) {
+        setPwdError(body.error || "Could not change password");
+        return;
+      }
+      setPwdMessage("Password changed successfully.");
+      setPwdForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+    } finally {
+      setPwdBusy(false);
+    }
+  }
 
   // Inline role editor for existing users
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -247,10 +290,55 @@ export function AccessClient({
                 </label>
               ))}
             </div>
-            <button className="primary" type="submit">Create user</button>
-          </form>
-        </>
-      ) : null}
+<button className="primary" type="submit">Create user</button>
+            </form>
+          </>
+        ) : null}
+
+      {/* ── Change Password (current user) ─────────────────────────── */}
+      <h2 className="section-title">Change Password</h2>
+      <form className="panel stack" style={{ padding: 18, marginBottom: 24 }} onSubmit={changePassword}>
+        <p className="lede" style={{ fontSize: 12, marginBottom: 12 }}>
+          Change your local console password. Must be at least {MIN_PASSWORD_LENGTH} characters.
+        </p>
+        <div className="grid cards" style={{ gap: 12 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label>Current password</label>
+            <input
+              type="password"
+              value={pwdForm.currentPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+              autoComplete="current-password"
+              required
+            />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label>New password</label>
+            <input
+              type="password"
+              value={pwdForm.newPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label>Confirm new password</label>
+            <input
+              type="password"
+              value={pwdForm.confirmPassword}
+              onChange={(e) => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+              autoComplete="new-password"
+              required
+            />
+          </div>
+        </div>
+        {pwdError ? <p className="err" style={{ marginBottom: 8 }}>{pwdError}</p> : null}
+        {pwdMessage ? <p className="ok" style={{ marginBottom: 8 }}>{pwdMessage}</p> : null}
+        <button className="primary" type="submit" disabled={pwdBusy}>
+          {pwdBusy ? "Changing…" : "Change password"}
+        </button>
+      </form>
 
       {/* ── Roles (extracted component) ──────────────────────────── */}
       <RolesPanel roles={roles} canManageRoles={canManageRoles} />
