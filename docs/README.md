@@ -30,7 +30,7 @@ To upgrade, install the newer EXE, MSI, pkg, or deb over the existing copy. Do n
 
 Portal operators are **local accounts** or **Entra SSO**. Master Admins assign predefined roles (Approver, Policy Admin, JIT Operator, Auditor) or custom roles with granular permissions.
 
-Directory **Users** in the console are identities (JIT eligibility, disable). **Configuration → Users & permissions** is who can log into the console.
+Directory **Users** in the console are synced identities (any of them can be assigned JIT). **Configuration → Users & permissions** is who can log into the console.
 
 ## 3. Enroll a Windows PC
 

@@ -135,7 +135,6 @@ export function createJit(
     userId = input.userId!.trim();
     const user = getUser(db, userId);
     if (!user) return { error: "user not found" };
-    if (!user.jitEligible) return { error: "user is not JIT eligible" };
     if (activeJit(db, userId, input.deviceId)) {
       return { error: "an active JIT window already exists for this user and device" };
     }

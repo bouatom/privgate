@@ -4,7 +4,6 @@ export type DirectoryUser = {
   userPrincipalName: string;
   adSid: string;
   entraOid: string;
-  jitEligible: number;
   disabled: number;
   rolesJson: string;
 };

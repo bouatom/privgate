@@ -12,9 +12,7 @@ export default async function DirectoryPage() {
   const db = getDb();
   expireDueJit();
 
-  // All directory users are JIT-eligible by policy — present every user with
-  // jitEligible: true so the grant dialog shows the full roster.
-  const users = presentUsers(listUsers(db)).map((u) => ({ ...u, jitEligible: true }));
+  const users = presentUsers(listUsers(db));
   const groups = listGroups(db).filter((g) => g.memberCount > 0);
   const devices = listDeviceSummaries(db);
   const grants = listJit(db);
@@ -26,7 +24,8 @@ export default async function DirectoryPage() {
           <h1>JIT Access</h1>
           <p className="lede">
             Temporary local Administrators windows that the broker revokes on
-            schedule. Every directory user is eligible for JIT access.
+            schedule. Any directory user synced from Entra or Active Directory
+            can be assigned a window.
           </p>
         </div>
       </div>

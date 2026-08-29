@@ -18,7 +18,6 @@ export async function POST(req: Request) {
       userPrincipalName: string;
       adSid?: string;
       entraOid?: string;
-      jitEligible?: boolean;
       roles?: string[];
     }>;
   };

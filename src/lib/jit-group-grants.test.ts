@@ -14,7 +14,7 @@ function seedDirectory() {
   const db = resetDbForTests(":memory:", { seedDemo: false });
   addDevice(db, device);
   upsertUsers(db, [
-    { displayName: "Dana Reyes", userPrincipalName: "dana@contoso.test", adSid: "S-1-5-21-100-1", jitEligible: true },
+    { displayName: "Dana Reyes", userPrincipalName: "dana@contoso.test", adSid: "S-1-5-21-100-1" },
     { displayName: "Lee Wong", userPrincipalName: "lee@contoso.test", adSid: "S-1-5-21-100-2" },
   ]);
   const idByUpn = (upn: string) =>

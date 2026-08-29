@@ -217,19 +217,6 @@ paths:
           schema: { type: string }
       responses:
         "200": { description: pending, connected, or error }
-  /api/users/{id}:
-    patch:
-      security: [{ session: [] }]
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                jitEligible: { type: boolean }
-                disabled: { type: boolean }
-      responses:
-        "200": { description: Updated }
   /api/audit:
     get:
       security: [{ session: [] }]
@@ -380,7 +367,6 @@ components:
         userPrincipalName: { type: string }
         adSid: { type: string }
         entraOid: { type: string }
-        jitEligible: { type: boolean }
         effectiveRole:
           type: string
           enum: [standard, elevated-admin]
@@ -400,7 +386,6 @@ components:
         userPrincipalName: { type: string }
         adSid: { type: string }
         entraOid: { type: string }
-        jitEligible: { type: boolean }
         roles:
           type: array
           items: { type: string }

@@ -9,7 +9,7 @@ export const PERMISSIONS = [
   { id: "jit.grant", group: "JIT", label: "Open JIT admin windows" },
   { id: "jit.revoke", group: "JIT", label: "Force-revoke JIT windows" },
   { id: "directory.users.view", group: "Directory", label: "View directory users and groups" },
-  { id: "directory.users.manage", group: "Directory", label: "Change JIT eligibility and disable directory users" },
+  { id: "directory.users.manage", group: "Directory", label: "Import and sync directory users" },
   { id: "devices.view", group: "Devices", label: "View enrolled devices" },
   { id: "devices.enroll", group: "Devices", label: "Download Windows client installers" },
   { id: "devices.update", group: "Devices", label: "Push agent updates to devices" },

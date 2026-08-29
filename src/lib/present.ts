@@ -20,7 +20,6 @@ export function presentUsers(
     userPrincipalName: u.userPrincipalName,
     adSid: u.adSid,
     entraOid: u.entraOid,
-    jitEligible: u.jitEligible === 1,
     roles: JSON.parse(u.rolesJson) as string[],
     effectiveRole: effectiveRoleFor(context.membershipsByUser?.get(u.id) ?? []),
     accountKind: accountKindOf(u.userPrincipalName),

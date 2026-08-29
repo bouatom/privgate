@@ -78,7 +78,6 @@ function directoryUser(overrides: Partial<DirectoryUser> & Pick<DirectoryUser, "
   return {
     adSid: "",
     entraOid: "",
-    jitEligible: 0,
     disabled: 0,
     rolesJson: "[]",
     ...overrides,

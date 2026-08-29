@@ -1,4 +1,4 @@
-/* Directory users — dense rows, identity chips, JIT switch, groups table.
+/* Directory users — dense rows, identity chips, groups table.
    Only token variables from globals.css are referenced; no new palette here. */
 
 /* Dense users table: tighter cells than the default 12px 18px. */
@@ -56,56 +56,6 @@
 .pillMuted {
   color: var(--muted);
   border-color: var(--line);
-}
-
-/* --- JIT switch: 36x20 track, 14px knob. Amber on, line/muted off. --- */
-.switch {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--input);
-  cursor: pointer;
-  transition:
-    background-color 0.18s ease,
-    border-color 0.18s ease;
-}
-.switch:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-.switch:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-.knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--muted);
-  transition:
-    transform 0.18s ease,
-    background-color 0.18s ease;
-}
-.on {
-  background: var(--amber);
-  border-color: var(--amber);
-}
-.on .knob {
-  transform: translateX(16px);
-  background: var(--primary-ink);
-}
-.switchHeader {
-  text-align: right;
-}
-.switchCell {
-  text-align: right;
-  white-space: nowrap;
 }
 
 /* --- Empty state. --- */

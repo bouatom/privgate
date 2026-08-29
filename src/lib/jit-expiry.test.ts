@@ -15,7 +15,6 @@ function seedEligible() {
       displayName: "Dana Reyes",
       userPrincipalName: "dana@contoso.test",
       adSid: "S-1-5-21-1",
-      jitEligible: true,
     },
   ]);
   const user = db.prepare("SELECT id FROM users WHERE upn = ?").get("dana@contoso.test") as { id: string };

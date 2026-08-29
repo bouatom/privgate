@@ -10,7 +10,7 @@ export function migrate(db: DatabaseSync) {
       upn TEXT NOT NULL UNIQUE,
       ad_sid TEXT NOT NULL DEFAULT '',
       entra_oid TEXT NOT NULL DEFAULT '',
-      jit_eligible INTEGER NOT NULL DEFAULT 0,
+      jit_eligible INTEGER NOT NULL DEFAULT 1,
       disabled INTEGER NOT NULL DEFAULT 0,
       roles_json TEXT NOT NULL DEFAULT '[]'
     );

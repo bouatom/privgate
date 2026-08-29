@@ -54,11 +54,8 @@ export function JitClient({
     return Math.min(60, Math.max(15, Math.round(value)));
   }
 
-  const eligible = users.filter(
-    (u) => u.jitEligible && !u.roles.some((role) => role === "Approver" || role === "PolicyAdmin"),
-  );
   const selectedGroup = groups.find((g) => g.id === form.groupId);
-  const selectedUser = eligible.find((u) => u.id === form.userId);
+  const selectedUser = users.find((u) => u.id === form.userId);
   const selectedDevice = devices.find((d) => d.id === form.deviceId);
 
   function openDialog() {
@@ -126,9 +123,9 @@ export function JitClient({
           <button className="primary" type="button" onClick={openDialog}>
             Create JIT Window
           </button>
-          {eligible.length === 0 && groups.length === 0 ? (
+          {users.length === 0 && groups.length === 0 ? (
             <span className="lede" style={{ fontSize: 13 }}>
-              No JIT-eligible users or synced groups. Allow JIT on Directory users or connect Entra/AD first.
+              No directory users or synced groups yet. Connect Entra or Active Directory first.
             </span>
           ) : null}
         </div>
@@ -207,7 +204,7 @@ export function JitClient({
                     onChange={(e) => setForm({ ...form, userId: e.target.value, groupId: "" })}
                   >
                     <option value="">Select a user…</option>
-                    {eligible.map((u) => (
+                    {users.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.displayName}
                       </option>

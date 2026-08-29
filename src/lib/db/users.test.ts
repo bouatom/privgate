@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getUserByUpn, patchUser, resetDbForTests, upsertUsers } from "./index";
+import { getUserByUpn, resetDbForTests, upsertUsers } from "./index";
 import { createJit } from "./jit";
 
 describe("upsertUsers", () => {
@@ -50,34 +50,50 @@ describe("upsertUsers", () => {
 });
 
 describe("disable-user removal regressions", () => {
-  it("patchUser only touches JIT eligibility and leaves the legacy column alone", () => {
+  it("no capability path can set disabled via upsertUsers", () => {
     const db = resetDbForTests(":memory:", { seedDemo: false });
     upsertUsers(db, [{ displayName: "Riley", userPrincipalName: "riley@contoso.test" }]);
     const user = getUserByUpn(db, "riley@contoso.test")!;
-    // Simulate a legacy row disabled by an older build.
-    db.prepare("UPDATE users SET disabled = 1 WHERE id = ?").run(user.id);
-
-    patchUser(db, user.id, { jitEligible: true });
-
-    const after = getUserByUpn(db, "riley@contoso.test")!;
-    expect(after.jitEligible).toBe(1);
-    const legacy = db.prepare("SELECT disabled FROM users WHERE id = ?").get(user.id) as { disabled: number };
-    expect(legacy.disabled).toBe(1); // untouched by the new code path
+    expect(user.disabled).toBe(0);
   });
 
-  it("no capability path can set disabled via patchUser", () => {
+  it("a leftover jit_eligible=0 row is still JIT-grantable", () => {
     const db = resetDbForTests(":memory:", { seedDemo: false });
     upsertUsers(db, [{ displayName: "Riley", userPrincipalName: "riley@contoso.test" }]);
     const user = getUserByUpn(db, "riley@contoso.test")!;
-    // Runtime guard for what the types now prevent: stray payloads are ignored.
-    const patched = patchUser(db, user.id, { jitEligible: true } as { jitEligible?: boolean });
-    expect(patched?.disabled).toBe(0);
-    expect(patched?.jitEligible).toBe(1);
+    db.prepare("UPDATE users SET jit_eligible = 0 WHERE id = ?").run(user.id);
+
+    const grant = createJit(db, {
+      userId: user.id,
+      deviceId: "dev-lab-01",
+      durationMinutes: 15,
+      reason: "eligibility flag is gone",
+    });
+    expect("error" in grant).toBe(false);
+  });
+
+  it("a directory user with Approver/PolicyAdmin role strings is still JIT-grantable", () => {
+    const db = resetDbForTests(":memory:", { seedDemo: false });
+    upsertUsers(db, [
+      {
+        displayName: "Ada",
+        userPrincipalName: "ada@contoso.test",
+        roles: ["Approver", "PolicyAdmin"],
+      },
+    ]);
+    const user = getUserByUpn(db, "ada@contoso.test")!;
+    const grant = createJit(db, {
+      userId: user.id,
+      deviceId: "dev-lab-01",
+      durationMinutes: 15,
+      reason: "synced users are all grantable",
+    });
+    expect("error" in grant).toBe(false);
   });
 
   it("a legacy-disabled directory account is still JIT-grantable (disable no longer gates)", () => {
     const db = resetDbForTests(":memory:", { seedDemo: false });
-    upsertUsers(db, [{ displayName: "Riley", userPrincipalName: "riley@contoso.test", jitEligible: true }]);
+    upsertUsers(db, [{ displayName: "Riley", userPrincipalName: "riley@contoso.test" }]);
     const user = getUserByUpn(db, "riley@contoso.test")!;
     db.prepare("UPDATE users SET disabled = 1 WHERE id = ?").run(user.id);
 

@@ -41,7 +41,6 @@ export type PresentedUser = {
   userPrincipalName: string;
   adSid: string;
   entraOid: string;
-  jitEligible: boolean;
   roles: string[];
   /** Real elevation status derived from high-privilege group membership. */
   effectiveRole: "standard" | "elevated-admin";

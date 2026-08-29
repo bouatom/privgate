@@ -21,7 +21,6 @@ export {
   getUserByUpn,
   groupIdsForUser,
   listUsers,
-  patchUser,
   rowUser,
   upsertUsers,
 } from "./users";
