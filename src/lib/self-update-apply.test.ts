@@ -233,7 +233,9 @@ describe("applyConsoleUpdate", () => {
     expect(result.ok).toBe(true);
     // Detached + output redirected into the data dir log; verified hash passed through.
     expect(spawned).toHaveLength(1);
-    expect(spawned[0].options.detached).toBe(true);
+    // Detach on Unix so the updater outlives the web process; NEVER on Windows,
+    // where DETACHED_PROCESS breaks PowerShell (updater emits nothing → stale).
+    expect(spawned[0].options.detached).toBe(process.platform !== "win32");
     expect(spawned[0].args).toContain(sha256(ASSET_BODY));
     expect(readFileSync(paths.stateFile, "utf8")).toContain("0.2.13");
 

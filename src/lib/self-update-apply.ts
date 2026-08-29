@@ -98,7 +98,7 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Run pre-checks, then hand off to the detached updater. Returns as soon as
+ * Run pre-checks, then hand off to the updater. Returns as soon as
  * the child is spawned; the caller responds 202 and expects the process to be
  * killed by the very child it launched.
  */
@@ -232,8 +232,17 @@ export async function applyConsoleUpdate(deps: ApplyDeps): Promise<ApplyResult> 
 
     // Explicit cwd + full env passthrough: services may run with a minimal
     // default working directory, and the child needs the service environment.
+    //
+    // Detach on Unix (the updater must outlive the web process it stops), but
+    // NEVER on Windows: DETACHED_PROCESS (CREATE_NEW_PROCESS_GROUP) breaks the
+    // PowerShell child — it starts but emits nothing and never writes its
+    // required "==> updater start" line, so apply.log is left stuck at the
+    // handoff marker and status drops to "stale" (proven on prod box 10.0.2.25:
+    // identical spawn with detached:false works end-to-end). A Windows parent
+    // kill does NOT reap its children, so the updater still survives the
+    // console service being stopped mid-apply.
     const child = (deps.spawnImpl ?? spawnReal)(command.file, command.args, {
-      detached: true,
+      detached: process.platform !== "win32",
       cwd: path.dirname(scriptPath),
       env: { ...env } as NodeJS.ProcessEnv,
       stdio: ["ignore", logFd, logFd],
