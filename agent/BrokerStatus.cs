@@ -17,6 +17,7 @@ public sealed class StatusSnapshot
     public string DeviceId { get; set; } = "";
     public string Hostname { get; set; } = Environment.MachineName;
     public string ApiBase { get; set; } = "";
+    public string Version { get; set; } = "";
     public bool Realtime { get; set; }
     public string StartedAt { get; set; } = "";
     public string? ConnectedAt { get; set; }
@@ -98,7 +99,7 @@ public sealed class BrokerStatus
             Path = path,
             Decision = decision,
         });
-        while (_requests.Count > 12 && _requests.TryDequeue(out _)) { }
+        while (_requests.Count > 40 && _requests.TryDequeue(out _)) { }
     }
 
     public void NoteJit(bool active, DateTimeOffset? until = null)
@@ -135,6 +136,7 @@ public sealed class BrokerStatus
                 DeviceId = _deviceId,
                 Hostname = Environment.MachineName,
                 ApiBase = _apiBase,
+                Version = UpdateManager.AgentVersion(),
                 Realtime = _realtime,
                 StartedAt = _startedAt.ToString("u"),
                 ConnectedAt = _connectedAt?.ToString("u"),

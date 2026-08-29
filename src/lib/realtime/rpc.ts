@@ -70,18 +70,24 @@ export function handleAgentRpc(
   }
   if (message.type === "evaluate") {
     const body = message.body;
-    if (!body?.userSid || !body.filePath || !body.fileHash || !body.publisher) {
+    if (!body?.userSid || !body.filePath || !body.fileHash) {
       return { id: message.id, type: "result", ok: false, error: "userSid, filePath, fileHash, publisher required" };
     }
-    const payload = evaluateForDevice(getDb(), deviceId, body);
+    const payload = evaluateForDevice(getDb(), deviceId, {
+      ...body,
+      publisher: (body.publisher || "").trim() || "Unknown",
+    });
     return { id: message.id, type: "result", ok: true, payload };
   }
   if (message.type === "silent-allow") {
     const body = message.body;
-    if (!body?.userSid || !body.filePath || !body.fileHash || !body.publisher) {
+    if (!body?.userSid || !body.filePath || !body.fileHash) {
       return { id: message.id, type: "result", ok: false, error: "userSid, filePath, fileHash, publisher required" };
     }
-    const payload = silentAllowForDevice(getDb(), deviceId, body);
+    const payload = silentAllowForDevice(getDb(), deviceId, {
+      ...body,
+      publisher: (body.publisher || "").trim() || "Unknown",
+    });
     return { id: message.id, type: "result", ok: true, payload };
   }
   if (message.type === "jit-state") {

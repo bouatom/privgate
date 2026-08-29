@@ -19,6 +19,32 @@ partial class BrokerHost
         var aux = PipeAux.Handle(msg, caller, _watchdog);
         if (aux is not null) return aux;
         if (mode == "status") return BrokerStatus.Current.ToJson();
+        if (mode == "check-update")
+        {
+            try
+            {
+                var payload = await _api.CheckUpdateAsync(UpdateManager.AgentVersion(), _ct).ConfigureAwait(false);
+                return payload.GetRawText();
+            }
+            catch (Exception ex)
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    error = ex.Message,
+                    installed = UpdateManager.AgentVersion(),
+                });
+            }
+        }
+        if (mode == "apply-update")
+        {
+            var version = msg.TryGetProperty("version", out var verEl) ? verEl.GetString() ?? "" : "";
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                return JsonSerializer.Serialize(new { error = "version required" });
+            }
+            _api.StartAgentUpdate(version);
+            return JsonSerializer.Serialize(new { ok = true });
+        }
         // Trust note: identity comes only from NamedPipeHost.ClientIdentity
         // (the client process token); payload userSid/sessionId never read.
         if (mode == "jit-status")
@@ -89,6 +115,7 @@ partial class BrokerHost
 
         var hash = Authenticode.Sha256File(filePath);
         var publisher = Authenticode.Publisher(filePath);
+        BrokerLog.Write($"evaluate sid={caller.UserSid} pub={publisher} file={filePath}");
         var result = await _api.EvaluateAsync(new
         {
             userSid = caller.UserSid,

@@ -34,6 +34,8 @@ describe("Windows agent update and per-user tray", () => {
     const tray = agent("AgentTray.cs");
     expect(tray).toContain("ServiceInstalled()");
     expect(tray).toContain("_ownsBroker = existing == null && !ServiceInstalled()");
+    expect(tray).toContain("BrokerStatus.TryQueryPipe()");
+    expect(tray).toContain("The service snapshot is the source of truth");
     const svc = agent("BrokerService.cs");
     expect(svc).toContain("CanHandleSessionChangeEvent = true");
     expect(svc).toContain("SessionChangeReason.SessionLogon");

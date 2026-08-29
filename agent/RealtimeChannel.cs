@@ -10,7 +10,7 @@ namespace PrivGate.Agent;
 /// Persistent HMAC-authenticated WebSocket to the control plane.
 /// Evaluate/JIT run over this socket; tickets and JIT revoke arrive as pushes.
 /// </summary>
-public sealed class RealtimeChannel : IDisposable
+public sealed partial class RealtimeChannel : IDisposable
 {
     public const string Path = "/api/agent/ws";
     static readonly TimeSpan PendingWait = TimeSpan.FromMinutes(15);

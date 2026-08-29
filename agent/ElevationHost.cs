@@ -25,12 +25,23 @@ public static class Authenticode
         {
             using var cert = X509Certificate.CreateFromSignedFile(path);
             using var wrapped = new X509Certificate2(cert);
-            return wrapped.Subject;
+            var subject = wrapped.Subject;
+            if (!string.IsNullOrWhiteSpace(subject)) return subject;
         }
         catch
         {
-            return "";
+            // Catalog-signed OS binaries (mmc.exe) have no embedded Authenticode blob.
         }
+        try
+        {
+            var company = FileVersionInfo.GetVersionInfo(path).CompanyName;
+            if (!string.IsNullOrWhiteSpace(company)) return company.Trim();
+        }
+        catch
+        {
+            // Version resource missing or unreadable.
+        }
+        return "Unknown";
     }
 }
 

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
-  if (!body.userSid || !body.filePath || !body.fileHash || !body.publisher) {
+  if (!body.userSid || !body.filePath || !body.fileHash) {
     return NextResponse.json({ error: "userSid, filePath, fileHash, publisher required" }, { status: 400 });
   }
   const result = silentAllowForDevice(db, auth.deviceId, {
@@ -51,7 +51,7 @@ export async function POST(req: Request) {
     entraOid: body.entraOid,
     filePath: body.filePath,
     fileHash: body.fileHash,
-    publisher: body.publisher,
+    publisher: (body.publisher || "").trim() || "Unknown",
     arguments: body.arguments,
   });
   return NextResponse.json(result);

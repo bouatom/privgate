@@ -127,6 +127,12 @@ static class ElevationClient
         });
     }
 
+    internal static string CheckUpdate() =>
+        Exchange(JsonSerializer.Serialize(new { mode = "check-update" }), 15_000);
+
+    internal static string ApplyUpdate(string version) =>
+        Exchange(JsonSerializer.Serialize(new { mode = "apply-update", version }), 8_000);
+
     /// <summary>
     /// One request/reply exchange with the broker over the elevation pipe,
     /// under a hard deadline. Pipe streams do not support ReadTimeout (the

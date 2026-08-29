@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { listAudit, resetDbForTests } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { handleAgentRpc } from "./realtime/rpc";
-import { agentUpdateMessage, requestAgentUpdate } from "./agent-update";
+import { agentUpdateMessage, describeClientUpdate, requestAgentUpdate } from "./agent-update";
 import { disableRepoVersionManifest, resetVersionEnv } from "@/test/version-manifest";
 
 const device = "dev-lab-01";
@@ -130,5 +130,21 @@ describe("version-report RPC", () => {
     expect(row.agent_version).toContain("+pending@");
 
     stop();
+  });
+});
+
+describe("describeClientUpdate", () => {
+  it("offers a newer console build and reports current when already there", () => {
+    process.env.PRIVGATE_VERSION = "0.3.4";
+    expect(describeClientUpdate("0.3.3")).toEqual({
+      installed: "0.3.3",
+      latest: "0.3.4",
+      available: true,
+    });
+    expect(describeClientUpdate("0.3.4")).toMatchObject({
+      installed: "0.3.4",
+      latest: "0.3.4",
+      available: false,
+    });
   });
 });

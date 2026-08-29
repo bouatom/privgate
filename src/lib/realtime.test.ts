@@ -121,4 +121,21 @@ describe("agent realtime RPC", () => {
     });
     expect(pending.payload).toEqual({ allow: false });
   });
+
+  it("accepts catalog-signed binaries with an empty publisher", () => {
+    resetDbForTests(":memory:");
+    const hash = createHash("sha256").update("mmc-catalog").digest("hex");
+    const reply = handleAgentRpc("dev-lab-01", {
+      id: "5",
+      type: "evaluate",
+      body: {
+        userSid: staffSid,
+        filePath: "C:\\\\Windows\\\\system32\\\\mmc.exe",
+        fileHash: hash,
+        publisher: "",
+      },
+    });
+    expect(reply).toMatchObject({ id: "5", type: "result", ok: true });
+    expect((reply.payload as { decision: string }).decision).toBe("pending");
+  });
 });

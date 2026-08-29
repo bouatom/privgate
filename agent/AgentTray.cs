@@ -13,7 +13,7 @@ sealed class AgentTrayContext : ApplicationContext
     readonly string[] _args;
     readonly CancellationTokenSource _cts = new();
     readonly bool _ownsBroker;
-    int _seenNotice;
+    int _seenNotice = -1;
 
     public AgentTrayContext(string[] args)
     {
@@ -177,18 +177,28 @@ sealed class AgentTrayContext : ApplicationContext
 
     void RefreshBody()
     {
+        // The service snapshot is the source of truth whenever the pipe
+        // answers — even if this tray started an in-process broker while
+        // PrivGateBroker was stopped. Otherwise the shield stays red and
+        // Console stays blank after the service comes back (WS-SOHO-03).
+        var fromPipe = BrokerStatus.TryQueryPipe();
         StatusSnapshot snap;
-        if (_ownsBroker)
+        if (fromPipe != null)
+        {
+            snap = fromPipe;
+        }
+        else if (_ownsBroker)
         {
             snap = BrokerStatus.Current.Snapshot("in-process");
         }
         else
         {
-            snap = BrokerStatus.TryQueryPipe() ?? new StatusSnapshot
+            snap = new StatusSnapshot
             {
                 LastError = "Broker service is not reachable on the named pipe.",
                 Source = "detached",
             };
+            if (ServiceInstalled() && !ServiceIsRunning()) TryStartService();
         }
         _form.Bind(snap);
         var state = snap.Realtime ? "connected" : "offline";
@@ -201,12 +211,17 @@ sealed class AgentTrayContext : ApplicationContext
         // while the color-only swap keeps the brand silhouette constant.
         var desired = AppIcon.Create(TrayPx(), snap.Realtime ? AppIconState.Normal : AppIconState.Problem);
         if (!ReferenceEquals(_icon.Icon, desired)) _icon.Icon = desired;
-        if (snap.NoticeSeq > _seenNotice && snap.NoticeSeq > 0)
+        if (snap.NoticeSeq > _seenNotice)
         {
+            var first = _seenNotice < 0;
             _seenNotice = snap.NoticeSeq;
-            // Toast only: balloons die to focus assist and fullscreen apps,
-            // and showing both duplicates every notice on the desktop.
-            Toast.Show(snap.NoticeTitle, snap.NoticeBody);
+            // Do not replay notices that were already on the broker before
+            // this tray attached (e.g. a leftover "Installing…" from an
+            // earlier apply). Toast only newly bumped sequences.
+            if (!first && snap.NoticeSeq > 0)
+            {
+                Toast.Show(snap.NoticeTitle, snap.NoticeBody);
+            }
         }
     }
 

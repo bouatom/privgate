@@ -21,6 +21,21 @@ export function agentUpdateMessage(): AgentUpdateMessage {
   };
 }
 
+/** What the device should show on a user-initiated "check for updates". */
+export function describeClientUpdate(installedRaw: string): {
+  installed: string;
+  latest: string;
+  available: boolean;
+} {
+  const latest = currentClientVersion();
+  const installed = sanitizeClientVersion(installedRaw);
+  return {
+    installed,
+    latest,
+    available: updateAvailable(installedRaw, latest),
+  };
+}
+
 export type UpdateRequestResult =
   | { ok: true; version: string; queued?: boolean }
   | { ok: false; status: number; error: string };
