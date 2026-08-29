@@ -37,11 +37,8 @@ static class PipeAux
             }
         }
         var targets = UacTargetCache.Remember(pids);
-        foreach (var target in targets)
-        {
-            var (hash, publisher) = Authenticode.TryFingerprint(target);
-            _ = api.ReportUacSeenAsync(target, caller.UserSid, hash, publisher);
-        }
+        // Broker ConsentBrokerWatch records appearances. This path only
+        // snapshots targets so the tray can pre-fill the follow-up ask.
         return JsonSerializer.Serialize(new { ok = true, remembered = pids.Count, targets });
     }
 

@@ -11,12 +11,17 @@ describe("early logon UAC capture", () => {
     expect(watch).toContain("ReportUacSeenAsync");
     expect(watch).toContain("HasTray");
     expect(watch).toContain("Does not hook");
-    expect(agent("BrokerHost.cs")).toContain("ConsentBrokerWatch.RunAsync");
+    expect(agent("ConsentBrokerWatch.cs")).toContain("consent seen pid=");
+    expect(agent("ConsentBrokerWatch.cs")).toContain("recorded");
+    expect(agent("ConsentBrokerWatch.cs")).toContain("lock (Gate)");
+    expect(agent("ApiClient.cs")).toContain("/api/agent/uac-seen");
+    expect(agent("UacTargetExtract.cs")).toContain("FromSession");
   });
 
   it("starts the session tray at SessionLogon and retries instead of waiting on HKLM Run", () => {
     const sessions = agent("TraySessions.cs");
     expect(sessions).toContain("WatchAsync");
+    expect(sessions).toContain("lock (Gate)");
     expect(sessions).toContain("Explorer delays");
     expect(agent("BrokerService.cs")).toContain("Task.Delay(ms)");
     expect(agent("BrokerHost.cs")).toContain("TraySessions.WatchAsync");

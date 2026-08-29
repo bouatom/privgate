@@ -14,6 +14,7 @@ static class TraySessions
 {
     const int WtsActive = 0;
     const int WtsConnected = 1;
+    static readonly object Gate = new();
 
     /// <summary>
     /// Tight loop at logon (desktop/token races), then a slow keep-alive so
@@ -58,11 +59,14 @@ static class TraySessions
     internal static void EnsureInSession(int sessionId)
     {
         if (sessionId <= 0) return;
-        ReapDuplicates(sessionId);
-        if (CountInSession(sessionId) > 0) return;
-        var exe = Path.Combine(AppContext.BaseDirectory, "PrivGate.Agent.exe");
-        if (!File.Exists(exe)) return;
-        SessionLaunch.InSessionAsLoggedOnUser(sessionId, exe);
+        lock (Gate)
+        {
+            ReapDuplicates(sessionId);
+            if (CountInSession(sessionId) > 0) return;
+            var exe = Path.Combine(AppContext.BaseDirectory, "PrivGate.Agent.exe");
+            if (!File.Exists(exe)) return;
+            SessionLaunch.InSessionAsLoggedOnUser(sessionId, exe);
+        }
     }
 
     /// <summary>

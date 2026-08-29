@@ -421,7 +421,7 @@ td.empty { padding: 18px; color: var(--muted); font-size: 14px; }
   color: var(--amber-2);
 }
 
-.row-actions { display: flex; gap: 8px; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 button.primary, button.ghost, button.danger {
   border: 1px solid var(--line);

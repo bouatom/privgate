@@ -8,13 +8,13 @@ namespace PrivGate.Agent;
 
 /// <summary>
 /// Remembers what program each stock-UAC prompt was for, captured while the
-/// prompt is still open. Windows launches <c>consent.exe</c> with the target
-/// program path inside its command line; the broker (SYSTEM) reads that line
-/// natively — no WMI dependency, no hooking, no touching the secure desktop —
-/// and only trusts PIDs whose owner is LocalSystem, so a lookalike process in
-/// the user's session cannot poison the cache. The cached path merely
-/// pre-fills the request review window; every elevation still passes policy
-/// evaluation, ticket verification and hard-bans.
+/// prompt is still open. Consent.exe argv is AppInfo pointers, so the broker
+/// (SYSTEM) also reads caller command lines in that session (for example
+/// PowerShell -Verb RunAs). No WMI, no hooking, no touching the secure
+/// desktop. Only consent PIDs owned by LocalSystem are trusted, so a
+/// lookalike in the user's session cannot poison the cache. The cached path
+/// merely pre-fills the request review window; every elevation still passes
+/// policy evaluation, ticket verification and hard-bans.
 /// </summary>
 public static class UacTargetCache
 {
@@ -44,7 +44,21 @@ public static class UacTargetCache
                 }
                 if (!IsOwnedBySystem(pid)) continue;
                 var line = Native.CommandLineOf(pid);
-                var target = ExtractTarget(line);
+                var target = UacTargetExtract.ExtractTarget(line);
+                if (target.Length == 0)
+                {
+                    int session = 0;
+                    try
+                    {
+                        using var proc = Process.GetProcessById(pid);
+                        session = proc.SessionId;
+                    }
+                    catch
+                    {
+                        // Consent may have exited between GetProcesses and this read.
+                    }
+                    target = UacTargetExtract.FromSession(session, pid);
+                }
                 if (target.Length == 0) continue;
                 ByPid[pid] = new Entry(target, DateTimeOffset.UtcNow);
                 if (!found.Contains(target)) found.Add(target);
@@ -121,50 +135,6 @@ public static class UacTargetCache
         {
             Native.CloseHandle(proc);
         }
-    }
-
-    /// <summary>
-    /// Picks the program path out of a consent.exe command line. Prefers an
-    /// existing .msc/.msi over the host EXE (mmc.exe, msiexec.exe) and skips
-    /// shell wrappers so Disk Management is recorded as diskmgmt.msc, not
-    /// powershell.exe.
-    /// </summary>
-    internal static string ExtractTarget(string commandLine)
-    {
-        if (string.IsNullOrWhiteSpace(commandLine)) return "";
-        var argv = Native.SplitArgs(commandLine);
-        var candidates = new List<string>();
-        foreach (var arg in argv.Skip(1))
-        {
-            var candidate = arg.Trim().Trim('"');
-            if (candidate.Length < 4) continue;
-            if (!(candidate.Contains(':') || candidate.StartsWith("\\\\"))) continue;
-            var lower = candidate.ToLowerInvariant();
-            if (!(lower.EndsWith(".exe") || lower.EndsWith(".msc") || lower.EndsWith(".msi"))) continue;
-            if (File.Exists(candidate)) candidates.Add(candidate);
-        }
-        return PreferTarget(candidates);
-    }
-
-    static readonly HashSet<string> Wrappers = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "powershell.exe", "pwsh.exe", "cmd.exe", "conhost.exe", "consent.exe", "explorer.exe",
-    };
-
-    /// <summary>Prefers snap-ins/installers, then non-wrapper EXEs.</summary>
-    internal static string PreferTarget(IReadOnlyList<string> candidates)
-    {
-        if (candidates.Count == 0) return "";
-        foreach (var c in candidates)
-        {
-            var lower = c.ToLowerInvariant();
-            if (lower.EndsWith(".msc") || lower.EndsWith(".msi")) return c;
-        }
-        foreach (var c in candidates)
-        {
-            if (!Wrappers.Contains(Path.GetFileName(c))) return c;
-        }
-        return candidates[0];
     }
 
     /// <summary>Native helpers shared by owner check and cmdline read.</summary>

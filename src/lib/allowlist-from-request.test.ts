@@ -17,6 +17,7 @@ describe("allowlist from a blocked elevation", () => {
       /cannot be always-allow/i,
     );
     expect(allowlistBlockedReason("C:\\\\Tools\\\\Disk.exe", "", "CN=Contoso")).toMatch(/hash and publisher/i);
+    expect(allowlistBlockedReason("(unidentified program)", "", "")).toMatch(/could not identify/i);
   });
 
   it("pins MMC snap-in arguments so Disk Management is not a blanket mmc.exe allow", () => {

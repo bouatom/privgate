@@ -15,8 +15,9 @@ static class ConsentBrokerWatch
 {
     static readonly TimeSpan TickEvery = TimeSpan.FromMilliseconds(250);
     static readonly ConcurrentDictionary<int, Tracked> Live = new();
+    static readonly object Gate = new();
 
-    record Tracked(int Session, string UserSid, string Target, bool Reported);
+    record Tracked(int Session, string UserSid, string Target, bool Reported, DateTimeOffset LastTry);
 
     internal static async Task RunAsync(ApiClient api, CancellationToken ct)
     {
@@ -94,18 +95,34 @@ static class ConsentBrokerWatch
 
     static async Task NoteOpen(ApiClient api, int pid, int session, CancellationToken ct)
     {
-        if (Live.TryGetValue(pid, out var existing) && existing.Reported) return;
-        var targets = UacTargetCache.Remember(new[] { pid });
-        if (targets.Count == 0) return;
-        var target = targets[0];
-        var userSid = existing?.UserSid ?? "";
-        if (userSid.Length == 0) userSid = AutoElevateInspect.SessionUserSid(session);
-        if (userSid.Length == 0 || AutoElevateInspect.IsServiceSid(userSid)) return;
+        string userSid;
+        string target;
+        lock (Gate)
+        {
+            if (Live.TryGetValue(pid, out var existing) && existing.Reported) return;
+            if (existing is not null && DateTimeOffset.UtcNow - existing.LastTry < TimeSpan.FromSeconds(2))
+                return;
+            var targets = UacTargetCache.Remember(new[] { pid });
+            target = targets.Count > 0 ? targets[0] : "(unidentified program)";
+            userSid = existing?.UserSid ?? "";
+            if (userSid.Length == 0) userSid = AutoElevateInspect.SessionUserSid(session);
+            if (userSid.Length == 0 || AutoElevateInspect.IsServiceSid(userSid))
+            {
+                BrokerLog.Write($"consent pid={pid} session={session} skipped (no interactive user)");
+                return;
+            }
+            Live[pid] = new Tracked(session, userSid, target, false, DateTimeOffset.UtcNow);
+        }
 
         var (hash, publisher) = Authenticode.TryFingerprint(target);
         var res = await api.ReportUacSeenAsync(target, userSid, hash, publisher, ct: ct)
             .ConfigureAwait(false);
-        Live[pid] = new Tracked(session, userSid, target, Recorded(res));
+        var ok = Recorded(res);
+        Live[pid] = new Tracked(session, userSid, target, ok, DateTimeOffset.UtcNow);
+        BrokerLog.Write(
+            ok
+                ? $"consent seen pid={pid} user={userSid} file={target}"
+                : $"consent seen pid={pid} not recorded yet file={target}");
     }
 
     static async Task NoteClosed(ApiClient api, Tracked closed, CancellationToken ct)
@@ -132,7 +149,9 @@ static class ConsentBrokerWatch
     {
         try
         {
+            // Realtime RpcAsync unwraps to { recorded: true }; HTTP keeps { ok: true }.
             if (res.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True) return true;
+            if (res.TryGetProperty("recorded", out var rec) && rec.ValueKind == JsonValueKind.True) return true;
             if (res.TryGetProperty("error", out var err))
             {
                 var s = err.GetString() ?? "";

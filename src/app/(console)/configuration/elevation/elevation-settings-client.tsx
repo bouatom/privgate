@@ -27,6 +27,7 @@ export function ElevationSettingsClient({
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [mode, setMode] = useState<UacMode>(initial);
+  const [saved, setSaved] = useState<UacMode>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -46,8 +47,10 @@ export function ElevationSettingsClient({
       setError(body.error || "Could not save elevation mode.");
       return;
     }
-    setMode(body.uacMode === "collect" ? "collect" : "prompt");
-    setMessage("Saved. Connected PCs pick this up within a minute.");
+    const next = body.uacMode === "collect" ? "collect" : "prompt";
+    setMode(next);
+    setSaved(next);
+    setMessage("Saved. Connected PCs are notified immediately.");
     startTransition(() => router.refresh());
   }
 
@@ -82,7 +85,7 @@ export function ElevationSettingsClient({
         </div>
         {canManage ? (
           <div>
-            <button className="primary" type="button" disabled={busy || mode === initial} onClick={() => void save()}>
+            <button className="primary" type="button" disabled={busy || mode === saved} onClick={() => void save()}>
               {busy ? "Saving…" : "Save"}
             </button>
           </div>

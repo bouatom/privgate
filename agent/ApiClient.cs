@@ -79,9 +79,22 @@ public sealed class ApiClient
                 return await realtime.UacSeenAsync(filePath, userSid, ct, fileHash, publisher, arguments)
                     .ConfigureAwait(false);
             }
-            catch (Exception ex) { Console.Error.WriteLine($"PrivGate realtime uac-seen: {ex.Message}"); }
+            catch (Exception ex) { BrokerLog.Write("realtime uac-seen: " + ex.Message); }
         }
-        return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+        try
+        {
+            return await SendAsync(
+                    HttpMethod.Post,
+                    "/api/agent/uac-seen",
+                    new { userSid, filePath, fileHash, publisher, arguments },
+                    ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            BrokerLog.Write("http uac-seen: " + ex.Message);
+            return JsonSerializer.Deserialize<JsonElement>("{\"ok\":false,\"reason\":\"offline\"}");
+        }
     }
 
     /// <summary>

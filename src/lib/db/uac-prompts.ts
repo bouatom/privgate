@@ -68,6 +68,14 @@ export function listUacPromptsForDevice(db: DatabaseSync, deviceId: string): Uac
   }));
 }
 
+/** Same open prompt (retries while last_outcome is still prompted) must not inflate Times. */
+function shouldCountAppearance(existing: Record<string, unknown>): boolean {
+  if (String(existing.last_outcome) !== "prompted") return true;
+  const last = Date.parse(String(existing.last_at));
+  if (!Number.isFinite(last)) return true;
+  return Date.now() - last >= 120_000;
+}
+
 /**
  * One row per (device, user, program). `seen` counts a new stock-UAC
  * appearance; `closed` updates the classifier verdict without double-counting
@@ -121,7 +129,10 @@ export function upsertUacPrompt(
     (input.publisher && input.publisher.trim() ? input.publisher : String(existing.publisher)) || "";
   const args =
     input.arguments && input.arguments.length > 0 ? input.arguments : String(existing.arguments ?? "");
-  const count = input.phase === "seen" ? Number(existing.count) + 1 : Number(existing.count) || 1;
+  const count =
+    input.phase === "seen" && shouldCountAppearance(existing)
+      ? Number(existing.count) + 1
+      : Number(existing.count) || 1;
   db.prepare(
     `UPDATE uac_prompts
      SET file_hash = ?, publisher = ?, arguments = ?, last_at = ?, count = ?, last_outcome = ?

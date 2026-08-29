@@ -3,7 +3,7 @@ import { listAudit, listUacPrompts, resetDbForTests } from "./db";
 import { registerDeviceSocket, resetRealtimeForTests } from "./realtime/bus";
 import { handleAgentRpc } from "./realtime/rpc";
 import { upsertUsers } from "./db/users";
-import { uacOutcomeLabel, uacOutcomePill } from "./uac-prompt-label";
+import { uacOutcomeLabel, uacOutcomePill, uacProgramLabel } from "./uac-prompt-label";
 
 const device = "dev-lab-01";
 const sid = "S-1-5-21-3623811015-3361044348-30300820-1013";
@@ -56,11 +56,31 @@ describe("uac-seen rpc", () => {
     stop();
   });
 
-  it("increments count on repeat appearances and does not spam the audit log", () => {
+  it("does not increment while the same prompt is still open", () => {
     const db = seed();
     const { stop } = connectDevice();
     const msg = { type: "uac-seen" as const, userSid: sid, filePath: diskmgmt, fileHash: hash };
     handleAgentRpc(device, msg);
+    handleAgentRpc(device, msg);
+    const rows = listUacPrompts(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.count).toBe(1);
+    expect(listAudit(db, { action: "device.uac.prompted" })).toHaveLength(1);
+    stop();
+  });
+
+  it("increments after the previous prompt closed and does not spam the audit log", () => {
+    const db = seed();
+    const { stop } = connectDevice();
+    const msg = { type: "uac-seen" as const, userSid: sid, filePath: diskmgmt, fileHash: hash };
+    handleAgentRpc(device, msg);
+    handleAgentRpc(device, {
+      type: "uac-canceled",
+      userSid: sid,
+      filePath: diskmgmt,
+      fileHash: hash,
+      outcome: "escaped",
+    });
     handleAgentRpc(device, msg);
     const rows = listUacPrompts(db);
     expect(rows).toHaveLength(1);
@@ -109,5 +129,7 @@ describe("uac outcome labels", () => {
     expect(uacOutcomePill("approved-self")).toBe("approved");
     expect(uacOutcomePill("prompted")).toBe("pending");
     expect(uacOutcomePill("escaped")).toBe("denied");
+    expect(uacProgramLabel("(unidentified program)")).toBe("Unidentified program");
+    expect(uacProgramLabel(diskmgmt)).toContain("diskmgmt.msc");
   });
 });

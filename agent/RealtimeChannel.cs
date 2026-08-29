@@ -307,7 +307,8 @@ public sealed partial class RealtimeChannel : IDisposable
         }));
     }
 
-    async Task<JsonElement> RpcAsync(Dictionary<string, object?> payload, CancellationToken ct)
+    async Task<JsonElement> RpcAsync(
+        Dictionary<string, object?> payload, CancellationToken ct, TimeSpan? timeout = null)
     {
         if (!IsConnected) throw new InvalidOperationException("realtime not connected");
         var id = Interlocked.Increment(ref rpcSeq).ToString();
@@ -325,7 +326,7 @@ public sealed partial class RealtimeChannel : IDisposable
         {
             sendLock.Release();
         }
-        var reply = await AwaitOrTimeout(tcs.Task, RpcTimeout, ct).ConfigureAwait(false);
+        var reply = await AwaitOrTimeout(tcs.Task, timeout ?? RpcTimeout, ct).ConfigureAwait(false);
         if (reply.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False)
         {
             throw new InvalidOperationException(

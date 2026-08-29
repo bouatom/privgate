@@ -20,7 +20,7 @@ partial class RealtimeChannel
         if (!string.IsNullOrWhiteSpace(fileHash)) payload["fileHash"] = fileHash;
         if (!string.IsNullOrWhiteSpace(publisher)) payload["publisher"] = publisher;
         if (!string.IsNullOrWhiteSpace(arguments)) payload["arguments"] = arguments;
-        return RpcAsync(payload, ct);
+        return RpcAsync(payload, ct, TimeSpan.FromSeconds(4));
     }
 
     /// <summary>
@@ -42,7 +42,7 @@ partial class RealtimeChannel
         if (!string.IsNullOrWhiteSpace(fileHash)) payload["fileHash"] = fileHash;
         if (!string.IsNullOrWhiteSpace(publisher)) payload["publisher"] = publisher;
         if (!string.IsNullOrWhiteSpace(arguments)) payload["arguments"] = arguments;
-        return RpcAsync(payload, ct);
+        return RpcAsync(payload, ct, TimeSpan.FromSeconds(4));
     }
 
     void ApplyUacModePush(JsonElement msg)

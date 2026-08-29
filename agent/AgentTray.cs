@@ -269,6 +269,9 @@ sealed class AgentTrayContext : ApplicationContext
         }
         catch (Exception ex)
         {
+            // Standard users cannot open the service; the broker is already
+            // running as SYSTEM. Access-denied is expected, not a fault.
+            if (ex.Message.IndexOf("Cannot open", StringComparison.OrdinalIgnoreCase) >= 0) return;
             BrokerLog.Write("tray could not start PrivGateBroker: " + ex.Message);
         }
     }

@@ -1,8 +1,8 @@
 "use client";
 
-import { displayPath, formatWhenShort } from "@/lib/format";
+import { formatWhenShort } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
-import { uacOutcomeLabel, uacOutcomePill } from "@/lib/uac-prompt-label";
+import { uacOutcomeLabel, uacOutcomePill, uacProgramLabel } from "@/lib/uac-prompt-label";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 
 export type UacPromptView = {
@@ -71,7 +71,7 @@ export function UacPromptsClient({
                     {showHost ? <div className="mono">{row.hostname}</div> : null}
                   </td>
                   <td>
-                    <div>{displayPath(row.filePath)}</div>
+                    <div>{uacProgramLabel(row.filePath)}</div>
                     {row.publisher ? <div className="mono">{row.publisher}</div> : null}
                     {row.fileHash ? <div className="mono">{row.fileHash.slice(0, 16)}…</div> : null}
                     {row.arguments ? <div className="mono">{row.arguments}</div> : null}

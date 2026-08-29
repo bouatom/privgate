@@ -15,7 +15,19 @@ function preferTarget(candidates: string[]): string {
   return candidates.find((c) => !wrappers.has(base(c))) ?? candidates[0]!;
 }
 
+function extractEmbedded(commandLine: string): string[] {
+  const re =
+    /[A-Za-z]:\\(?:[^<>:"/|?*\r\n]+\\)*[^<>:"/|?*\r\n]+\.(?:exe|msc|msi)|\\\\[^<>:"/|?*\r\n]+\\[^<>:"/|?*\r\n]+\.(?:exe|msc|msi)/gi;
+  return commandLine.match(re) ?? [];
+}
+
 describe("UAC consent target preference", () => {
+  it("pulls diskmgmt.msc out of a PowerShell Start-Process -Verb RunAs line", () => {
+    const line =
+      `"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -WindowStyle Hidden -Command Start-Process -FilePath C:\\Windows\\System32\\mmc.exe -ArgumentList \\"C:\\Windows\\System32\\diskmgmt.msc\\" -Verb RunAs`;
+    expect(preferTarget(extractEmbedded(line))).toBe("C:\\Windows\\System32\\diskmgmt.msc");
+  });
+
   it("prefers a snap-in over mmc.exe and skips shell wrappers", () => {
     expect(
       preferTarget([
@@ -30,11 +42,16 @@ describe("UAC consent target preference", () => {
   });
 
   it("is what the broker uses when reading consent.exe command lines", () => {
-    const src = readFileSync(join(__dirname, "../../agent/UacTargetCache.cs"), "utf8");
+    const src = readFileSync(join(__dirname, "../../agent/UacTargetExtract.cs"), "utf8");
     expect(src).toContain("PreferTarget");
+    expect(src).toContain("FromSession");
     expect(src).toContain("powershell.exe");
-    expect(src).toContain("diskmgmt");
-    expect(readFileSync(join(__dirname, "../../agent/PipeAux.cs"), "utf8")).toContain("ReportUacSeenAsync");
+    expect(src).toContain("RunAs");
+    expect(readFileSync(join(__dirname, "../../agent/RealtimeChannel.Uac.cs"), "utf8")).toContain(
+      "TimeSpan.FromSeconds(4)",
+    );
+    expect(readFileSync(join(__dirname, "../../agent/PipeAux.cs"), "utf8")).toContain("UacTargetCache.Remember");
+    expect(readFileSync(join(__dirname, "../../agent/ConsentBrokerWatch.cs"), "utf8")).toContain("ReportUacSeenAsync");
     expect(readFileSync(join(__dirname, "../../agent/RealtimeChannel.Uac.cs"), "utf8")).toContain("uac-seen");
   });
 });

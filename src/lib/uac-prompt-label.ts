@@ -1,4 +1,13 @@
+import { displayPath } from "./format";
+
 /** Admin-facing labels for stock-UAC classifier verdicts. */
+
+export function uacProgramLabel(filePath: string): string {
+  const trimmed = String(filePath || "").trim();
+  if (!trimmed || trimmed === "(unidentified program)") return "Unidentified program";
+  return displayPath(trimmed);
+}
+
 export function uacOutcomeLabel(outcome: string): string {
   switch (outcome) {
     case "prompted":

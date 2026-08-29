@@ -11,6 +11,9 @@ export type AllowlistSource = {
 };
 
 export function allowlistBlockedReason(filePath: string, fileHash: string, publisher: string): string | null {
+  if (!filePath.trim() || filePath.trim() === "(unidentified program)") {
+    return "The agent could not identify which program Windows asked about.";
+  }
   if (!fileHash.trim() || !publisher.trim()) {
     return "Hash and publisher are required to create an always-allow rule.";
   }
