@@ -14,6 +14,7 @@ sealed class BrokerService : ServiceBase
         ServiceName = Name;
         CanStop = true;
         AutoLog = true;
+        CanHandleSessionChangeEvent = true;
     }
 
     internal static bool ShouldRun(string[] args) =>
@@ -36,6 +37,17 @@ sealed class BrokerService : ServiceBase
         if (finished < 0 || !ready.Task.IsCompleted)
         {
             throw new InvalidOperationException($"Broker did not become ready. See {BrokerLog.Path}");
+        }
+        TraySessions.EnsureAll();
+    }
+
+    protected override void OnSessionChange(SessionChangeDescription change)
+    {
+        if (change.Reason == SessionChangeReason.SessionLogon
+            || change.Reason == SessionChangeReason.ConsoleConnect
+            || change.Reason == SessionChangeReason.RemoteConnect)
+        {
+            TraySessions.EnsureInSession(change.SessionId);
         }
     }
 

@@ -37,11 +37,13 @@ function clientWxs(stage: string, files: string[], apiBase: string, token: strin
   const compId = (name: string, i: number): string => {
     if (name === FIREWALL_CMD_NAME) return "cmpFirewallAgent";
     if (name === STOP_CMD_NAME) return "cmpStopStray";
+    if (name === "appsettings.json") return "cmpAppSettings";
     return `cmp${i + 1}`;
   };
   const fileId = (name: string, i: number): string => {
     if (name === FIREWALL_CMD_NAME) return "filFirewallAgent";
     if (name === STOP_CMD_NAME) return "filStopStray";
+    if (name === "appsettings.json") return "filAppSettings";
     return `fil${i + 1}`;
   };
   const components = files.map((name, i) => {
@@ -63,6 +65,13 @@ function clientWxs(stage: string, files: string[], apiBase: string, token: strin
     if (name === STOP_CMD_NAME) {
       return `          <Component Id="${compId(name, i)}" Guid="3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90">
             <File Id="${fileId(name, i)}" Source="${source}" KeyPath="yes" />
+          </Component>`;
+    }
+    if (name === "appsettings.json") {
+      // Enrolled DeviceId/secret must survive MajorUpgrade. The MSI still
+      // ships a first-run template; NeverOverwrite leaves an existing file.
+      return `          <Component Id="cmpAppSettings" Guid="6f2a9c1e-4b8d-4e07-a3c5-8d1e7f0b2a94" NeverOverwrite="yes">
+            <File Id="filAppSettings" Source="${source}" KeyPath="yes" />
           </Component>`;
     }
     return `          <Component Id="${compId(name, i)}" Guid="*">

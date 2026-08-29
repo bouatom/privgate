@@ -8,15 +8,10 @@ namespace PrivGate.Agent;
 /// <summary>
 /// Applies control-plane pushed agent updates. Downloads the branded client MSI
 /// from /api/agent/update/download (device-HMAC authenticated), verifies its
-/// SHA-256 against the X-Update-SHA256 response header, then runs msiexec
-/// silently. The MSI MajorUpgrade stops this service, replaces files, and
-/// restarts it; on startup the new build re-registers/reconnects and reports
-/// its version. Standard Windows Installer only — no elevation tricks.
-///
-/// All update activity is written to update.log in the state directory. This
-/// log survives service restarts because it is flushed to disk before msiexec
-/// is launched (the MSI kills this process). On startup, check the log for
-/// the outcome of the last update attempt.
+/// SHA-256 against the X-Update-SHA256 response header, then hands msiexec to
+/// a SYSTEM scheduled task (not a child of this process — stop-stray would
+/// kill a child installer). The MSI MajorUpgrade stops this service, replaces
+/// files, and restarts it. Standard Windows Installer only — no elevation tricks.
 /// </summary>
 public sealed class UpdateManager
 {
@@ -80,10 +75,10 @@ public sealed class UpdateManager
                 Log($"update started: {AgentVersion()} → {version}");
                 BrokerStatus.Current.NoteNotice("PrivGate update", $"Downloading version {version}…");
                 var msiPath = await DownloadWithRetryAsync(ct: CancellationToken.None).ConfigureAwait(false);
-                Log("download complete, launching installer");
+                Log("download complete, handing off to scheduled-task installer");
                 BrokerStatus.Current.NoteNotice("PrivGate update", "Installing — the service restarts in a moment.");
-                RunMsiexec(msiPath);
-                // msiexec stops PrivGateBroker; process exits via service stop.
+                AgentUpdateHandoff.Run(msiPath, Log);
+                // msiexec (outside this process tree) stops PrivGateBroker.
             }
             catch (Exception ex)
             {
@@ -191,21 +186,6 @@ public sealed class UpdateManager
         {
             throw new InvalidDataException($"checksum mismatch: expected {expectedHex.Substring(0, 16)}…, got {hex.Substring(0, 16)}…");
         }
-    }
-
-    static void RunMsiexec(string msiPath)
-    {
-        var psi = new ProcessStartInfo
-        {
-            FileName = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "msiexec.exe"),
-            Arguments = $"/i \"{msiPath}\" /qn /norestart",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        Console.WriteLine($"PrivGate update: launching {psi.FileName} {psi.Arguments}");
-        Process.Start(psi);
     }
 
     /// <summary>

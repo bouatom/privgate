@@ -50,38 +50,73 @@ static class SessionLaunch
                     BrokerLog.Write($"SetTokenInformation session failed {Marshal.GetLastWin32Error()}");
                     return null;
                 }
-                var command = Quote(filePath) + (string.IsNullOrWhiteSpace(arguments) ? "" : " " + arguments);
-                var start = new STARTUPINFO
-                {
-                    cb = Marshal.SizeOf<STARTUPINFO>(),
-                    lpDesktop = @"winsta0\default",
-                    dwFlags = StartfUseShowWindow,
-                    wShowWindow = SwShownormal,
-                };
-                CreateEnvironmentBlock(out var env, dup, false);
-                try
-                {
-                    var flags = CreateUnicodeEnvironment | CreateNewConsole;
-                    if (!CreateProcessAsUser(dup, null, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero,
-                            false, flags, env, Path.GetDirectoryName(filePath), ref start, out var info))
-                    {
-                        BrokerLog.Write($"CreateProcessAsUser failed {Marshal.GetLastWin32Error()} cmd={command}");
-                        return null;
-                    }
-                    CloseHandle(info.hThread);
-                    CloseHandle(info.hProcess);
-                    BrokerLog.Write($"launched in session {sessionId} pid={info.dwProcessId} {filePath}");
-                    try { return Process.GetProcessById(info.dwProcessId); }
-                    catch { return null; }
-                }
-                finally
-                {
-                    if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);
-                }
+                return Launch(dup, sessionId, filePath, arguments);
             }
             finally { CloseHandle(dup); }
         }
         finally { CloseHandle(existing); }
+    }
+
+    /// <summary>
+    /// Start a process as the logged-on user of <paramref name="sessionId"/>
+    /// (WTSQueryUserToken). Used for the tray: duplicating the service token
+    /// would put SYSTEM on the desktop instead of the user.
+    /// </summary>
+    internal static Process? InSessionAsLoggedOnUser(int sessionId, string filePath)
+    {
+        if (sessionId <= 0) return null;
+        if (!WTSQueryUserToken(sessionId, out var user))
+        {
+            BrokerLog.Write($"WTSQueryUserToken failed {Marshal.GetLastWin32Error()} session={sessionId}");
+            return null;
+        }
+        try
+        {
+            var access = TokenAssignPrimary | TokenDuplicate | TokenQuery | TokenAdjustDefault | TokenAdjustSessionId;
+            if (!DuplicateTokenEx(user, access, IntPtr.Zero, SecurityImpersonation, TokenPrimary, out var dup))
+            {
+                BrokerLog.Write($"DuplicateTokenEx (user) failed {Marshal.GetLastWin32Error()}");
+                return null;
+            }
+            try
+            {
+                return Launch(dup, sessionId, filePath, "");
+            }
+            finally { CloseHandle(dup); }
+        }
+        finally { CloseHandle(user); }
+    }
+
+    static Process? Launch(IntPtr token, int sessionId, string filePath, string arguments)
+    {
+        var command = Quote(filePath) + (string.IsNullOrWhiteSpace(arguments) ? "" : " " + arguments);
+        var start = new STARTUPINFO
+        {
+            cb = Marshal.SizeOf<STARTUPINFO>(),
+            lpDesktop = @"winsta0\default",
+            dwFlags = StartfUseShowWindow,
+            wShowWindow = SwShownormal,
+        };
+        CreateEnvironmentBlock(out var env, token, false);
+        try
+        {
+            var flags = CreateUnicodeEnvironment | CreateNewConsole;
+            if (!CreateProcessAsUser(token, null, new StringBuilder(command), IntPtr.Zero, IntPtr.Zero,
+                    false, flags, env, Path.GetDirectoryName(filePath), ref start, out var info))
+            {
+                BrokerLog.Write($"CreateProcessAsUser failed {Marshal.GetLastWin32Error()} cmd={command}");
+                return null;
+            }
+            CloseHandle(info.hThread);
+            CloseHandle(info.hProcess);
+            BrokerLog.Write($"launched in session {sessionId} pid={info.dwProcessId} {filePath}");
+            try { return Process.GetProcessById(info.dwProcessId); }
+            catch { return null; }
+        }
+        finally
+        {
+            if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);
+        }
     }
 
     static string Quote(string path) => path.StartsWith("\"", StringComparison.Ordinal) ? path : "\"" + path + "\"";
@@ -105,6 +140,9 @@ static class SessionLaunch
     static extern bool CreateProcessAsUser(
         IntPtr token, string? app, StringBuilder cmd, IntPtr pa, IntPtr ta,
         bool inherit, uint flags, IntPtr env, string? dir, ref STARTUPINFO start, out PROCESS_INFORMATION info);
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    static extern bool WTSQueryUserToken(int sessionId, out IntPtr token);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool CloseHandle(IntPtr handle);

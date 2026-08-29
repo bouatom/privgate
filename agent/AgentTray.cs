@@ -19,10 +19,17 @@ sealed class AgentTrayContext : ApplicationContext
     {
         _args = args;
         var existing = BrokerStatus.TryQueryPipe();
-        _ownsBroker = existing == null && !ServiceIsRunning();
+        // If the Windows service is installed, communication must stay in
+        // Session 0. An in-process broker here dies when this user logs off
+        // and takes every other session offline with it.
+        _ownsBroker = existing == null && !ServiceInstalled();
         if (_ownsBroker)
         {
             _ = Task.Run(() => BrokerHost.RunAsync(_args, _cts.Token));
+        }
+        else if (ServiceInstalled() && !ServiceIsRunning())
+        {
+            TryStartService();
         }
 
         _form = new AgentStatusForm();
@@ -203,6 +210,20 @@ sealed class AgentTrayContext : ApplicationContext
         }
     }
 
+    static bool ServiceInstalled()
+    {
+        try
+        {
+            using var sc = new ServiceController(BrokerService.Name);
+            _ = sc.Status;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     static bool ServiceIsRunning()
     {
         try
@@ -217,8 +238,20 @@ sealed class AgentTrayContext : ApplicationContext
         }
         catch
         {
-            // Not installed (or SCM unreachable): the tray hosts the broker.
             return false;
+        }
+    }
+
+    static void TryStartService()
+    {
+        try
+        {
+            using var sc = new ServiceController(BrokerService.Name);
+            if (sc.Status == ServiceControllerStatus.Stopped) sc.Start();
+        }
+        catch (Exception ex)
+        {
+            BrokerLog.Write("tray could not start PrivGateBroker: " + ex.Message);
         }
     }
 

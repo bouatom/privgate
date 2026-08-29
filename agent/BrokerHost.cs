@@ -116,12 +116,13 @@ partial class BrokerHost
         cfg.DeviceId ??= "";
         cfg.EnrollmentToken ??= "";
         RejectNonRoutableApiBase(cfg);
-        if (string.IsNullOrWhiteSpace(cfg.DeviceId) || !string.IsNullOrWhiteSpace(cfg.EnrollmentToken))
+        if (string.IsNullOrWhiteSpace(cfg.DeviceId))
         {
             BrokerLog.Write($"registering with {cfg.ApiBase}");
             cfg = await DeviceRegistration.RegisterAsync(cfg, configPath, ct);
             BrokerLog.Write($"registered as {cfg.DeviceId}");
         }
+        CfgOverlay.PersistIdentity(cfg);
 
         BrokerStatus.Current.Configure(cfg.DeviceId, cfg.ApiBase);
         var watchdog = new JitWatchdog(cfg.StateDirectory);

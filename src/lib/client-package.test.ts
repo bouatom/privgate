@@ -236,6 +236,12 @@ describe("client payload discovery and deploy artifacts", () => {
     expect(msiTs).toContain('"cmpStopStray"');
     expect(msiTs).toContain('"filStopStray"');
     expect(msiTs).toContain("3b7e2f4a-9c8d-4e1b-9a3f-1d5c6b7e8f90");
+    expect(cjs).toContain("NeverOverwrite=\"yes\"");
+    expect(cjs).toContain("cmpAppSettings");
+    expect(cjs).toContain("6f2a9c1e-4b8d-4e07-a3c5-8d1e7f0b2a94");
+    expect(msiTs).toContain("NeverOverwrite=\"yes\"");
+    expect(msiTs).toContain("cmpAppSettings");
+    expect(msiTs).toContain("6f2a9c1e-4b8d-4e07-a3c5-8d1e7f0b2a94");
   });
 
   it("treats MSI as available only when the packaged file exists", () => {
