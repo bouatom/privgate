@@ -55,48 +55,37 @@ export function ElevationSettingsClient({
   }
 
   return (
-    <>
-      <div className="top">
+    <div className="panel stack" style={{ padding: 18 }}>
+      <strong>After Windows asks for credentials</strong>
+      <div className="choice-grid">
+        {MODES.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={mode === item.id ? "choice selected" : "choice"}
+            aria-pressed={mode === item.id}
+            disabled={!canManage || busy}
+            onClick={() => setMode(item.id)}
+          >
+            <span className="k">{item.id === "collect" ? "Observe" : "Assist"}</span>
+            <h2>{item.title}</h2>
+            <p>{item.body}</p>
+          </button>
+        ))}
+      </div>
+      {canManage ? (
         <div>
-          <h1>Elevation</h1>
-          <p className="lede">
-            Choose what happens on PCs after a standard user hits Windows UAC. This applies to the
-            whole environment. Always-allow rules and Helper requests are unchanged.
-          </p>
+          <button className="primary" type="button" disabled={busy || mode === saved} onClick={() => void save()}>
+            {busy ? "Saving…" : "Save"}
+          </button>
         </div>
-      </div>
-      <div className="panel stack" style={{ padding: 18 }}>
-        <strong>After Windows asks for credentials</strong>
-        <div className="choice-grid">
-          {MODES.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={mode === item.id ? "choice selected" : "choice"}
-              aria-pressed={mode === item.id}
-              disabled={!canManage || busy}
-              onClick={() => setMode(item.id)}
-            >
-              <span className="k">{item.id === "collect" ? "Observe" : "Assist"}</span>
-              <h2>{item.title}</h2>
-              <p>{item.body}</p>
-            </button>
-          ))}
-        </div>
-        {canManage ? (
-          <div>
-            <button className="primary" type="button" disabled={busy || mode === saved} onClick={() => void save()}>
-              {busy ? "Saving…" : "Save"}
-            </button>
-          </div>
-        ) : (
-          <p className="lede" style={{ fontSize: 12, margin: 0 }}>
-            Your role can view this setting but cannot change it.
-          </p>
-        )}
-        {message ? <p className="lede" style={{ margin: 0 }}>{message}</p> : null}
-        {error ? <p className="err">{error}</p> : null}
-      </div>
-    </>
+      ) : (
+        <p className="lede" style={{ fontSize: 12, margin: 0 }}>
+          Your role can view this setting but cannot change it.
+        </p>
+      )}
+      {message ? <p className="lede" style={{ margin: 0 }}>{message}</p> : null}
+      {error ? <p className="err">{error}</p> : null}
+    </div>
   );
 }
