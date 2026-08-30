@@ -40,6 +40,18 @@ function quoteArg(value: string): string {
   return `"${value.replace(/"/g, '\\"')}"`;
 }
 
+/**
+ * Task Scheduler XML must not declare an encoding: schtasks.exe on Windows
+ * Server 2022 (build 20348) rejects `encoding="UTF-8"` with "The task XML is
+ * malformed. (1,40)::ERROR: unable to switch the encoding", and a UTF-8 BOM
+ * trips "incorrect document syntax" at (1,2). Empirically, UTF-16LE with a
+ * BOM and no encoding attribute is accepted by schtasks /Create /XML and is
+ * the format Task Scheduler itself emits — use that.
+ */
+export function writeTaskXml(xmlPath: string, xml: string): void {
+  fs.writeFileSync(xmlPath, "\uFEFF" + xml, "utf16le");
+}
+
 export function buildWindowsUpdateTaskXml(opts: {
   powershell: string;
   scriptPath: string;
@@ -64,7 +76,7 @@ export function buildWindowsUpdateTaskXml(opts: {
     quoteArg(opts.dataDir),
   ].join(" ");
   const workDir = path.win32.dirname(opts.scriptPath);
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>PrivGate console self-update (one-shot). Deleted by update-server.ps1 when it starts.</Description>
@@ -117,21 +129,34 @@ export function runUpdateTaskArgs(): string[] {
 
 export async function runProcess(file: string, args: string[], opts: Parameters<RunProcess>[2]): Promise<RunProcessResult> {
   return new Promise((resolve, reject) => {
-    const stdio: ["ignore", number, number] | "pipe" =
-      typeof opts.logFd === "number" ? ["ignore", opts.logFd, opts.logFd] : "pipe";
+    // Always pipe both streams: schtasks writes its error text to *stdout*;
+    // capture everything so the caller's error message carries the real reason
+    // instead of a bare "exited 1". Captured output is flushed to logFd after
+    // completion (these calls are short-lived).
     const child = spawn(file, args, {
       shell: false,
       windowsHide: true,
       cwd: opts.cwd,
       env: opts.env,
-      stdio,
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    let stderr = "";
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
+    let combined = "";
+    const sink = (chunk: Buffer) => {
+      combined += chunk.toString("utf8");
+    };
+    child.stdout?.on("data", sink);
+    child.stderr?.on("data", sink);
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stderr }));
+    child.on("close", (code) => {
+      if (typeof opts.logFd === "number") {
+        try {
+          fs.writeSync(opts.logFd, combined);
+        } catch {
+          // Log desync is non-fatal; the error message still carries the output.
+        }
+      }
+      resolve({ code: code ?? 1, stderr: combined });
+    });
   });
 }
 
@@ -155,7 +180,7 @@ export async function handoffViaScheduledTask(opts: {
     sha256: opts.sha256,
     dataDir: opts.dataDir,
   });
-  fs.writeFileSync(opts.xmlPath, xml, "utf8");
+  writeTaskXml(opts.xmlPath, xml);
   const schtasks = schtasksPath(opts.systemRoot);
   const run = opts.runImpl ?? runProcess;
   const created = await run(schtasks, createUpdateTaskArgs(opts.xmlPath), {

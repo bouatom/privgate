@@ -5,7 +5,11 @@ import {
   createUpdateTaskArgs,
   runUpdateTaskArgs,
   schtasksPath,
+  writeTaskXml,
 } from "./self-update-handoff";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 describe("Windows scheduled-task handoff", () => {
   it("points schtasks at System32 and names a single one-shot task", () => {
@@ -37,5 +41,34 @@ describe("Windows scheduled-task handoff", () => {
     expect(xml).toContain("-DataDir");
     expect(xml).toContain("C:\\ProgramData\\PrivGate");
     expect(xml).toContain("&quot;C:\\Program Files\\PrivGate\\update-server.ps1&quot;");
+  });
+
+  it("declares no encoding (schtasks on Server 2022 rejects encoding= declarations)", () => {
+    const xml = buildWindowsUpdateTaskXml({
+      powershell: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      scriptPath: "C:\\Program Files\\PrivGate\\update-server.ps1",
+      installerPath: "C:\\ProgramData\\PrivGate\\updates\\PrivGate-Console-0.3.3-win-x64.exe",
+      sha256: "a".repeat(64),
+      dataDir: "C:\\ProgramData\\PrivGate",
+    });
+    expect(xml.startsWith('<?xml version="1.0"?>')).toBe(true);
+    expect(xml).not.toContain("encoding=");
+  });
+
+  it("writes task XML as UTF-16LE with BOM and no encoding declaration", () => {
+    const dir = mkdtempSync(join(tmpdir(), "privgate-handoff-"));
+    const xmlPath = join(dir, "update-task.xml");
+    try {
+      writeTaskXml(xmlPath, '<?xml version="1.0"?>\n<Task version="1.2"/>');
+      const bytes = readFileSync(xmlPath);
+      // UTF-16LE BOM: FF FE. Decode as UTF-16LE and confirm the clean header.
+      expect(bytes[0]).toBe(0xff);
+      expect(bytes[1]).toBe(0xfe);
+      const text = bytes.toString("utf16le");
+      expect(text.startsWith("\uFEFF<?xml version=\"1.0\"?>")).toBe(true);
+      expect(text).not.toContain("encoding=");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

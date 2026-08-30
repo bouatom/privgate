@@ -1,7 +1,6 @@
 import "server-only";
-import fs from "node:fs";
 import path from "node:path";
-import { runProcess, schtasksPath, type RunProcess } from "./self-update-handoff";
+import { runProcess, schtasksPath, writeTaskXml, type RunProcess } from "./self-update-handoff";
 
 export type { RunProcess };
 
@@ -56,7 +55,7 @@ export function buildWindowsServerSettingsTaskXml(opts: {
     quoteArg(opts.dataDir),
   ].join(" ");
   const workDir = path.win32.dirname(opts.scriptPath);
-  return `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Description>PrivGate console server settings restart (one-shot). Deleted by restart-server.ps1 when it starts.</Description>
@@ -129,7 +128,7 @@ export async function handoffServerSettingsViaScheduledTask(opts: {
     agentPort: opts.agentPort,
     dataDir: opts.dataDir,
   });
-  fs.writeFileSync(opts.xmlPath, xml, "utf8");
+  writeTaskXml(opts.xmlPath, xml);
   const schtasks = schtasksPath(opts.systemRoot);
   const run = opts.runImpl ?? runProcess;
   const created = await run(schtasks, createServerSettingsTaskArgs(opts.xmlPath), {
