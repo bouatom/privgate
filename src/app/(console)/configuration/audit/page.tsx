@@ -4,6 +4,7 @@ import { getDb, getDevice, listAudit, listAuditActions, listAuditCount } from "@
 import { formatDetails, formatWhen } from "@/lib/format";
 import { Forbidden } from "../../forbidden";
 import { presentAudit } from "@/lib/present";
+import { isFailAction } from "../../devices/device-update-state";
 
 const PAGE_SIZE = 50;
 
@@ -107,7 +108,7 @@ export default async function AuditPage({
                 <tr key={row.id}>
                   <td className="mono">{formatWhen(row.at)}</td>
                   <td className="mono">{row.actor}</td>
-                  <td>{row.action}</td>
+                  <td className={isFailAction(row.action) ? "err" : undefined}>{row.action}</td>
                   <td>
                     <div className="mono">{row.target}</div>
                     {formatDetails(row.details) ? <div className="mono">{formatDetails(row.details)}</div> : null}
