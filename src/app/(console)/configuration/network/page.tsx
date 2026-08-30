@@ -1,5 +1,5 @@
 import { can, getSession } from "@/lib/auth";
-import { advertisedUrls, listenConfig } from "@/lib/listen";
+import { lanUrls, listenConfig } from "@/lib/listen";
 import { Forbidden } from "../../forbidden";
 
 export default async function NetworkPage() {
@@ -13,7 +13,7 @@ export default async function NetworkPage() {
     return <Forbidden />;
   }
   const cfg = listenConfig();
-  const consoleUrls = advertisedUrls(cfg.webPort, cfg.bind);
+  const lanAddresses = lanUrls(cfg.webPort, cfg.bind);
 
   return (
     <>
@@ -61,14 +61,18 @@ export default async function NetworkPage() {
       <div className="panel stack" style={{ padding: 18 }}>
         <strong>Opening the console from another computer</strong>
         <p className="lede" style={{ fontSize: 13 }}>
-          Use any of these addresses in a browser on another machine on the same network.
+          Use one of these LAN addresses in a browser on another machine on the same network.
+          The address <span className="mono">127.0.0.1</span> only works in a browser on this machine itself.
         </p>
         <ul className="lede" style={{ fontSize: 13, margin: 0, paddingLeft: 18 }}>
-          {consoleUrls.map((url) => (
+          {lanAddresses.map((url) => (
             <li key={url}>
               <span className="mono">{url}</span>
             </li>
           ))}
+          {lanAddresses.length === 1 && /127\.0\.0\.1/.test(lanAddresses[0]) ? (
+            <li className="lede">The console is bound to loopback, so it is not reachable from other machines yet. Connect a LAN address in the PrivGate configuration file and restart.</li>
+          ) : null}
         </ul>
       </div>
     </>

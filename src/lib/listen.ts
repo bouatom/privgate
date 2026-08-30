@@ -143,6 +143,20 @@ export function advertisedUrls(port: number, bind: string): string[] {
   return [...new Set(urls)];
 }
 
+/**
+ * Addresses other machines on the network can use to reach the console.
+ * Excludes loopback (`127.0.0.1`, `::1`, `localhost`), which only works in a
+ * browser on the console machine itself. Falls back to loopback when the
+ * console is bound to loopback only (i.e. it is not reachable from other
+ * machines at all).
+ */
+export function lanUrls(port: number, bind: string): string[] {
+  const urls = advertisedUrls(port, bind).filter(
+    (u) => !LOOPBACK.has(new URL(u).hostname),
+  );
+  return urls.length > 0 ? urls : [`http://127.0.0.1:${port}`];
+}
+
 export function consoleEnvHint(): string {
   if (process.env.PRIVGATE_DATA_DIR) return `${process.env.PRIVGATE_DATA_DIR}/console.env`;
   switch (process.platform) {
