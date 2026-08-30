@@ -37,7 +37,7 @@ export function UacPromptsClient({
   const intro =
     lede ??
     (showHost
-      ? "Stock Windows UAC prompts on enrolled PCs — including programs the user approved with their own or another person's credentials. Counts how often each program appeared so you can write allowlist rules before the next call. Hash and publisher are required to always-allow."
+      ? "Stock Windows UAC prompts on enrolled PCs — including programs the user approved with their own or another person's credentials. Counts how often each program appeared so you can write always-allow rules before the next call. Hash and publisher are required to always-allow."
       : "");
   return (
     <>

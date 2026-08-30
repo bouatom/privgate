@@ -109,14 +109,14 @@ export default async function DashboardPage() {
           </p>
         </div>
         {can(session, "requests.view") ? (
-          <Link className="primary" href="/requests" prefetch>
+          <Link className="primary" href="/elevations" prefetch>
             Review requests
           </Link>
         ) : null}
       </div>
 
       <div className="grid cards four dash-section">
-        <Link className="card" href="/requests" prefetch>
+        <Link className="card" href="/elevations" prefetch>
           <div className="card-head">
             <StatIcon shape={ICONS.inbox} />
             <div className="k">Pending</div>
@@ -137,7 +137,7 @@ export default async function DashboardPage() {
           </div>
           <div className="v">{stats.denied}</div>
         </div>
-        <Link className="card accent" href="/requests" prefetch>
+        <Link className="card accent" href="/elevations" prefetch>
           <div className="card-head">
             <StatIcon shape={ICONS.alertTriangle} />
             <div className="k">High / critical pending</div>
@@ -146,8 +146,8 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <div className="grid cards dash-section">
-        <Link className="card" href="/jit" prefetch>
+      <div className="grid cards four dash-section">
+        <Link className="card" href="/directory" prefetch>
           <div className="card-head">
             <StatIcon shape={ICONS.clock} />
             <div className="k">Active JIT windows</div>
@@ -164,9 +164,20 @@ export default async function DashboardPage() {
         <Link className="card" href="/allowlists" prefetch>
           <div className="card-head">
             <StatIcon shape={ICONS.shield} />
-            <div className="k">Always-allow policies</div>
+            <div className="k">Always-allow rules</div>
           </div>
           <div className="v">{stats.policies}</div>
+        </Link>
+        <Link
+          className={`card ${stats.failedUpdates > 0 ? "danger" : ""}`}
+          href="/devices"
+          prefetch
+        >
+          <div className="card-head">
+            <StatIcon shape={ICONS.alertTriangle} />
+            <div className="k">Failed agent updates</div>
+          </div>
+          <div className="v">{stats.failedUpdates}</div>
         </Link>
       </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resetDbForTests, saveNotificationSettings } from "./db";
+import { listDeviceSummaries, resetDbForTests, saveNotificationSettings, setDeviceAgentVersion } from "./db";
 import { dashboardStats } from "./metrics";
 import { parseRecipients, shouldNotify } from "./notify";
 
@@ -15,6 +15,29 @@ describe("dashboard metrics", () => {
     expect(stats.highRiskPending).toBe(0);
     expect(stats.recent[0]?.status).toBe("pending");
     expect(stats.medianMinutesToDecision).not.toBeNull();
+  });
+
+  it("counts failed agent updates from +stale markers and stuck +pending builds", () => {
+    const db = resetDbForTests(":memory:");
+    const deviceId = listDeviceSummaries(db)[0]!.id;
+    const stats = () => dashboardStats(db);
+
+    expect(stats().failedUpdates).toBe(0);
+
+    setDeviceAgentVersion(db, deviceId, "0.2.0+stale@1720000000000");
+    expect(stats().failedUpdates).toBe(1);
+
+    // A pending push older than the server's 30-minute stale window counts as failed.
+    setDeviceAgentVersion(db, deviceId, `0.3.0+pending@${Date.now() - 31 * 60_000}`);
+    expect(stats().failedUpdates).toBe(1);
+
+    // A fresh pending push is still in flight.
+    setDeviceAgentVersion(db, deviceId, `0.3.0+pending@${Date.now() - 5 * 60_000}`);
+    expect(stats().failedUpdates).toBe(0);
+
+    // A confirmed plain version is healthy.
+    setDeviceAgentVersion(db, deviceId, "0.3.0");
+    expect(stats().failedUpdates).toBe(0);
   });
 });
 

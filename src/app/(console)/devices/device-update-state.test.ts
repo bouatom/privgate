@@ -1,5 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { isNewer, updateStateFor } from "./device-update-state";
+import { describeAgentVersion, isFailAction, isNewer, updateStateFor } from "./device-update-state";
+
+describe("describeAgentVersion", () => {
+  it("splits marker builds into a clean version and state flags", () => {
+    expect(describeAgentVersion("0.3.3+pending@1788036841470")).toEqual({
+      version: "0.3.3",
+      updating: true,
+      failed: false,
+    });
+    expect(describeAgentVersion("0.3.3+stale@1788036841470")).toEqual({
+      version: "0.3.3",
+      updating: false,
+      failed: true,
+    });
+  });
+
+  it("keeps plain and prerelease versions clean", () => {
+    expect(describeAgentVersion("v0.2.1")).toEqual({ version: "0.2.1", updating: false, failed: false });
+    expect(describeAgentVersion("0.2.1-rc.1")).toEqual({ version: "0.2.1", updating: false, failed: false });
+  });
+});
+
+describe("isFailAction", () => {
+  it("flags failure-state audit actions but not progress or success ones", () => {
+    expect(isFailAction("device.update.failed")).toBe(true);
+    expect(isFailAction("device.update.stale")).toBe(true);
+    expect(isFailAction("device.update.completed")).toBe(false);
+    expect(isFailAction("device.update.pushed")).toBe(false);
+    expect(isFailAction("policy.created")).toBe(false);
+  });
+});
 
 describe("isNewer", () => {
   it("compares three-part releases numerically", () => {

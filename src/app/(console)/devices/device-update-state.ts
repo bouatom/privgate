@@ -26,6 +26,32 @@ function parseVersion(version: string): number[] {
     .map((part) => Number.parseInt(part, 10) || 0);
 }
 
+export type AgentVersionDisplay = {
+  /** Core x.y.z release without any leading v, build suffix, or update marker. */
+  version: string;
+  /** True when the version carries the "+pending" push marker. */
+  updating: boolean;
+  /** True when the version carries the "+stale" failure marker. */
+  failed: boolean;
+};
+
+/**
+ * Client-safe rendering hint for a raw agent-version string. The devices table
+ * stores marker builds like "0.3.3+pending@1788036841470" or "+stale@…" — this
+ * splits off the marker and epoch so UIs never leak the raw token.
+ */
+export function describeAgentVersion(raw: string): AgentVersionDisplay {
+  const updating = raw.includes("+pending");
+  const failed = !updating && raw.includes("+stale");
+  const version = raw.replace(/^v/i, "").split(/[-+]/)[0] ?? "";
+  return { version, updating, failed };
+}
+
+/** True when an audit action records a failure state (e.g. device.update.failed / .stale). */
+export function isFailAction(action: string): boolean {
+  return /\.(failed|stale)$/.test(action);
+}
+
 /** True when `candidate` is a strictly newer three-part release than `installed`. */
 export function isNewer(candidate: string, installed: string): boolean {
   const a = parseVersion(candidate);

@@ -1,5 +1,6 @@
 import "server-only";
 import type { DatabaseSync } from "node:sqlite";
+import { PENDING_STALE_MS } from "./agent-update";
 import { getAdSettings, listAudit, listDeviceSummaries, listJit, listPolicies, listRequests, listUsers } from "./db";
 import { publicDirectoryStatus } from "./entra";
 
@@ -26,6 +27,8 @@ export type DashboardStats = {
     riskLevel: string;
   }>;
   auditToday: number;
+  /** PCs whose last agent update did not confirm: "+stale" marker, or "+pending" older than the server's stale window. */
+  failedUpdates: number;
 };
 
 function countByStatus(rows: Array<{ status: string }>, status: string) {
@@ -97,6 +100,12 @@ export function dashboardStats(db: DatabaseSync): DashboardStats {
       riskLevel: r.riskLevel,
     })),
     auditToday: listAudit(db).filter((e) => inLastDays(e.at, 1)).length,
+    failedUpdates: listDeviceSummaries(db).filter((d) => {
+      if (!d.agentVersion) return false;
+      if (d.agentVersion.includes("+stale")) return true;
+      const pending = d.agentVersion.match(/\+pending@(\d+)/);
+      return Boolean(pending && Date.now() - Number(pending[1]) > PENDING_STALE_MS);
+    }).length,
   };
 }
 

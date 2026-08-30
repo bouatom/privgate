@@ -42,6 +42,7 @@ export type UpdateRequestResult =
 
 /** Pending markers carry the push time so stuck pushes can be detected. */
 const PENDING_STALE_MS = 30 * 60_000;
+export { PENDING_STALE_MS };
 
 /**
  * Marker stored in devices.agent_version while a push is outstanding:

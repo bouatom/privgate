@@ -34,7 +34,7 @@ export default async function ElevationsPage({
         <div>
           <h1>Elevations</h1>
           <p className="lede">
-            One place to grant and review elevated access: pending run-requests with risk scoring,
+            One place to grant and review elevated access: pending elevation requests with risk scoring,
             stock Windows UAC prompts with frequency, and temporary local Administrators windows
             (15–60 minutes) that the broker revokes on schedule.
           </p>

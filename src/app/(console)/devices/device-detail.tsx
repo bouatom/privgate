@@ -5,6 +5,7 @@ import { displayPath, formatDetails } from "@/lib/format";
 import type { Policy } from "@/lib/policy";
 import { AllowlistFromRequestButton } from "../allowlist-from-request-button";
 import { UacPromptsClient, type UacPromptView } from "../elevations/uac-prompts-client";
+import { describeAgentVersion, isFailAction } from "./device-update-state";
 import { UpdatePolicyControl } from "./update-policy-control";
 
 export type DeviceEventRow = {
@@ -96,6 +97,17 @@ export function DeviceDetail({
   );
   const shown = logFilter === "blocked" ? blocked : detail.requests;
 
+  // Marker builds ("0.3.3+pending@epoch", "+stale@epoch") never render raw: the
+  // drawer shows the confirmed running version from the fail audit when one
+  // exists — that reconciles "updating…" claims with what the device reported.
+  const agent = detail.agentVersion ? describeAgentVersion(detail.agentVersion) : null;
+  const failEvent = detail.events.find((e) => isFailAction(e.action));
+  const reportedVersion =
+    agent && (agent.updating || agent.failed) && typeof failEvent?.details?.reported === "string"
+      ? failEvent.details.reported
+      : null;
+  const shownVersion = reportedVersion ?? agent?.version ?? "";
+
   return (
     <>
       <div className="panel" style={{ padding: 18, marginBottom: 16 }}>
@@ -108,10 +120,17 @@ export function DeviceDetail({
               <span className="mono">{detail.lastIp}</span>
             </>
           ) : null}
-          {detail.agentVersion ? (
+          {agent ? (
             <>
               {" · agent "}
-              <span className="mono">v{detail.agentVersion.replace("+pending", " (updating…)")}</span>
+              <span className="mono">v{shownVersion}</span>
+              {agent.updating ? <span className="pill pending">updating…</span> : null}
+              {agent.failed ? <span className="pill failed">update failed?</span> : null}
+              {reportedVersion ? (
+                <span className="mono" style={{ color: "var(--bad)" }}>
+                  {" · target v"}{agent.version}
+                </span>
+              ) : null}
             </>
           ) : null}
         </p>
@@ -239,7 +258,7 @@ export function DeviceDetail({
               detail.events.map((row) => (
                 <tr key={row.id}>
                   <td className="mono">{new Date(row.at).toLocaleString()}</td>
-                  <td>{row.action}</td>
+                  <td className={isFailAction(row.action) ? "err" : undefined}>{row.action}</td>
                   <td>
                     <div className="mono">{row.actor}</div>
                     <div className="mono">{row.target}</div>

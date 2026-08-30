@@ -37,7 +37,8 @@ const APPLY_PHASE_LABEL: Record<ApplyView["phase"], string> = {
   stale:
     "The last update never reported an outcome. You can abandon it here and click Update again — no server login is required.",
   succeeded: "The last update completed successfully.",
-  failed: "The last update FAILED. Nothing was replaced if the failure was a checksum error. Abandon the lock below and try again, or see the rollback notes in docs/updating.md.",
+  failed:
+    "The last update failed. The console verifies the release before replacing any files, so a checksum failure leaves your current version untouched. If it failed later in the process, the console may be partially updated — review the apply log and then try again.",
 };
 
 export function UpdatesClient({
@@ -274,11 +275,16 @@ export function UpdatesClient({
       </div>
 
       {apply.phase !== "idle" ? (
-        <div className="panel stack" style={{ padding: 18, marginTop: 16 }}>
-          <strong>Last apply</strong>
-          <p className="lede" style={{ fontSize: 13, margin: 0 }}>
-            Target <span className="mono">{apply.target ?? "?"}</span> · phase: <span className="mono">{apply.phase}</span>.
-            {" "}{APPLY_PHASE_LABEL[apply.phase]}
+        <div
+          className={`panel stack ${apply.phase === "failed" ? "danger" : ""}`}
+          style={{ padding: 18, marginTop: 16 }}
+        >
+          <strong>{apply.phase === "failed" ? "Last apply failed" : "Last apply"}</strong>
+          <p
+            className={apply.phase === "failed" ? "err" : "lede"}
+            style={{ fontSize: 13, margin: 0 }}
+          >
+            Target <span className="mono">{apply.target ?? "?"}</span>. {APPLY_PHASE_LABEL[apply.phase]}
           </p>
           {apply.hint ? (
             <p className="lede" style={{ fontSize: 13, margin: 0 }}>
@@ -286,7 +292,25 @@ export function UpdatesClient({
             </p>
           ) : null}
           {apply.lastLines.length > 0 ? (
-            <pre style={{ maxHeight: 220, overflow: "auto", fontSize: 12 }}>{apply.lastLines.join("\n")}</pre>
+            <details style={{ marginTop: 8 }}>
+              <summary className="lede" style={{ cursor: "pointer", fontSize: 13 }}>
+                View apply log ({apply.lastLines.length} {apply.lastLines.length === 1 ? "line" : "lines"})
+              </summary>
+              <pre
+                style={{
+                  maxHeight: 220,
+                  overflow: "auto",
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                  marginTop: 8,
+                }}
+              >
+                {apply.lastLines
+                  .filter((l) => !/cmdline: powershell -encodedcommand/i.test(l))
+                  .join("\n") || "(apply log is empty)"}
+              </pre>
+            </details>
           ) : null}
           {apply.abandonable && canManage && !(check?.available && check.version) ? (
             <div className="row-actions">

@@ -137,7 +137,7 @@ export function RequestsClient({
           <div className="v">{hot}</div>
         </div>
         <div className="card">
-          <div className="k">Rule</div>
+          <div className="k">Always-allow rule</div>
           <div className="v" style={{ fontSize: 16, marginTop: 12 }}>Hash + publisher, never filename alone</div>
         </div>
       </div>
