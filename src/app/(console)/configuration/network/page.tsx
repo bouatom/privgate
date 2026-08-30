@@ -1,62 +1,38 @@
 import { can, getSession } from "@/lib/auth";
 import { lanUrls, listenConfig } from "@/lib/listen";
+import { currentServerApplyStatus } from "@/lib/server-settings-state";
 import { Forbidden } from "../../forbidden";
+import { NetworkClient } from "./network-client";
+
+export const dynamic = "force-dynamic";
 
 export default async function NetworkPage() {
   const session = await getSession();
-  if (
-    !can(session, "portal.users.manage") &&
-    !can(session, "integrations.view") &&
-    !can(session, "integrations.manage") &&
-    !can(session, "devices.enroll")
-  ) {
+  if (!can(session, "portal.users.manage")) {
     return <Forbidden />;
   }
   const cfg = listenConfig();
-  const lanAddresses = lanUrls(cfg.webPort, cfg.bind);
 
   return (
     <>
       <div className="top">
         <div>
-          <h1>Network</h1>
+          <h1>Server &amp; network</h1>
           <p className="lede">
-            Ports used by the management console and Windows broker connections.
+            Where the console listens and the port enrolled PCs connect to. Changes restart the
+            console and roll back automatically if it does not come back healthy.
           </p>
         </div>
       </div>
 
-      <div className="grid cards" style={{ marginBottom: 20 }}>
-        <div className="panel stack" style={{ padding: 18 }}>
-          <strong>Management console</strong>
-          <p className="lede" style={{ fontSize: 13 }}>
-            The port administrators use to open this console in a browser.
-          </p>
-          <div className="mono" style={{ fontSize: 22, margin: "8px 0" }}>{cfg.webPort}</div>
-          <p className="lede" style={{ fontSize: 12, margin: 0 }}>
-            Default: 3000
-          </p>
-        </div>
-        <div className="panel stack" style={{ padding: 18 }}>
-          <strong>Broker connection</strong>
-          <p className="lede" style={{ fontSize: 13 }}>
-            The port enrolled PCs connect to for elevation requests and status.
-          </p>
-          <div className="mono" style={{ fontSize: 22, margin: "8px 0" }}>{cfg.agentPort}</div>
-          <p className="lede" style={{ fontSize: 12, margin: 0 }}>
-            {cfg.splitPorts ? "Separate from management port" : "Same as management port"}
-          </p>
-        </div>
-      </div>
-
-      <div className="panel stack" style={{ padding: 18, marginBottom: 16 }}>
-        <strong>How to change ports</strong>
-        <p className="lede" style={{ fontSize: 13, margin: 0 }}>
-          Ports are set when PrivGate starts. To change them, stop the service, update the port
-          values in the PrivGate configuration file, and restart. Windows packaged installs add
-          inbound firewall rules for both ports automatically.
-        </p>
-      </div>
+      <NetworkClient
+        canManage
+        bind={cfg.bind}
+        webPort={cfg.webPort}
+        agentPort={cfg.agentPort}
+        lanUrls={lanUrls(cfg.webPort, cfg.bind)}
+        initialApply={currentServerApplyStatus()}
+      />
 
       <div className="panel stack" style={{ padding: 18 }}>
         <strong>Opening the console from another computer</strong>
@@ -65,13 +41,17 @@ export default async function NetworkPage() {
           The address <span className="mono">127.0.0.1</span> only works in a browser on this machine itself.
         </p>
         <ul className="lede" style={{ fontSize: 13, margin: 0, paddingLeft: 18 }}>
-          {lanAddresses.map((url) => (
+          {lanUrls(cfg.webPort, cfg.bind).map((url) => (
             <li key={url}>
               <span className="mono">{url}</span>
             </li>
           ))}
-          {lanAddresses.length === 1 && /127\.0\.0\.1/.test(lanAddresses[0]) ? (
-            <li className="lede">The console is bound to loopback, so it is not reachable from other machines yet. Connect a LAN address in the PrivGate configuration file and restart.</li>
+          {lanUrls(cfg.webPort, cfg.bind).length === 1 &&
+          /127\.0\.0\.1/.test(lanUrls(cfg.webPort, cfg.bind)[0]) ? (
+            <li className="lede">
+              The console is bound to loopback, so it is not reachable from other machines yet.
+              Switch to “All interfaces” above and apply to make it reachable on the LAN.
+            </li>
           ) : null}
         </ul>
       </div>
