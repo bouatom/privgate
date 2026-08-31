@@ -22,19 +22,29 @@ local runs default to the source tree's own `package.json` version.
 
 ## Tag discipline
 
-### Official releases — you push the tag
+### Official releases — the tag IS the version
 
-1. Bump `package.json` (`0.2.2` → `0.2.3`) in a normal PR.
-2. When it is on `main`, cut an **annotated** tag and push exactly that:
+Versioning is automatic and **tag-determined**. You never hand-edit
+`package.json` to cut a release; the tag you push chooses the version.
+
+1. Cut an **annotated** tag at the commit you want to ship and push it:
    ```bash
    git tag -a v0.2.3 -m "PrivGate Console 0.2.3"
    git push origin v0.2.3
    ```
+   The tag name chooses the version — `v0.2.3` publishes `0.2.3`, a minor or
+   major is chosen the same way (`v1.0.0` → `1.0.0`).
+2. `.github/workflows/auto-version.yml` sees `refs/tags/v*` and syncs the
+   source-of-truth metadata to the tag — `version.json`, `package.json`, and
+   `package-lock.json` root version all become `X.Y.Z` — then commits that to
+   `main` (`[skip ci]`, so it triggers no further builds). This keeps future
+   branch builds and dev-mode resolution consistent with the released version.
 3. `dotnet-desktop.yml` sees `refs/tags/v*`, derives the version from the tag,
    builds all installers, and publishes a **non-prerelease** release marked
    `--latest`.
 
-The tag name is the release. There is no separate "promote" step.
+The tag name is the release. There is no separate "promote" step and no manual
+version-number editing anywhere.
 
 ### Nightlies — scheduled or dispatched, never tagged by hand
 
@@ -66,7 +76,7 @@ gh workflow run nightly.yml
 gh run watch $(gh run list --workflow=nightly.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 
 # 2. If green, cut the official release:
-#    (package.json already bumped + merged to main)
+#    (the tag name is the version; auto-version.yml syncs version.json + package.json)
 git fetch origin && git tag -a vX.Y.Z origin/main && git push origin vX.Y.Z
 ```
 
@@ -76,13 +86,13 @@ Verify afterwards: the new GitHub Release is **not** marked pre-release, and
 ## What does NOT move the console version
 
 **Branch pushes alone never change the shipped console version.** A push to
-`main` produces installers stamped with whatever `package.json` says — if you
-did not bump it, they carry the old number and self-update will not offer them
-to existing installs. The version only moves when one of these happens:
+`main` produces installers stamped with whatever `package.json` says — if it was
+not synced to a tag, they carry the old number and self-update will not offer
+them to existing installs. The version only moves when one of these happens:
 
-- you bump `package.json` (next branch/PR build reports it),
-- you dispatch/run `nightly.yml` (prerelease at base+patch),
-- you push an annotated `vX.Y.Z` tag (official release).
+- you push an annotated `vX.Y.Z` tag (official release; `auto-version.yml`
+  syncs `version.json` / `package.json` / `package-lock.json` to the tag),
+- you dispatch/run `nightly.yml` (prerelease at base+patch).
 
 ## Classifying an existing release
 
