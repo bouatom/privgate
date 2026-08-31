@@ -1,0 +1,102 @@
+name: Auto Version Sync
+
+# Tag-determined versioning (docs/releasing.md):
+#
+# The tag you push IS the version. When an annotated tag vX.Y.Z is pushed,
+# this workflow syncs the source-of-truth version metadata files so that
+# branch builds and dev-mode resolution stay consistent with the release:
+#
+#   * version.json          -> { "version": X.Y.Z, buildTime, gitCommit }
+#   * package.json version  -> X.Y.Z
+#   * package-lock.json     -> root "version" field -> X.Y.Z
+#
+# The release itself (installers + GitHub Release) is published by
+# dotnet-desktop.yml on the same tag — it already derives the version from
+# the tag name, so no manual package.json bump is ever needed to cut a
+# release. Major/minor/patch is chosen by the tag name, not computed.
+#
+# Loop safety: this workflow triggers ONLY on refs/tags/v*. Its own commit
+# pushes to `main` (a branch), which never re-triggers this workflow.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    name: Sync version metadata to tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync version metadata
+        id: sync
+        run: |
+          set -euo pipefail
+
+          # Tag name is the authoritative version, e.g. "v0.5.0" -> "0.5.0"
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "Tag: ${TAG}"
+          echo "Version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          # --- version.json (build-time manifest, validated x.y.z) ---
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const buildTime = new Date().toISOString();
+            const gitCommit = process.env.GITHUB_SHA;
+            fs.writeFileSync("version.json",
+              JSON.stringify({ version: v, buildTime, gitCommit }, null, 2) + "\n");
+          ' "${VERSION}"
+
+          # --- package.json ---
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const p = "package.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            j.version = v;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          ' "${VERSION}"
+
+          # --- package-lock.json root version (npm writes the root lock version) ---
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const p = "package-lock.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            j.version = v;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+          ' "${VERSION}"
+
+          git diff --stat
+
+      - name: Commit and push sync
+        id: commit
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No version metadata changes to commit for ${GITHUB_REF_NAME}."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json version.json
+          git commit -m "chore: sync version to ${{ steps.sync.outputs.version }} [skip ci]"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        run: |
+          echo "Synced version v${{ steps.sync.outputs.version }} from tag ${GITHUB_REF_NAME}."
